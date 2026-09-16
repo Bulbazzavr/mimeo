@@ -53,6 +53,7 @@
 | [ADR-0015](architecture/adr/ADR-0015-available-space-not-box.md) | Переполнение меряется доступным местом, а не боксом фигуры |
 | [ADR-0016](architecture/adr/ADR-0016-prose-segmentation.md) | Сплошную прозу структурирует детерминированный сегментатор до PLAN |
 | [ADR-0017](architecture/adr/ADR-0017-content-corpus-is-ours.md) | Контент-пакет собираем сами, и это корпус входов, а не один файл |
+| [ADR-0018](architecture/adr/ADR-0018-license-agpl.md) | Лицензия проекта — AGPL-3.0: код нельзя взять в закрытый продукт |
 
 ## Планы работ
 
