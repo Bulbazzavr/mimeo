@@ -1,0 +1,297 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mimeo/contracts/pattern-library.schema.json",
+  "title": "PatternLibrary",
+  "description": "Типовые раскладки слайдов, выведенные из реальных слайдов шаблона. См. ADR-0004, ADR-0006, ADR-0007.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "source",
+    "patterns"
+  ],
+  "properties": {
+    "version": {
+      "const": "1.1"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "filename",
+        "sha256"
+      ],
+      "properties": {
+        "filename": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "notes": {
+      "type": "array",
+      "description": "Для человека: чем этот разбор особенный. Например, что паттерны выведены из макетов, а не из слайдов.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "patterns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "kind",
+          "source",
+          "donor",
+          "slots",
+          "evidence"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^p[0-9]{2,}$"
+          },
+          "kind": {
+            "type": "string",
+            "description": "Назначение раскладки. Именно это значение стадия PLAN показывает модели.",
+            "enum": [
+              "cover",
+              "section",
+              "agenda",
+              "text",
+              "bullets",
+              "two_column",
+              "cards",
+              "metric",
+              "quote",
+              "chart",
+              "table",
+              "image_full",
+              "image_text",
+              "timeline",
+              "closing",
+              "other"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "slides",
+              "layouts"
+            ],
+            "description": "Откуда выведен паттерн. По умолчанию из реальных слайдов (ADR-0004); layouts — фолбэк, когда слайдов мало (ADR-0006)."
+          },
+          "donor": {
+            "type": "object",
+            "description": "Что клонируется при сборке слайда.",
+            "additionalProperties": false,
+            "required": [
+              "part",
+              "index"
+            ],
+            "properties": {
+              "part": {
+                "type": "string",
+                "description": "Имя части, например /ppt/slides/slide4.xml"
+              },
+              "index": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "description": "Позиция в p:sldIdLst (DOM-PKG §4). null, если донор — макет, а не слайд."
+              }
+            }
+          },
+          "slots": {
+            "type": "array",
+            "description": "Только то, что стадия PLAN наполняет. Декоративные фигуры сюда не входят: они приезжают вместе с клонированным донором.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "shape_id",
+                "role",
+                "content_type",
+                "rect_emu",
+                "required"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^s[0-9]{2,}$"
+                },
+                "shape_id": {
+                  "type": "string",
+                  "description": "Значение p:cNvPr/@id фигуры донора. Якорь, по которому стадия COMPOSE находит, куда подставлять содержимое. Уникален внутри слайда, включая фигуры внутри групп."
+                },
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "title",
+                    "subtitle",
+                    "body",
+                    "bullet_list",
+                    "caption",
+                    "label",
+                    "metric_value",
+                    "metric_label",
+                    "quote",
+                    "attribution",
+                    "image",
+                    "chart",
+                    "table",
+                    "decor"
+                  ]
+                },
+                "content_type": {
+                  "type": "string",
+                  "enum": [
+                    "text",
+                    "list",
+                    "number",
+                    "image",
+                    "chart",
+                    "table",
+                    "none"
+                  ]
+                },
+                "rect_emu": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "x",
+                    "y",
+                    "cx",
+                    "cy"
+                  ],
+                  "properties": {
+                    "x": {
+                      "type": "integer"
+                    },
+                    "y": {
+                      "type": "integer"
+                    },
+                    "cx": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    },
+                    "cy": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    }
+                  }
+                },
+                "type_role": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^t[0-9]{2}$",
+                  "description": "Ссылка на id записи из design-system.type_scale. Именно на id, а не на role: role не уникален."
+                },
+                "capacity": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "description": "Чем стадия PLAN ограничивает LLM. ADR-0002, ADR-0008.",
+                  "additionalProperties": false,
+                  "required": [
+                    "max_chars"
+                  ],
+                  "properties": {
+                    "max_chars": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "description": "Жёсткий предел. Не меньше того, что уже написано в доноре: донор — настоящий слайд дизайнера, он доказывает, что столько помещается."
+                    },
+                    "max_lines": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "chars_per_line": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "target_chars": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 1,
+                      "description": "Мягкий ориентир: сколько текста задумал дизайнер. Из длины текста донора."
+                    },
+                    "max_items": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 1,
+                      "description": "Для списков"
+                    },
+                    "donor_chars": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0
+                    },
+                    "basis": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Как посчитано. DOM-TEXT §6, §10."
+                    }
+                  }
+                },
+                "required": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "evidence": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "members",
+              "donor_reason"
+            ],
+            "properties": {
+              "members": {
+                "type": "array",
+                "description": "Индексы слайдов кластера. Один член — паттерн выведен из единственного примера, доверия меньше.",
+                "items": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "cohesion": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 1,
+                "description": "Средняя схожесть сигнатур внутри кластера. null для одиночек."
+              },
+              "donor_reason": {
+                "type": "string",
+                "description": "Почему донором выбран именно этот слайд. ADR-0004."
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

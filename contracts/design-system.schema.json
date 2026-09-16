@@ -1,0 +1,500 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mimeo/contracts/design-system.schema.json",
+  "title": "DesignSystem",
+  "description": "Визуальный язык шаблона, извлечённый стадией ANALYZE. См. docs/architecture/contracts.md (ARCH-CONTRACTS).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "source",
+    "slide",
+    "palette",
+    "type_scale",
+    "grid",
+    "shapes",
+    "evidence"
+  ],
+  "properties": {
+    "version": {
+      "const": "1.1"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "filename",
+        "sha256",
+        "masters",
+        "layouts",
+        "slides"
+      ],
+      "properties": {
+        "filename": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "masters": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "layouts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "slides": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "slide": {
+      "type": "object",
+      "description": "Размер холста. DOM-GEOM §1.",
+      "additionalProperties": false,
+      "required": [
+        "cx_emu",
+        "cy_emu",
+        "aspect"
+      ],
+      "properties": {
+        "cx_emu": {
+          "type": "integer",
+          "exclusiveMinimum": 0
+        },
+        "cy_emu": {
+          "type": "integer",
+          "exclusiveMinimum": 0
+        },
+        "aspect": {
+          "type": "string",
+          "description": "Приведённое соотношение, например 16:9"
+        },
+        "type": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Атрибут p:sldSz/@type, если задан"
+        }
+      }
+    },
+    "palette": {
+      "type": "object",
+      "description": "theme — что объявлено темой; observed — что реально используется на слайдах. DOM-COLOR §6.",
+      "additionalProperties": false,
+      "required": [
+        "theme",
+        "observed",
+        "core"
+      ],
+      "properties": {
+        "theme": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "role",
+              "hex",
+              "master"
+            ],
+            "properties": {
+              "role": {
+                "type": "string",
+                "enum": [
+                  "dk1",
+                  "lt1",
+                  "dk2",
+                  "lt2",
+                  "accent1",
+                  "accent2",
+                  "accent3",
+                  "accent4",
+                  "accent5",
+                  "accent6",
+                  "hlink",
+                  "folHlink"
+                ]
+              },
+              "hex": {
+                "type": "string",
+                "pattern": "^#[0-9A-F]{6}$"
+              },
+              "master": {
+                "type": "string",
+                "description": "Имя части мастера, к которому относится тема"
+              }
+            }
+          }
+        },
+        "observed": {
+          "type": "array",
+          "description": "Отсортировано по убыванию count, затем по hex — для детерминированности (ADR-0003).",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "hex",
+              "count",
+              "contexts"
+            ],
+            "properties": {
+              "hex": {
+                "type": "string",
+                "pattern": "^#[0-9A-F]{6}$"
+              },
+              "alpha": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "theme_role": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Роль темы, к которой восходит цвет после разрешения clrMap, если восходит"
+              },
+              "contexts": {
+                "type": "array",
+                "description": "Где встречен",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "fill",
+                    "line",
+                    "text",
+                    "background",
+                    "effect",
+                    "gradient"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "core": {
+          "type": "array",
+          "description": "Ядро палитры: цвета, которые действительно являются дизайн-системой, а не векторной графикой. Критерий — восходит к роли темы, либо повторяется между слайдами, либо им набран текст или фон, либо занимает заметную площадь. Ссылки на hex из observed. DOM-COLOR §6.",
+          "items": {
+            "type": "string",
+            "pattern": "^#[0-9A-F]{6}$"
+          }
+        }
+      }
+    },
+    "type_scale": {
+      "type": "array",
+      "description": "Типографические роли, выведенные кластеризацией реальных прогонов. DOM-TEXT §7.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "role",
+          "size_pt",
+          "count"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^t[0-9]{2}$",
+            "description": "Стабильная ссылка для слотов паттернов. Поле role не уникально: «other» может стоять у нескольких записей."
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "display",
+              "title",
+              "subtitle",
+              "body",
+              "lead",
+              "caption",
+              "label",
+              "quote",
+              "metric",
+              "footnote",
+              "other"
+            ]
+          },
+          "latin": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cyrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Гарнитура для кириллицы, если тема её подменяет. DOM-TEXT §3."
+          },
+          "size_pt": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": "Эффективный кегль с учётом normAutofit/@fontScale. DOM-TEXT §5."
+          },
+          "bold": {
+            "type": "boolean"
+          },
+          "italic": {
+            "type": "boolean"
+          },
+          "caps": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "none",
+              "small",
+              "all",
+              null
+            ]
+          },
+          "spacing_pt": {
+            "type": "number"
+          },
+          "line_spacing_pct": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "color_hex": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^#[0-9A-F]{6}$"
+          },
+          "align": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Сколько прогонов попало в кластер"
+          },
+          "examples": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+              "type": "string"
+            }
+          },
+          "size_norm": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": "Кегль, приведённый к холсту высотой 7.5 дюйма. Холсты бывают вдвое больше обычного, и абсолютные пункты между шаблонами несравнимы. DOM-GEOM §8."
+          }
+        }
+      }
+    },
+    "grid": {
+      "type": "object",
+      "description": "Выводится статистически, в файле не записана. DOM-GEOM §6.",
+      "additionalProperties": false,
+      "required": [
+        "margin_left_emu",
+        "margin_right_emu",
+        "margin_top_emu",
+        "margin_bottom_emu",
+        "samples"
+      ],
+      "properties": {
+        "margin_left_emu": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "margin_right_emu": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "margin_top_emu": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "margin_bottom_emu": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "columns": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "gutter_emu": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "baseline_emu": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "samples": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Сколько фигур участвовало в выводе. Сетка по трём фигурам и по ста — разного качества."
+        }
+      }
+    },
+    "shapes": {
+      "type": "array",
+      "description": "Словарь повторяющихся форм с частотой.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "geom",
+          "count"
+        ],
+        "properties": {
+          "geom": {
+            "type": "string",
+            "description": "prstGeom/@prst либо custom"
+          },
+          "fill_kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "solid",
+              "gradient",
+              "picture",
+              "pattern",
+              "none",
+              null
+            ]
+          },
+          "fill_hex": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^#[0-9A-F]{6}$"
+          },
+          "line_hex": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^#[0-9A-F]{6}$"
+          },
+          "line_w_emu": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "corner_radius_pct": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Доля от меньшей стороны. DOM-GEOM §3."
+          },
+          "has_shadow": {
+            "type": "boolean"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "description": "Не для машины. Для человека и для питча: видно, на чём основан вывод и что не разобрано.",
+      "additionalProperties": false,
+      "required": [
+        "slides_analyzed",
+        "shapes_total",
+        "shapes_used",
+        "shapes_positioned",
+        "runs_total",
+        "unhandled"
+      ],
+      "properties": {
+        "slides_analyzed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "shapes_total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "shapes_used": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "После отсева по DOM-GEOM §7"
+        },
+        "runs_total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unhandled": {
+          "type": "array",
+          "description": "Неразобранные конструкции. Пустой список — хороший знак, непустой — список задач.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "count"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "detail": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "shapes_positioned": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Фигур, стоящих на холсте, включая пустые плейсхолдеры. Основа для вывода сетки. DOM-GEOM §7."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,217 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mimeo/contracts/render-report.schema.json",
+  "title": "RenderReport",
+  "description": "Что стадия VERIFY проверила, исправила и чего не смогла. Пишется по фактической форме данных, а не заранее (ARCH-CONTRACTS): виды дефекта появлялись по мере замера. См. PLAN-4.0 шаги 6-9, ADR-0005, ADR-0013.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "deck",
+    "status",
+    "stopped",
+    "rounds",
+    "defects",
+    "unresolved",
+    "seconds",
+    "note"
+  ],
+  "properties": {
+    "version": {
+      "const": "1.1"
+    },
+    "deck": {
+      "type": "string",
+      "description": "Путь к проверявшемуся файлу"
+    },
+    "status": {
+      "type": "string",
+      "description": "Состоялся ли замер. Обязателен и проверяется первым: пустой список дефектов при status != ok означает «проверить не смогли», а не «дефектов нет» (Z-20).",
+      "enum": [
+        "ok",
+        "not_measured",
+        "unavailable"
+      ]
+    },
+    "stopped": {
+      "type": "string",
+      "description": "Почему петля встала. «rounds» и «floor» — разные исходы: первый значит «сдался», второй «сделал всё, что мог». Без этого поля они неразличимы.",
+      "enum": [
+        "fits",
+        "floor",
+        "rounds",
+        "not_measured",
+        "unavailable"
+      ]
+    },
+    "rounds": {
+      "type": "array",
+      "description": "По записи на раунд петли. Пуст, когда мерить было нечем.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "round",
+          "status",
+          "checked_slots",
+          "defects",
+          "ours",
+          "repaired",
+          "rebuilt"
+        ],
+        "properties": {
+          "round": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "status": {
+            "type": "string"
+          },
+          "checked_slots": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Сколько наших слотов удалось сопоставить с фигурами файла"
+          },
+          "defects": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Всего дефектов, включая переполнение фигур донора"
+          },
+          "ours": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Из них наших, то есть тех, что можно чинить. Расходится с defects намеренно: сводка по одному ours соврала бы «дефектов нет»."
+          },
+          "repaired": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Слотов получили новую шкалу кегля в этом раунде"
+          },
+          "rebuilt": {
+            "type": "boolean",
+            "description": "Пересобирали ли колоду после этого осмотра. От этого зависит, нужен ли контрольный замер."
+          }
+        }
+      }
+    },
+    "defects": {
+      "type": "object",
+      "description": "Наших переполнений до петли и после. null, а не 0, когда замер не состоялся: ноль читался бы как «чисто».",
+      "additionalProperties": false,
+      "required": [
+        "before",
+        "after"
+      ],
+      "properties": {
+        "before": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "after": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    },
+    "unresolved": {
+      "type": "array",
+      "description": "Что осталось непочиненным, поимённо, а не числом. Пуст, когда всё влезло или когда мерить было нечем — различать эти случаи следует по status и stopped.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "slide",
+          "slot",
+          "shape",
+          "role",
+          "ratio"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "description": "Вид дефекта. Список открыт: контраст и осиротевшие строки из ADR-0005 сюда ещё не дошли.",
+            "enum": [
+              "overflow_height",
+              "overflow_width",
+              "donor_overflow"
+            ]
+          },
+          "slide": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Индекс слайда в плане, а не номер в файле"
+          },
+          "slot": {
+            "type": "string",
+            "description": "Идентификатор слота; пуст у донорских фигур"
+          },
+          "shape": {
+            "type": "string",
+            "description": "p:cNvPr/@id фигуры — тот же якорь, что у COMPOSE"
+          },
+          "role": {
+            "type": "string"
+          },
+          "ratio": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": "Во сколько раз содержимое больше отведённого места"
+          }
+        }
+      }
+    },
+    "seconds": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Время стадии целиком. 60-70% его — запуск PowerPoint, а не измерение."
+    },
+    "note": {
+      "type": "string",
+      "description": "Причина отказа человеческими словами. Пуста при status = ok."
+    }
+  },
+  "allOf": [
+    {
+      "description": "«Стало» известно тогда и только тогда, когда замер состоялся. «Было» может быть известно и при отказе: замер мог сорваться не на первом раунде. Это машинная форма правила «молчаливый ноль неотличим от чистого результата».",
+      "if": {
+        "properties": {
+          "status": {
+            "const": "ok"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "defects": {
+            "properties": {
+              "before": {
+                "type": "integer"
+              },
+              "after": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "defects": {
+            "properties": {
+              "after": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mimeo"
+version = "0.1.0"
+description = "Перенос стиля презентаций: разбор PPTX-шаблона и сборка новой колоды в его стиле"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+# Стадия ANALYZE работает без внешних зависимостей — ADR-0001.
+dependencies = []
+
+[project.optional-dependencies]
+# Проверка артефактов по схемам из contracts/ (флаг --validate и тесты).
+validate = ["jsonschema>=4.20"]
+# python-pptx только для тестов: независимый читатель собранных файлов (ADR-0011).
+dev = ["pytest>=8.0", "jsonschema>=4.20", "python-pptx>=1.0"]
+
+[project.scripts]
+mimeo = "mimeo.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["mimeo*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

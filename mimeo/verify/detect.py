@@ -1,0 +1,210 @@
+"""Детектор дефектов вёрстки. Шаги 2–3 плана `PLAN-4.0`.
+
+Превращает габариты, полученные от движка (`verify.metrics`), в список дефектов
+с адресами **в координатах плана**: какой слайд плана, какой слот. Ремонт правит
+план (`ADR-0005`), поэтому иных координат ему не нужно.
+
+Здесь нет ни одного обращения к COM: детектор не знает, чем измеряли. Появится
+LibreOffice (`Z-03`) — он отдаст ту же `Measurement`, и этот модуль не заметит
+разницы.
+
+## Что считается дефектом
+
+Замер по корпусу (`WORKLOG/2026-09-12-detector.md`) задал две границы.
+
+**Только наши слоты.** В самих шаблонах, до всякой нашей работы, не влезает 14%
+текстовых фигур, у одного — 45%. Донорская фигура переполнена не по нашей вине и
+чинить её нельзя: это чужой дизайн. Но и молчать нельзя — эксперту всё равно,
+чья вина, — поэтому такие случаи получают отдельный вид и пометку «не наше».
+
+**Режим автоподбора ничего не гарантирует.** Три переполненных слота уже имели
+`normAutofit`: PowerPoint ужал текст, и этого не хватило. Пропускать их по
+признаку режима нельзя.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from ..model import DeckPlan, PatternLibrary
+from .metrics import TOLERANCE, Measurement, ShapeMetric
+from .space import height_ratio
+
+#: Текст выше своего места — чиним шкалой шрифта.
+OVERFLOW_HEIGHT = "overflow_height"
+#: Текст шире своего места. Измеряем и показываем; ремонт отложен (`PLAN-4.0`).
+OVERFLOW_WIDTH = "overflow_width"
+#: Переполнена фигура донора, которую мы не трогали. Не наше и не чиним.
+DONOR_OVERFLOW = "donor_overflow"
+
+
+@dataclass(frozen=True)
+class Defect:
+    """Один дефект вёрстки по адресу плана."""
+
+    kind: str
+    slide_index: int          # индекс слайда в плане, а не номер в файле
+    slot_id: str              # пусто для донорских фигур
+    shape_id: str
+    role: str
+    ratio: float              # во сколько раз содержимое больше места
+    repairable: bool
+
+    @property
+    def ours(self) -> bool:
+        return self.kind != DONOR_OVERFLOW
+
+    def describe(self) -> str:
+        where = f"слайд {self.slide_index}"
+        what = {
+            OVERFLOW_HEIGHT: "текст выше места",
+            OVERFLOW_WIDTH: "текст шире места",
+            DONOR_OVERFLOW: "переполнена фигура донора",
+        }.get(self.kind, self.kind)
+        who = f"слот {self.slot_id} ({self.role})" if self.slot_id else f"фигура {self.shape_id}"
+        return f"{where}, {who}: {what} в {self.ratio:.2f} раза"
+
+
+@dataclass(frozen=True)
+class Inspection:
+    """Итог осмотра одной колоды."""
+
+    deck: str
+    status: str                     # повторяет статус измерения
+    defects: tuple[Defect, ...] = ()
+    checked_slots: int = 0
+    note: str = ""
+
+    @property
+    def measured(self) -> bool:
+        """Замер состоялся. **Не** то же самое, что «дефектов нет».
+
+        Отказ измерителя обязан отличаться от чистого результата: пустой список
+        дефектов при несостоявшемся замере — та же ложь, что «0 проблем» у файла,
+        который не открывается (`Z-20`).
+        """
+        return self.status == "ok"
+
+    @property
+    def repairable(self) -> tuple[Defect, ...]:
+        return tuple(d for d in self.defects if d.repairable)
+
+
+def _slot_index(
+    plan: DeckPlan, library: PatternLibrary, slides_written: tuple[int, ...]
+) -> dict[tuple[int, str], tuple[int, str, str]]:
+    """(номер слайда в файле, shape_id) -> (индекс слайда плана, слот, роль).
+
+    Номер слайда в файле берётся из `slides_written`, а не из позиции в плане:
+    слайд, который не собрался, в файл не попадает, и нумерация разъезжается.
+    """
+    patterns = {p.id: p for p in library.patterns}
+    by_index = {s.index: s for s in plan.slides}
+    out: dict[tuple[int, str], tuple[int, str, str]] = {}
+
+    for position, plan_index in enumerate(slides_written, 1):
+        planned = by_index.get(plan_index)
+        if planned is None:
+            continue
+        pattern = patterns.get(planned.pattern_id)
+        if pattern is None:
+            continue
+        slots = {s.id: s for s in pattern.slots}
+        for fill in planned.fills:
+            slot = slots.get(fill.slot_id)
+            if slot is not None:
+                out[(position, slot.shape_id)] = (plan_index, slot.id, slot.role)
+    return out
+
+
+def _slide_of_position(slides_written: tuple[int, ...], position: int) -> int:
+    return slides_written[position - 1] if 1 <= position <= len(slides_written) else -1
+
+
+def find_defects(
+    measurement: Measurement,
+    plan: DeckPlan,
+    library: PatternLibrary,
+    slides_written: tuple[int, ...],
+    tolerance: float = TOLERANCE,
+) -> Inspection:
+    """Дефекты одной колоды. Порядок детерминирован: слайд, слот, вид."""
+    if not measurement.ok:
+        return Inspection(
+            deck=measurement.deck,
+            status=measurement.status,
+            note=measurement.note,
+        )
+
+    index = _slot_index(plan, library, slides_written)
+    defects: list[Defect] = []
+    checked = 0
+
+    for shape in measurement.shapes:
+        # Мерка одна для всех: не «текст выше бокса», а «тексту некуда
+        # деться» (`ADR-0015`). Без боксов от зонда возвращается прежнее
+        # отношение к боксу, то есть поведение до `Z-24`.
+        ratio = height_ratio(shape, measurement)
+        known = index.get((shape.slide, shape.shape_id))
+        if known is None:
+            if ratio > tolerance:
+                defects.append(
+                    Defect(
+                        kind=DONOR_OVERFLOW,
+                        slide_index=_slide_of_position(slides_written, shape.slide),
+                        slot_id="",
+                        shape_id=shape.shape_id,
+                        role="",
+                        ratio=round(ratio, 3),
+                        repairable=False,
+                    )
+                )
+            continue
+
+        plan_index, slot_id, role = known
+        checked += 1
+        defects.extend(_ours(shape, plan_index, slot_id, role, tolerance, ratio))
+
+    defects.sort(key=lambda d: (d.slide_index, d.slot_id, d.shape_id, d.kind))
+    return Inspection(
+        deck=measurement.deck,
+        status=measurement.status,
+        defects=tuple(defects),
+        checked_slots=checked,
+        note=measurement.note,
+    )
+
+
+def _ours(
+    shape: ShapeMetric, plan_index: int, slot_id: str, role: str, tolerance: float,
+    ratio: float,
+) -> list[Defect]:
+    """`ratio` — отношение к доступному месту, а не к боксу (`ADR-0015`)."""
+    found: list[Defect] = []
+    if ratio > tolerance:
+        found.append(
+            Defect(
+                kind=OVERFLOW_HEIGHT,
+                slide_index=plan_index,
+                slot_id=slot_id,
+                shape_id=shape.shape_id,
+                role=role,
+                ratio=round(ratio, 3),
+                repairable=True,
+            )
+        )
+    elif shape.width_ratio > tolerance:
+        # Только когда по высоте всё в порядке: иначе это один и тот же дефект,
+        # и ремонт по высоте уберёт оба. Замер: таких семь на корпус.
+        found.append(
+            Defect(
+                kind=OVERFLOW_WIDTH,
+                slide_index=plan_index,
+                slot_id=slot_id,
+                shape_id=shape.shape_id,
+                role=role,
+                ratio=round(shape.width_ratio, 3),
+                repairable=False,
+            )
+        )
+    return found

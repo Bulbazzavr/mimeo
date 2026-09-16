@@ -1,0 +1,432 @@
+"""Модель артефакта `design-system.json`.
+
+Форма строго соответствует `contracts/design-system.schema.json` (ARCH-CONTRACTS).
+Сериализация явная, а не через рефлексию: так расхождение со схемой видно в коде,
+а не всплывает в тесте.
+
+Вывод обязан быть детерминированным — ADR-0003.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+SCHEMA_VERSION = "1.1"
+
+
+@dataclass(frozen=True)
+class SourceInfo:
+    filename: str
+    sha256: str
+    masters: int
+    layouts: int
+    slides: int
+
+    def to_json(self) -> dict:
+        return {
+            "filename": self.filename,
+            "sha256": self.sha256,
+            "masters": self.masters,
+            "layouts": self.layouts,
+            "slides": self.slides,
+        }
+
+
+@dataclass(frozen=True)
+class SlideSize:
+    cx_emu: int
+    cy_emu: int
+    aspect: str
+    type: str | None
+
+    def to_json(self) -> dict:
+        return {
+            "cx_emu": self.cx_emu,
+            "cy_emu": self.cy_emu,
+            "aspect": self.aspect,
+            "type": self.type,
+        }
+
+
+@dataclass(frozen=True)
+class ThemeColor:
+    role: str
+    hex: str
+    master: str
+
+    def to_json(self) -> dict:
+        return {"role": self.role, "hex": self.hex, "master": self.master}
+
+
+@dataclass(frozen=True)
+class ObservedColor:
+    hex: str
+    alpha: float
+    count: int
+    theme_role: str | None
+    contexts: tuple[str, ...]
+
+    def to_json(self) -> dict:
+        return {
+            "hex": self.hex,
+            "alpha": round(self.alpha, 4),
+            "count": self.count,
+            "theme_role": self.theme_role,
+            "contexts": list(self.contexts),
+        }
+
+
+@dataclass(frozen=True)
+class TypeRole:
+    id: str
+    role: str
+    latin: str | None
+    cyrl: str | None
+    size_pt: float
+    size_norm: float
+    bold: bool
+    italic: bool
+    caps: str | None
+    spacing_pt: float
+    line_spacing_pct: float | None
+    color_hex: str | None
+    align: str | None
+    count: int
+    examples: tuple[str, ...]
+
+    def to_json(self) -> dict:
+        return {
+            "id": self.id,
+            "role": self.role,
+            "latin": self.latin,
+            "cyrl": self.cyrl,
+            "size_pt": self.size_pt,
+            "size_norm": self.size_norm,
+            "bold": self.bold,
+            "italic": self.italic,
+            "caps": self.caps,
+            "spacing_pt": self.spacing_pt,
+            "line_spacing_pct": self.line_spacing_pct,
+            "color_hex": self.color_hex,
+            "align": self.align,
+            "count": self.count,
+            "examples": list(self.examples),
+        }
+
+
+@dataclass(frozen=True)
+class Grid:
+    margin_left_emu: int
+    margin_right_emu: int
+    margin_top_emu: int
+    margin_bottom_emu: int
+    columns: int | None
+    gutter_emu: int | None
+    baseline_emu: int | None
+    samples: int
+
+    def to_json(self) -> dict:
+        return {
+            "margin_left_emu": self.margin_left_emu,
+            "margin_right_emu": self.margin_right_emu,
+            "margin_top_emu": self.margin_top_emu,
+            "margin_bottom_emu": self.margin_bottom_emu,
+            "columns": self.columns,
+            "gutter_emu": self.gutter_emu,
+            "baseline_emu": self.baseline_emu,
+            "samples": self.samples,
+        }
+
+
+@dataclass(frozen=True)
+class ShapeToken:
+    geom: str
+    fill_kind: str | None
+    fill_hex: str | None
+    line_hex: str | None
+    line_w_emu: int | None
+    corner_radius_pct: float | None
+    has_shadow: bool
+    count: int
+
+    def to_json(self) -> dict:
+        return {
+            "geom": self.geom,
+            "fill_kind": self.fill_kind,
+            "fill_hex": self.fill_hex,
+            "line_hex": self.line_hex,
+            "line_w_emu": self.line_w_emu,
+            "corner_radius_pct": self.corner_radius_pct,
+            "has_shadow": self.has_shadow,
+            "count": self.count,
+        }
+
+
+@dataclass(frozen=True)
+class Unhandled:
+    kind: str
+    detail: str | None
+    count: int
+
+    def to_json(self) -> dict:
+        return {"kind": self.kind, "detail": self.detail, "count": self.count}
+
+
+@dataclass(frozen=True)
+class Evidence:
+    slides_analyzed: int
+    shapes_total: int
+    shapes_used: int
+    shapes_positioned: int
+    runs_total: int
+    unhandled: tuple[Unhandled, ...] = ()
+    notes: tuple[str, ...] = ()
+
+    def to_json(self) -> dict:
+        return {
+            "slides_analyzed": self.slides_analyzed,
+            "shapes_total": self.shapes_total,
+            "shapes_used": self.shapes_used,
+            "shapes_positioned": self.shapes_positioned,
+            "runs_total": self.runs_total,
+            "unhandled": [u.to_json() for u in self.unhandled],
+            "notes": list(self.notes),
+        }
+
+
+@dataclass(frozen=True)
+class DesignSystem:
+    source: SourceInfo
+    slide: SlideSize
+    theme_palette: tuple[ThemeColor, ...]
+    observed_palette: tuple[ObservedColor, ...]
+    core_palette: tuple[str, ...]
+    type_scale: tuple[TypeRole, ...]
+    grid: Grid
+    shapes: tuple[ShapeToken, ...]
+    evidence: Evidence
+    version: str = SCHEMA_VERSION
+
+    def to_json(self) -> dict:
+        return {
+            "version": self.version,
+            "source": self.source.to_json(),
+            "slide": self.slide.to_json(),
+            "palette": {
+                "theme": [c.to_json() for c in self.theme_palette],
+                "observed": [c.to_json() for c in self.observed_palette],
+                "core": list(self.core_palette),
+            },
+            "type_scale": [t.to_json() for t in self.type_scale],
+            "grid": self.grid.to_json(),
+            "shapes": [s.to_json() for s in self.shapes],
+            "evidence": self.evidence.to_json(),
+        }
+
+
+# --- библиотека паттернов ----------------------------------------------
+#
+# Форма соответствует contracts/pattern-library.schema.json. См. ADR-0004.
+
+
+@dataclass(frozen=True)
+class Capacity:
+    """Сколько текста помещается в слот. Этим стадия PLAN ограничивает LLM."""
+
+    max_chars: int
+    max_lines: int
+    chars_per_line: int
+    target_chars: int | None
+    max_items: int | None
+    donor_chars: int | None
+    basis: str
+
+    def to_json(self) -> dict:
+        return {
+            "max_chars": self.max_chars,
+            "max_lines": self.max_lines,
+            "chars_per_line": self.chars_per_line,
+            "target_chars": self.target_chars,
+            "max_items": self.max_items,
+            "donor_chars": self.donor_chars,
+            "basis": self.basis,
+        }
+
+
+@dataclass(frozen=True)
+class Slot:
+    id: str
+    role: str
+    content_type: str
+    rect: object          # analyze.deck.Rect — структурно x/y/cx/cy
+    type_role: str | None
+    capacity: Capacity | None
+    required: bool
+    shape_id: str = ""    # p:cNvPr/@id фигуры донора — якорь для стадии COMPOSE
+
+    def to_json(self) -> dict:
+        return {
+            "id": self.id,
+            "shape_id": self.shape_id,
+            "role": self.role,
+            "content_type": self.content_type,
+            "rect_emu": {
+                "x": self.rect.x, "y": self.rect.y,
+                "cx": self.rect.cx, "cy": self.rect.cy,
+            },
+            "type_role": self.type_role,
+            "capacity": self.capacity.to_json() if self.capacity else None,
+            "required": self.required,
+        }
+
+
+@dataclass(frozen=True)
+class Pattern:
+    id: str
+    kind: str
+    donor_part: str
+    donor_index: int
+    slots: tuple[Slot, ...]
+    members: tuple[int, ...]
+    cohesion: float | None
+    donor_reason: str
+    source: str
+
+    def to_json(self) -> dict:
+        return {
+            "id": self.id,
+            "kind": self.kind,
+            "source": self.source,
+            "donor": {
+                "part": self.donor_part,
+                "index": self.donor_index if self.donor_index >= 0 else None,
+            },
+            "slots": [s.to_json() for s in self.slots],
+            "evidence": {
+                "members": list(self.members),
+                "cohesion": self.cohesion,
+                "donor_reason": self.donor_reason,
+            },
+        }
+
+
+@dataclass(frozen=True)
+class PatternSource:
+    filename: str
+    sha256: str
+
+    def to_json(self) -> dict:
+        return {"filename": self.filename, "sha256": self.sha256}
+
+
+@dataclass(frozen=True)
+class PatternLibrary:
+    source: PatternSource
+    patterns: tuple[Pattern, ...]
+    notes: tuple[str, ...] = ()
+    version: str = SCHEMA_VERSION
+
+    def to_json(self) -> dict:
+        return {
+            "version": self.version,
+            "source": self.source.to_json(),
+            "patterns": [p.to_json() for p in self.patterns],
+            "notes": list(self.notes),
+        }
+
+
+# --- план колоды -------------------------------------------------------
+#
+# Форма соответствует contracts/deck-plan.schema.json. См. ADR-0002, ADR-0009.
+
+
+@dataclass(frozen=True)
+class Fill:
+    """Что подставить в один слот."""
+
+    slot_id: str
+    kind: str
+    text: str | None = None
+    items: tuple[str, ...] | None = None
+    ref: str | None = None
+    over_capacity: bool = False
+    #: Шкала кегля в процентах, которую стадия VERIFY сочла нужной. `None` —
+    #: не трогали. Решение живёт здесь, а не в файле: сборка обязана оставаться
+    #: чистой функцией от шаблона и плана (`ADR-0005`, `PLAN-4.0`).
+    font_scale: int | None = None
+
+    def to_json(self) -> dict:
+        return {
+            "slot_id": self.slot_id,
+            "kind": self.kind,
+            "text": self.text,
+            "items": list(self.items) if self.items is not None else None,
+            "ref": self.ref,
+            "font_scale": self.font_scale,
+            "over_capacity": self.over_capacity,
+        }
+
+
+@dataclass(frozen=True)
+class PlannedSlide:
+    index: int
+    pattern_id: str
+    fills: tuple[Fill, ...]
+    reason: str
+    origin_section: str | None = None
+    origin_part: int | None = None
+    origin_of: int | None = None
+    notes: str | None = None
+
+    def to_json(self) -> dict:
+        origin = None
+        if self.origin_section is not None:
+            origin = {
+                "section": self.origin_section,
+                "part": self.origin_part,
+                "of": self.origin_of,
+            }
+        return {
+            "index": self.index,
+            "pattern_id": self.pattern_id,
+            "fills": [f.to_json() for f in self.fills],
+            "reason": self.reason,
+            "origin": origin,
+            "notes": self.notes,
+        }
+
+
+@dataclass(frozen=True)
+class PlanSource:
+    content: str
+    design_system_sha256: str
+    patterns_sha256: str
+
+    def to_json(self) -> dict:
+        return {
+            "content": self.content,
+            "design_system_sha256": self.design_system_sha256,
+            "patterns_sha256": self.patterns_sha256,
+        }
+
+
+@dataclass(frozen=True)
+class DeckPlan:
+    source: PlanSource
+    slides: tuple[PlannedSlide, ...]
+    planner: str = "deterministic"
+    unplaced: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
+    version: str = SCHEMA_VERSION
+
+    def to_json(self) -> dict:
+        return {
+            "version": self.version,
+            "source": self.source.to_json(),
+            "slides": [s.to_json() for s in self.slides],
+            "diagnostics": {
+                "planner": self.planner,
+                "unplaced": list(self.unplaced),
+                "warnings": list(self.warnings),
+            },
+        }

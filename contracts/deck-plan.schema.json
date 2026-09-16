@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mimeo/contracts/deck-plan.schema.json",
+  "title": "DeckPlan",
+  "description": "План колоды: что и в какой слот подставить. Контракт между стадиями PLAN и COMPOSE. См. ADR-0002, ADR-0009.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "source",
+    "slides",
+    "diagnostics"
+  ],
+  "properties": {
+    "version": {
+      "const": "1.1"
+    },
+    "source": {
+      "type": "object",
+      "description": "К чему привязан план. Хеши артефактов обязательны: без них COMPOSE не заметит, что шаблон переразобрали и идентификаторы означают уже другое.",
+      "additionalProperties": false,
+      "required": [
+        "content",
+        "design_system_sha256",
+        "patterns_sha256"
+      ],
+      "properties": {
+        "content": {
+          "type": "string",
+          "description": "Имя источника контента"
+        },
+        "design_system_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "patterns_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "slides": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "index",
+          "pattern_id",
+          "fills",
+          "reason"
+        ],
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pattern_id": {
+            "type": "string",
+            "pattern": "^p[0-9]{2,}$"
+          },
+          "fills": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "slot_id",
+                "kind"
+              ],
+              "properties": {
+                "slot_id": {
+                  "type": "string",
+                  "pattern": "^s[0-9]{2,}$"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "text",
+                    "list",
+                    "number",
+                    "image",
+                    "chart",
+                    "table"
+                  ]
+                },
+                "text": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "items": {
+                  "type": [
+                    "array",
+                    "null"
+                  ],
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "ref": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Путь или идентификатор изображения"
+                },
+                "over_capacity": {
+                  "type": "boolean",
+                  "description": "Текст запланирован плотнее ёмкости слота. Не ошибка: стадия VERIFY ужмёт кегль по растру (ADR-0005). Флаг говорит ей, где смотреть в первую очередь."
+                },
+                "font_scale": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 10,
+                  "maximum": 100,
+                  "description": "Шкала кегля в процентах, назначенная стадией VERIFY: текст не влезал, и его ужали. null — слот не трогали. Применяет COMPOSE, записывая a:normAutofit; сам план остаётся единственным источником решения (ADR-0005)."
+                }
+              }
+            }
+          },
+          "reason": {
+            "type": "string",
+            "description": "Почему выбран этот паттерн. Не для отладки: это показывают эксперту на питче."
+          },
+          "origin": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Из какого куска контента собран слайд. Нужно петле ремонта на стадии VERIFY.",
+            "additionalProperties": false,
+            "required": [
+              "section"
+            ],
+            "properties": {
+              "section": {
+                "type": "string"
+              },
+              "part": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1
+              },
+              "of": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1
+              }
+            }
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Заметки докладчика, если запрошены (OQ-08)"
+          }
+        }
+      }
+    },
+    "diagnostics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "planner",
+        "unplaced",
+        "warnings"
+      ],
+      "properties": {
+        "planner": {
+          "type": "string",
+          "enum": [
+            "deterministic",
+            "llm",
+            "mixed"
+          ],
+          "description": "Каким путём построен план. deterministic — без модели вообще (ADR-0009)."
+        },
+        "unplaced": {
+          "type": "array",
+          "description": "Куски контента, которым не нашлось места. Пустой список — хорошо, непустой — честный список потерь.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
