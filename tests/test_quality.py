@@ -24,6 +24,7 @@ from mimeo.plan.quality import (
     DeckScore,
     better,
     is_broken,
+    is_tight,
     max_repairable_ratio,
     score_deck,
 )
@@ -138,13 +139,63 @@ def test_mutation_emptying_text_worsens_the_thin_step(planned):
     assert hurt.thin > base.thin
 
 
+def test_mutation_mild_overflow_worsens_the_tight_step(planned):
+    """Удлинить тексты умеренно — обязана вырасти ступень «переполнено, поправимо».
+
+    Ступень заведена 16 сентября после сверки с глазом: без неё колода VK
+    WorkSpace получала ноль поломок, а на растре три заголовка карточек уезжали
+    под плашку (`WORKLOG/2026-09-16-scales-vs-eye.md`).
+    """
+    plan, patterns = planned
+    base = score_deck(plan, patterns)
+    slides = tuple(
+        dataclasses.replace(
+            sl,
+            fills=tuple(
+                dataclasses.replace(f, text=f.text * 2) if f.text else f
+                for f in sl.fills
+            ),
+        )
+        for sl in plan.slides
+    )
+    hurt = score_deck(dataclasses.replace(plan, slides=slides), patterns)
+    assert hurt.tight + hurt.broken > base.tight + base.broken
+    assert better(base, hurt)
+
+
+def test_broken_and_tight_never_count_the_same_slot(planned):
+    """Ступени не пересекаются: сломанный слот не считается ещё и тесным.
+
+    Иначе один слот попал бы в обе ступени, и вес его удвоился бы молча.
+    """
+    plan, patterns = planned
+    by_id = {p.id: p for p in patterns.patterns}
+    for slide in plan.slides:
+        pattern = by_id.get(slide.pattern_id)
+        if pattern is None:
+            continue
+        slots = {s.id: s for s in pattern.slots}
+        for fill in slide.fills:
+            slot = slots.get(fill.slot_id)
+            if slot is None:
+                continue
+            assert not (is_broken(slot, fill) and is_tight(slot, fill))
+
+
+def test_a_tight_slot_is_worse_than_a_roomy_one():
+    """При прочих равных колода без переполнений лучше, даже если ремонт справится."""
+    tight = DeckScore(lost=0, broken=0, tight=3, layouts=7, thin=1, slides=9, fills=26)
+    roomy = DeckScore(lost=0, broken=0, tight=0, layouts=7, thin=1, slides=9, fills=26)
+    assert better(roomy, tight)
+
+
 # --- старшинство ступеней ----------------------------------------------
 
 
 def test_lost_content_outweighs_everything_below():
     """Потеря контента не окупается ни разнообразием, ни отсутствием поломок."""
-    perfect_but_lossy = DeckScore(lost=1, broken=0, layouts=9, thin=0, slides=9, fills=30)
-    ugly_but_whole = DeckScore(lost=0, broken=5, layouts=1, thin=20, slides=9, fills=30)
+    perfect_but_lossy = DeckScore(lost=1, broken=0, tight=0, layouts=9, thin=0, slides=9, fills=30)
+    ugly_but_whole = DeckScore(lost=0, broken=5, tight=9, layouts=1, thin=20, slides=9, fills=30)
     assert better(ugly_but_whole, perfect_but_lossy)
 
 
@@ -155,15 +206,15 @@ def test_diversity_never_pays_for_a_broken_slot():
     (`WORKLOG/2026-09-16-rank-capacity.md`): раскладки с нулевым перебором
     вытеснялись ради несхожести, и никто размен не взвешивал.
     """
-    diverse_broken = DeckScore(lost=0, broken=1, layouts=9, thin=0, slides=9, fills=30)
-    dull_whole = DeckScore(lost=0, broken=0, layouts=2, thin=0, slides=9, fills=30)
+    diverse_broken = DeckScore(lost=0, broken=1, tight=0, layouts=9, thin=0, slides=9, fills=30)
+    dull_whole = DeckScore(lost=0, broken=0, tight=0, layouts=2, thin=0, slides=9, fills=30)
     assert better(dull_whole, diverse_broken)
 
 
 def test_tie_on_every_step_is_a_tie():
     """Полное равенство обязано быть равенством, а не случайным порядком."""
-    one = DeckScore(lost=0, broken=1, layouts=4, thin=2, slides=9, fills=30)
-    two = DeckScore(lost=0, broken=1, layouts=4, thin=2, slides=6, fills=12)
+    one = DeckScore(lost=0, broken=1, tight=3, layouts=4, thin=2, slides=9, fills=30)
+    two = DeckScore(lost=0, broken=1, tight=3, layouts=4, thin=2, slides=6, fills=12)
     assert not better(one, two) and not better(two, one)
 
 

@@ -8,6 +8,7 @@
 |---|---|
 | потеряно единиц контента | ноль, это запрет |
 | слотов сломано безвозвратно | меньше |
+| слотов переполнено, но поправимо | меньше |
 | уникальных раскладок в колоде | больше |
 | заливок «на донышке» | меньше |
 
@@ -16,6 +17,15 @@
 целых чисел вопрос порога не возникает вовсе — разница в один сломанный слот
 реальна по определению. Это же лишает весы последней возможности быть
 подогнанными (`PLAN-2.5`, логическая проверка 1).
+
+**Ступень «переполнено, но поправимо» добавлена 16 сентября после сверки с
+глазом** (`WORKLOG/2026-09-16-scales-vs-eye.md`). Без неё весы дали колоде VK
+WorkSpace ноль поломок, а на растре три заголовка карточек уезжали под плашку.
+Замечательно здесь то, **чья** мерка оказалась права: наша грубая оценка
+«знаков к ёмкости» переполнение видела (r до 1.91), а точный замер PowerPoint
+через доступное место — нет. Вопросы разные: оценка спрашивает «влезает ли текст
+в слот, каким его задумал дизайнер», детектор — «сталкивается ли текст с
+чем-нибудь». Зритель ближе к первому.
 
 **Чего весы не видят и видеть не могут:** осмысленности заголовка, порядка
 повествования, попадания в стиль. Они меряют вёрстку, а не презентацию. Поэтому
@@ -55,20 +65,21 @@ class DeckScore:
 
     lost: int       # ступень 1 — потеряно единиц контента
     broken: int     # ступень 2 — слотов сломано безвозвратно
-    layouts: int    # ступень 3 — уникальных раскладок
-    thin: int       # ступень 4 — заливок «на донышке»
+    tight: int      # ступень 3 — переполнено, но ремонт вытянет
+    layouts: int    # ступень 4 — уникальных раскладок
+    thin: int       # ступень 5 — заливок «на донышке»
     slides: int     # справочно
     fills: int      # справочно
 
     @property
-    def key(self) -> tuple[int, int, int, int]:
+    def key(self) -> tuple[int, int, int, int, int]:
         """Ключ сравнения по старшинству. **Меньше — лучше.**
 
         Разнообразие входит со знаком минус: оно единственное, чего хочется
         больше. Ничья по всем четырём разрешается снаружи — идентификатором
         варианта, потому что воспроизводимость обязательна.
         """
-        return (self.lost, self.broken, -self.layouts, self.thin)
+        return (self.lost, self.broken, self.tight, -self.layouts, self.thin)
 
     @property
     def admissible(self) -> bool:
@@ -83,6 +94,7 @@ class DeckScore:
         return {
             "lost": self.lost,
             "broken": self.broken,
+            "tight": self.tight,
             "layouts": self.layouts,
             "thin": self.thin,
             "slides": self.slides,
@@ -136,6 +148,24 @@ def is_broken(slot: Slot, fill: Fill) -> bool:
     return fill_length(fill) / slot.capacity.max_chars > max_repairable_ratio(pt)
 
 
+def is_tight(slot: Slot, fill: Fill) -> bool:
+    """Переполнен ли слот по оценке — текста больше, чем задумано дизайнером.
+
+    Ступень ниже поломки и **не пересекается** с ней: сломанные считаются
+    отдельно, иначе один слот попал бы в обе и вес его удвоился бы молча.
+
+    Переполнение поправимо: ремонт ужмёт кегль. Но ужатый текст мельче соседнего
+    и заметен, а иногда ремонт до него просто не доходит — на слайде 2 VK
+    WorkSpace три таких слота остались нетронутыми, потому что детектор их не
+    увидел (`OQ-18`).
+    """
+    if slot.capacity is None or not slot.capacity.max_chars:
+        return False
+    if is_broken(slot, fill):
+        return False
+    return fill_length(fill) / slot.capacity.max_chars > 1.0
+
+
 def _is_thin(slot: Slot, fill: Fill) -> bool:
     """Заполнен ли слот «на донышке» — заметно меньше своего ориентира."""
     target = slot.capacity.target_chars if slot.capacity else None
@@ -147,7 +177,7 @@ def _is_thin(slot: Slot, fill: Fill) -> bool:
 def score_deck(plan: DeckPlan, patterns: PatternLibrary) -> DeckScore:
     """Оценить колоду дешёвым ярусом весов. PowerPoint не нужен."""
     by_id = {p.id: p for p in patterns.patterns}
-    broken = thin = fills = 0
+    broken = tight = thin = fills = 0
     for slide in plan.slides:
         pattern = by_id.get(slide.pattern_id)
         if pattern is None:
@@ -160,11 +190,14 @@ def score_deck(plan: DeckPlan, patterns: PatternLibrary) -> DeckScore:
             fills += 1
             if is_broken(slot, fill):
                 broken += 1
+            elif is_tight(slot, fill):
+                tight += 1
             if _is_thin(slot, fill):
                 thin += 1
     return DeckScore(
         lost=len(plan.unplaced),
         broken=broken,
+        tight=tight,
         layouts=len({s.pattern_id for s in plan.slides}),
         thin=thin,
         slides=len(plan.slides),

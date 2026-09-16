@@ -104,7 +104,7 @@ def report_plan() -> None:
     doc = load_content(CONTENT)
     print("| Шаблон | Паттернов | Слайдов | Не размещено | Сверх ёмкости | Предупр. "
           "| Виды раскладок |")
-    print("|---|---|---|---|---|---|---|")
+    print("|---|---|---|---|---|---|---|---|")
     clean = 0
     total = 0
     for f in samples():
@@ -125,7 +125,7 @@ def report_compose() -> None:
     os.makedirs("out/decks", exist_ok=True)
     print("| Шаблон | Слайдов | Подставлено слотов | Унаследовано фигур "
           "| Структурных проблем | Круговая | python-pptx | КБ | Сек |")
-    print("|---|---|---|---|---|---|---|---|---|")
+    print("|---|---|---|---|---|---|---|---|---|---|")
     bad = 0
     total = 0
     for f in samples():
@@ -277,8 +277,8 @@ def report_quality() -> None:
     inputs = {"demo": load_content(CONTENT),
               "prose": load_content("examples/content-prose.md")}
     print("| Шаблон | Часть | Вход | Слайдов | Заливок | Потеряно | Сломано | "
-          "Раскладок | На донышке |")
-    print("|---|---|---|---|---|---|---|---|---|")
+          "Тесно | Раскладок | На донышке |")
+    print("|---|---|---|---|---|---|---|---|---|---|")
     totals = {}
     for f in samples():
         name = os.path.basename(f)
@@ -288,16 +288,16 @@ def report_quality() -> None:
         for label, doc in inputs.items():
             plan = plan_deck(doc, a.patterns, sha)
             sc = score_deck(plan, a.patterns)
-            acc = totals.setdefault((part, label), [0, 0, 0, 0, 0])
+            acc = totals.setdefault((part, label), [0, 0, 0, 0, 0, 0])
             acc[0] += sc.slides; acc[1] += sc.fills; acc[2] += sc.lost
-            acc[3] += sc.broken; acc[4] += sc.thin
+            acc[3] += sc.broken; acc[4] += sc.tight; acc[5] += sc.thin
             print(f"| `{name[:42]}` | {part} | {label} | {sc.slides} | {sc.fills} "
-                  f"| {sc.lost} | {sc.broken} | {sc.layouts} | {sc.thin} |")
+                  f"| {sc.lost} | {sc.broken} | {sc.tight} | {sc.layouts} | {sc.thin} |")
     print()
-    print("| Часть | Вход | Слайдов | Заливок | Потеряно | Сломано | На донышке |")
-    print("|---|---|---|---|---|---|---|")
+    print("| Часть | Вход | Слайдов | Заливок | Потеряно | Сломано | Тесно | На донышке |")
+    print("|---|---|---|---|---|---|---|---|")
     for (part, label), a in sorted(totals.items()):
-        print(f"| {part} | {label} | {a[0]} | {a[1]} | {a[2]} | {a[3]} | {a[4]} |")
+        print(f"| {part} | {label} | {a[0]} | {a[1]} | {a[2]} | {a[3]} | {a[4]} | {a[5]} |")
 
 
 def main() -> int:
