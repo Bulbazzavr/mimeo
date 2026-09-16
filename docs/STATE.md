@@ -68,6 +68,7 @@ PowerPoint**; переполнения вёрстки 5→0, 3→0, 2→0 за 8
 | PLAN | Объём колоды под цель (`--slides`) | `prose.fit_topic_count`, `deterministic._forced_parts` |
 | PLAN | Подбор раскладок | `mimeo/plan/matching.py` |
 | PLAN | Планировщик без модели | `mimeo/plan/deterministic.py` |
+| PLAN | Весы колоды, дешёвый ярус (`ADR-0019`) | `mimeo/plan/quality.py` |
 | PLAN | Промпт-контракт | `mimeo/plan/prompt.py` |
 | PLAN | Проверка и ремонт ответа | `mimeo/plan/validate.py` |
 | COMPOSE | Запись пакета | `mimeo/compose/package.py` |

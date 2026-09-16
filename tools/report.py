@@ -255,10 +255,55 @@ def report_volume(content: str, slides: str | None) -> None:
               f"| {len(free.slides)} | {len(aim.slides)} | {over(free)}/{over(aim)} |")
 
 
+#: Отложенная часть корпуса (`ADR-0019`). Настраиваемся на своих одиннадцати
+#: шаблонах, проверяемся на трёх выданных — их выбирали не мы, и это самое
+#: близкое к финальной ситуации, что у нас есть. Список зафиксирован здесь, а не
+#: живёт в голове: иначе его незаметно подвинут в удобную сторону.
+HOLDOUT = (
+    "2_Датасет VK Tech шаблон.pptx",
+    "2_Датасет VK_WorkSpace_Клиентская_конференция_Шаблон_03.pptx",
+    "2_Датасет Шаблон презентации VK Education.pptx",
+)
+
+
+def report_quality() -> None:
+    """Весы колоды, дешёвый ярус: базовая линия по корпусу (`PLAN-2.5`).
+
+    Столбцы — ступени сравнения по старшинству: потери, поломки, разнообразие,
+    «на донышке». Меньше лучше везде, кроме разнообразия.
+    """
+    from mimeo.plan.quality import score_deck
+
+    inputs = {"demo": load_content(CONTENT),
+              "prose": load_content("examples/content-prose.md")}
+    print("| Шаблон | Часть | Вход | Слайдов | Заливок | Потеряно | Сломано | "
+          "Раскладок | На донышке |")
+    print("|---|---|---|---|---|---|---|---|---|")
+    totals = {}
+    for f in samples():
+        name = os.path.basename(f)
+        part = "отложенная" if name in HOLDOUT else "настроечная"
+        a = analyze_template(f)
+        sha = a.design_system.source.sha256
+        for label, doc in inputs.items():
+            plan = plan_deck(doc, a.patterns, sha)
+            sc = score_deck(plan, a.patterns)
+            acc = totals.setdefault((part, label), [0, 0, 0, 0, 0])
+            acc[0] += sc.slides; acc[1] += sc.fills; acc[2] += sc.lost
+            acc[3] += sc.broken; acc[4] += sc.thin
+            print(f"| `{name[:42]}` | {part} | {label} | {sc.slides} | {sc.fills} "
+                  f"| {sc.lost} | {sc.broken} | {sc.layouts} | {sc.thin} |")
+    print()
+    print("| Часть | Вход | Слайдов | Заливок | Потеряно | Сломано | На донышке |")
+    print("|---|---|---|---|---|---|---|")
+    for (part, label), a in sorted(totals.items()):
+        print(f"| {part} | {label} | {a[0]} | {a[1]} | {a[2]} | {a[3]} | {a[4]} |")
+
+
 def main() -> int:
     global TEMPLATES
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("stage", choices=("analyze", "plan", "compose", "prose", "volume"))
+    parser.add_argument("stage", choices=("analyze", "plan", "compose", "prose", "volume", "quality"))
     parser.add_argument("--content", default="examples/content-prose.md",
                         help="вход для stage=prose (по умолчанию прозаический пример)")
     parser.add_argument("--slides", help="цель для stage=volume (по умолчанию 10-15)")
@@ -273,6 +318,9 @@ def main() -> int:
         return 0
     if args.stage == "volume":
         report_volume(args.content, args.slides)
+        return 0
+    if args.stage == "quality":
+        report_quality()
         return 0
     {"analyze": report_analyze, "plan": report_plan, "compose": report_compose}[args.stage]()
     return 0

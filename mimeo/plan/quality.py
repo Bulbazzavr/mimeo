@@ -1,0 +1,177 @@
+"""Весы для колоды: дешёвый ярус (`ADR-0019`, `PLAN-2.5`).
+
+Четыре счётные величины, все считаются **по плану, без PowerPoint**. Сравнение
+**по старшинству**, а не взвешенной суммой: сумма потребовала бы весов, а веса —
+это те же подбираемые константы этажом выше, от которых мы и лечимся.
+
+| Ступень | Направление |
+|---|---|
+| потеряно единиц контента | ноль, это запрет |
+| слотов сломано безвозвратно | меньше |
+| уникальных раскладок в колоде | больше |
+| заливок «на донышке» | меньше |
+
+**Почему величины счётные, а не доли.** Порог значимости («разница меньше
+такой-то — ничья») брать неоткуда: движок детерминирован, шума в нём нет. У
+целых чисел вопрос порога не возникает вовсе — разница в один сломанный слот
+реальна по определению. Это же лишает весы последней возможности быть
+подогнанными (`PLAN-2.5`, логическая проверка 1).
+
+**Чего весы не видят и видеть не могут:** осмысленности заголовка, порядка
+повествования, попадания в стиль. Они меряют вёрстку, а не презентацию. Поэтому
+каждое улучшение весов проверяется растром, и при расхождении правы глаза.
+
+**Слепое пятно, которое сейчас спит:** порядок слайдов. Он задан входным текстом
+и не варьируется, поэтому колоду с верным содержанием в бессмысленной
+последовательности весы не отличат от хорошей. Как только появится `Z-37`
+(«назначение» как ось порядка), это станет главной дырой.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+
+from ..model import DeckPlan, Fill, PatternLibrary, Slot
+
+# Пол читаемости принадлежит стадии VERIFY: она владеет ремонтом и знает, докуда
+# может ужать. PLAN спрашивает её «а это ты вытянешь?» — это запрос, а не
+# нарушение слоёв, и обратной зависимости нет (`verify` не импортирует `plan`).
+from ..verify.repair import HARD_MIN_SCALE, MIN_VISIBLE_PT, TARGET_RATIO
+
+# Доля от ориентира, ниже которой слот считается заполненным «на донышке».
+# Та же величина, что в ранге: одно определение на весь PLAN.
+from .matching import _SLACK_RATIO
+
+#: Кегль донора записан словами в обосновании ёмкости: «… при 10 pt, …».
+#: Отдельного поля у `Capacity` нет, а заводить его ради весов — менять контракт
+#: артефакта ради измерителя. Разбор строки честнее.
+_PT = re.compile(r"при\s+([\d.]+)\s*pt")
+
+
+@dataclass(frozen=True)
+class DeckScore:
+    """Оценка колоды. Сравнивать через `key`, а не поля по отдельности."""
+
+    lost: int       # ступень 1 — потеряно единиц контента
+    broken: int     # ступень 2 — слотов сломано безвозвратно
+    layouts: int    # ступень 3 — уникальных раскладок
+    thin: int       # ступень 4 — заливок «на донышке»
+    slides: int     # справочно
+    fills: int      # справочно
+
+    @property
+    def key(self) -> tuple[int, int, int, int]:
+        """Ключ сравнения по старшинству. **Меньше — лучше.**
+
+        Разнообразие входит со знаком минус: оно единственное, чего хочется
+        больше. Ничья по всем четырём разрешается снаружи — идентификатором
+        варианта, потому что воспроизводимость обязательна.
+        """
+        return (self.lost, self.broken, -self.layouts, self.thin)
+
+    @property
+    def admissible(self) -> bool:
+        """Потеря контента — запрет, а не «хуже». Такой вариант выбывает.
+
+        Если выбывают все, выбор делается среди наименьших потерь и об этом
+        говорится словами: молча отдать колоду с потерянным разделом нельзя.
+        """
+        return self.lost == 0
+
+    def to_json(self) -> dict:
+        return {
+            "lost": self.lost,
+            "broken": self.broken,
+            "layouts": self.layouts,
+            "thin": self.thin,
+            "slides": self.slides,
+            "fills": self.fills,
+        }
+
+
+def nominal_pt(slot: Slot) -> float | None:
+    """Кегль донора для этого слота, из обоснования ёмкости. `None` — неизвестен."""
+    if slot.capacity is None or not slot.capacity.basis:
+        return None
+    found = _PT.search(slot.capacity.basis)
+    return float(found.group(1)) if found else None
+
+
+def max_repairable_ratio(pt: float) -> float:
+    """Наибольшее отношение «знаков к ёмкости», которое VERIFY ещё вытянет.
+
+    Высота набранного текста падает примерно как квадрат шкалы кегля
+    (`repair.py`), целимся с запасом `TARGET_RATIO`, ниже пола читаемости не
+    опускаемся. Отсюда предел — и он **зависит от кегля донора**, а не один на
+    все слоты: слот на 10 pt уже стоит на полу, и ужать его нельзя вовсе.
+
+    Замер по корпусу — `WORKLOG/2026-09-16-broken-slot-threshold.md`: сломанных
+    заливок 22 из 472, и **все в слотах 14 pt и мельче**.
+    """
+    smallest = max(HARD_MIN_SCALE / 100.0, MIN_VISIBLE_PT / pt)
+    return TARGET_RATIO / (smallest * smallest)
+
+
+def fill_length(fill: Fill) -> int:
+    """Сколько знаков несёт заливка. Список считается вместе с разделителями."""
+    if fill.text:
+        return len(fill.text)
+    items = fill.items or ()
+    return sum(len(i) for i in items) + max(0, len(items) - 1)
+
+
+def is_broken(slot: Slot, fill: Fill) -> bool:
+    """Сломан ли слот безвозвратно: ужать до читаемого уже не выйдет.
+
+    Неизвестный кегль **не считается поломкой**: молчать о том, чего не знаем,
+    честнее, чем записывать в дефекты. Измеритель обязан отличать «проверено и
+    чисто» от «проверить не смог», и здесь это второе.
+    """
+    if slot.capacity is None or not slot.capacity.max_chars:
+        return False
+    pt = nominal_pt(slot)
+    if pt is None or pt <= 0:
+        return False
+    return fill_length(fill) / slot.capacity.max_chars > max_repairable_ratio(pt)
+
+
+def _is_thin(slot: Slot, fill: Fill) -> bool:
+    """Заполнен ли слот «на донышке» — заметно меньше своего ориентира."""
+    target = slot.capacity.target_chars if slot.capacity else None
+    if not target:
+        return False
+    return fill_length(fill) / target < _SLACK_RATIO
+
+
+def score_deck(plan: DeckPlan, patterns: PatternLibrary) -> DeckScore:
+    """Оценить колоду дешёвым ярусом весов. PowerPoint не нужен."""
+    by_id = {p.id: p for p in patterns.patterns}
+    broken = thin = fills = 0
+    for slide in plan.slides:
+        pattern = by_id.get(slide.pattern_id)
+        if pattern is None:
+            continue
+        slots = {s.id: s for s in pattern.slots}
+        for fill in slide.fills:
+            slot = slots.get(fill.slot_id)
+            if slot is None or slot.capacity is None or not slot.capacity.max_chars:
+                continue
+            fills += 1
+            if is_broken(slot, fill):
+                broken += 1
+            if _is_thin(slot, fill):
+                thin += 1
+    return DeckScore(
+        lost=len(plan.unplaced),
+        broken=broken,
+        layouts=len({s.pattern_id for s in plan.slides}),
+        thin=thin,
+        slides=len(plan.slides),
+        fills=fills,
+    )
+
+
+def better(left: DeckScore, right: DeckScore) -> bool:
+    """Левая колода строго лучше правой по старшинству ступеней."""
+    return left.key < right.key
