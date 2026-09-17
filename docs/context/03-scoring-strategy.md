@@ -1,6 +1,6 @@
 ---
 id: CTX-SCORE
-updated: 2026-09-14
+updated: 2026-09-17
 depends-on: CTX-TASK, CTX-RULES
 ---
 
