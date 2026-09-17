@@ -102,6 +102,29 @@ def test_demo_content_is_committed() -> None:
     assert not any(rule.startswith("examples") for rule in rules), rules
 
 
+def test_tz_derived_cache_can_never_be_committed() -> None:
+    """Кэш ответов модели по данным ТЗ не должен попадать в репозиторий.
+
+    Обещано `PLAN-2.6` (логическая проверка 1, находка 1): ответ модели о
+    выданном шаблоне — производная конфиденциальных данных (п. 7.3.5 Положения),
+    и один общий кэш означал бы тихую утечку через коммит.
+
+    Правило проверяется действием, а не доверием: `tz/*` исключён целиком, и
+    любой путь под ним — тоже.
+    """
+    rules = [
+        line.strip()
+        for line in _read(os.path.join(ROOT, ".gitignore")).splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    assert "tz/*" in rules, (
+        "в .gitignore нет строки `tz/*` — кэш по данным ТЗ может утечь в коммит"
+    )
+    # Исключение ровно одно и оно наше собственное: заметка о том, что это за каталог.
+    negations = [r for r in rules if r.startswith("!tz/")]
+    assert negations == ["!tz/README.md"], negations
+
+
 def test_state_names_the_next_stage() -> None:
     """`STATE` — точка входа новой сессии; он обязан отвечать «что дальше»."""
     state = _read(os.path.join(DOCS, "STATE.md"))
