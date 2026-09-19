@@ -134,7 +134,7 @@ python tools/render_probe.py  out/deck.pptx -o out/render   # слайды в PN
 
 Требование ТЗ, и оно закрыто (`ADR-0020`, `Z-26`). Движок порождает колоду на
 каждую из 27 политик ранга (`config/variants.json`), оценивает весами и
-отбирает те, что **заметно различаются** — не меньше чем на треть слайдов:
+отбирает те, что **заметно различаются** — не меньше чем на 30% слайдов:
 
 ```
 python -m mimeo build шаблон.pptx examples/content-mimeo.md -o out --output out/deck.pptx --variants 3
