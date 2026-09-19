@@ -407,3 +407,24 @@ def test_every_test_file_is_described_in_audit() -> None:
         "у файла тестов пустой docstring: в AUDIT.md нечего написать про его "
         "область покрытия. Добавьте первую строку docstring и перегенерируйте."
     )
+
+
+def test_tests_named_in_audit_exist() -> None:
+    """`AUDIT.md` называет отдельные тесты поимённо — например, чем именно
+    проверяется побайтовая детерминированность.
+
+    Имя, которое переименовали, документ не заметит: таблица порождается, а
+    проза вокруг неё пишется руками. Проверка заведена при логической вычитке
+    19 сентября, сразу как имена появились, — а не после того, как разошлись.
+    """
+    audit = _read(os.path.join(ROOT, "AUDIT.md"))
+    named = set(re.findall(r"`(test_[a-z0-9_]+)`", audit))
+    defined = set()
+    for name in os.listdir(os.path.join(ROOT, "tests")):
+        if name.startswith("test_") and name.endswith(".py"):
+            defined.add(name)                                  # имя файла
+            defined |= set(
+                re.findall(r"^def (test_[a-z0-9_]+)", _read(os.path.join(ROOT, "tests", name)), re.M)
+            )
+    missing = sorted(n for n in named if n not in defined and f"{n}.py" not in defined)
+    assert not missing, f"в AUDIT.md названы, но не существуют: {missing}"

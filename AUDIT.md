@@ -40,7 +40,7 @@ python tools/audit_doc.py --write
 | [`tests/test_compose.py`](tests/test_compose.py) | 18 | Сборка колоды. ADR-0011, ADR-0012. |
 | [`tests/test_config_version.py`](tests/test_config_version.py) | 8 | Замок версий конфигов: он обязан уметь падать. |
 | [`tests/test_content.py`](tests/test_content.py) | 9 | Нормализация контента. Шаг Ш1 плана `PLAN-2.0`. |
-| [`tests/test_docs.py`](tests/test_docs.py) | 20 | Целостность документации. |
+| [`tests/test_docs.py`](tests/test_docs.py) | 21 | Целостность документации. |
 | [`tests/test_exclusive_donors.py`](tests/test_exclusive_donors.py) | 9 | Доноры, которые нельзя клонировать дважды. `Z-44`, `DOM-PKG §9`, `PLAN-6.1`. |
 | [`tests/test_fitting.py`](tests/test_fitting.py) | 8 | Оценка вместимости. DOM-TEXT §6, §10, ADR-0008. |
 | [`tests/test_mce_prefixes.py`](tests/test_mce_prefixes.py) | 5 | Пространства имён Markup Compatibility переживают пересериализацию. |
@@ -60,7 +60,7 @@ python tools/audit_doc.py --write
 | [`tests/test_verify_repair.py`](tests/test_verify_repair.py) | 20 | Ремонт плана шкалой кегля: монотонность, предел читаемости, честность. |
 | [`tests/test_verify_space.py`](tests/test_verify_space.py) | 19 | Доступное место вместо бокса (`PLAN-4.2`, `ADR-0015`). |
 | [`tests/test_volume.py`](tests/test_volume.py) | 15 | Объём колоды: 10–15 слайдов или сколько задали. `Z-35`, план `PLAN-2.3`. |
-| **всего** | **380** | в 25 файлах |
+| **всего** | **381** | в 25 файлах |
 
 <!-- /порождается -->
 
@@ -170,11 +170,17 @@ python tools/render_probe.py <файл.pptx> -o out/render
 
 Критерий 2 требует воспроизводимости, и она проверяется, а не обещается:
 
-- **побайтовая детерминированность** — один вход даёт тот же выход на всех
-  стадиях;
+- **побайтовая детерминированность** — один вход даёт тот же выход. Проверяется
+  на каждой стадии отдельно (`test_analyze_is_deterministic`,
+  `test_pattern_library_is_deterministic`, `test_plan_is_deterministic`,
+  `test_generation_is_deterministic`) и на **готовом файле**:
+  `test_build_is_reproducible` сравнивает два `.pptx` побайтово;
 - **сеть по умолчанию выключена** (`ADR-0021`): эксперт без видеокарты получит
   наш результат, а не тихо другой;
 - **паспорт конфигов в артефакте** — `deck-plan.json`, `source.configs`: имя,
-  версия и `sha256` каждого конфига, которым получен этот план (`ADR-0022`);
+  версия и `sha256` **всех** конфигов движка на момент прогона, а не только
+  повлиявших на этот план (`ADR-0022`). Так и задумано: чтобы повторить прогон,
+  нужны они все, а какой на что повлиял — вопрос другой, и на него отвечает
+  `diagnostics`;
 - **замо́к версий** — `python tools/config_version.py` падает, если конфиг
   поменяли, а версию не подняли.
