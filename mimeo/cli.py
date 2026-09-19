@@ -239,6 +239,14 @@ def cmd_build(args):
     analysis = analyze_template(args.template)
     target = parse_slides(getattr(args, "slides", None))
     doc = load_content(args.content, target=target)
+
+    # Несколько вариантов вёрстки — отдельная ветка (`ADR-0020`, `Z-26`).
+    # Умолчание не меняется: без флага собирается одна колода ровно как раньше.
+    # Это не вежливость к старому коду — девять сдаточных колод собираются этой
+    # же командой, и молчаливая смена поведения испортила бы их незаметно.
+    if int(getattr(args, "variants", 1) or 1) > 1:
+        return _build_variants(args, analysis, doc, target, started)
+
     plan = plan_deck(
         doc, analysis.patterns, analysis.design_system.source.sha256, target=target
     )
@@ -301,6 +309,73 @@ def cmd_build(args):
     return 2 if problems else 0
 
 
+def _build_variants(args, analysis, doc, target, started):
+    """Три (или сколько попросили) варианта вёрстки одного контента.
+
+    Требование ТЗ, раздел 2, п. 5, и пункт критерия 3, который проверяют
+    наличием. Архитектура — `ADR-0020`, разбор противоречия «различны, но
+    одинаковы» — `PLAN-6.0`.
+    """
+    from .plan.variants import generate, load_policies, report as variants_report, select
+
+    policies, min_distance, source = load_policies()
+    variants = generate(
+        doc, analysis.patterns, analysis.design_system.source.sha256, policies, target
+    )
+    chosen, reason = select(variants, int(args.variants), min_distance)
+
+    os.makedirs(args.out, exist_ok=True)
+    base = args.output or os.path.join(args.out, "deck.pptx")
+    os.makedirs(os.path.dirname(os.path.abspath(base)), exist_ok=True)
+    stem, ext = os.path.splitext(base)
+
+    # Проверка вёрстки применяется **к каждому отобранному варианту**, а не к
+    # одному победителю, как предполагал `ADR-0020`: победитель там был один, а
+    # здесь все три идут в сдачу и все три увидит эксперт. Пропущено в первой
+    # редакции и найдено растром — `WORKLOG/2026-09-19-variants-raster.md`.
+    do_verify = bool(getattr(args, "verify", False))
+    if do_verify:
+        from .verify import verify_deck                       # noqa: PLC0415
+        from .verify.report import describe, write_json       # noqa: PLC0415
+
+    written, worst = [], 0
+    for n, variant in enumerate(chosen, 1):
+        path = f"{stem}-{n}{ext}"
+        plan = variant.plan
+        built = compose_deck(args.template, plan, analysis.patterns, path)
+        verdict = None
+        if do_verify:
+            outcome = verify_deck(
+                args.template, plan, analysis.patterns, path, built,
+                rounds=args.rounds,
+            )
+            verdict, plan, built = outcome.report, outcome.plan, outcome.build
+            write_json(verdict, os.path.join(args.out, f"render-report-{n}.json"))
+        problems = inspect_package(path)
+        worst = max(worst, len(problems))
+        written.append((n, variant, path, built, problems, verdict))
+    elapsed = time.perf_counter() - started
+
+    if not args.quiet:
+        print(f"шаблон      {os.path.basename(args.template)}")
+        print(f"контент     {args.content}")
+        print(f"политик     {len(policies)} ({source}), порог различия {min_distance:.0%}")
+        for line in variants_report(chosen, reason):
+            print(f"            {line}")
+        for n, _v, path, built, problems, verdict in written:
+            print(f"  вариант {n}: слайдов {built.slides}, "
+                  f"структурных проблем {len(problems)} -> {path}")
+            if verdict is not None:
+                for line in describe(verdict):
+                    print(f"    {line}")
+        print(f"время       {elapsed:.2f} с на {len(chosen)} вариант(ов)")
+
+    # Отобрано меньше запрошенного — это не ошибка запуска, а свойство шаблона,
+    # и причина уже напечатана. Кодом возврата отвечает только структурная
+    # проверка, как и в обычной сборке.
+    return 2 if worst else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="mimeo", description="Перенос стиля презентаций: разбор шаблона и сборка колоды."
@@ -342,6 +417,16 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="N|N-M",
         help=f"целевое число слайдов; рамки ТЗ — {TZ_SLIDES}. "
              "По умолчанию объём определяется контентом",
+    )
+    build.add_argument(
+        "--variants",
+        type=int,
+        default=1,
+        metavar="N",
+        help="сколько вариантов вёрстки собрать (ТЗ требует 3). Файлы получают "
+             "суффикс -1, -2, -3. Если шаблон беден раскладками и N заметно "
+             "различных колод из него не выходит, будет собрано меньше и "
+             "названа причина",
     )
     build.add_argument("-q", "--quiet", action="store_true", help="без сводки")
     build.add_argument(

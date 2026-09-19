@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from ..model import DeckPlan, Pattern, PatternLibrary, PlannedSlide, PlanSource
 from .content import ContentBlock, ContentDoc, ContentSection
-from .matching import Match, rank
+from .matching import DEFAULT_TUNING, Match, Tuning, rank
 
 #: На сколько частей максимум дробится один раздел. Дальше честнее признать, что
 #: контент не лёг, чем размазать его по десятку слайдов.
@@ -33,7 +33,10 @@ _POSITIONAL_KINDS = ("cover", "closing")
 #: паттерн — колода читается как машинная, а это прямо критерий «не показать
 #: пальцем». Штраф мягкий: если повтор действительно лучший, он всё равно
 #: победит.
-_REPEAT_PENALTY = 0.25
+#: Значение живёт в `matching.Tuning`, чтобы все три настраиваемые величины
+#: ранга лежали в одном объекте (`ADR-0020`, политики). Здесь оставлено имя
+#: для читаемости этого модуля.
+_REPEAT_PENALTY = DEFAULT_TUNING.repeat
 
 #: Потолок кратности, с которой штраф перестаёт расти. Без потолка раскладка,
 #: использованная пять раз на длинной колоде, проигрывала бы заведомо негодной.
@@ -100,7 +103,13 @@ def split(section: ContentSection, parts: int) -> list[ContentSection]:
 # --- планирование ------------------------------------------------------
 
 
-def _avoid_repeat(matches: list[Match], used: dict[str, int]) -> list[Match]:
+def _avoid_repeat(
+    matches: list[Match],
+    used: dict[str, int],
+    tuning: Tuning = DEFAULT_TUNING,
+    exclusive: frozenset[str] = frozenset(),
+    fired: set[str] | None = None,
+) -> list[Match]:
     """Отодвигает раскладки по частоте их использования во всей колоде.
 
     Раньше сравнивалось только с предыдущим слайдом, и повтор через слайд не
@@ -110,7 +119,25 @@ def _avoid_repeat(matches: list[Match], used: dict[str, int]) -> list[Match]:
     Штраф растёт с числом использований и упирается в потолок: это штраф, а не
     запрет. Если раскладка одна на весь шаблон, она и будет выбираться — на
     двухслайдовом шаблоне повторять больше нечего.
+
+    **Для доноров из `exclusive` это запрет, а не штраф** (`Z-44`). Такой донор
+    несёт диаграмму или внедрённый объект, клоны разделяют одну часть, и
+    PowerPoint отказывается открывать файл **целиком**. Замер: `chart` ×2 и ×3,
+    `oleObject` ×2 и ×3 — `open_failed`; картинки ×3 — цел
+    (`WORKLOG/2026-09-19-z38-baseline.md`).
+
+    Почему запрет, а не дублирование части: дублировать правильнее, но это
+    новые части, новые связи, внедрённая книга у диаграммы и привязанные к
+    слайду идентификаторы у VML. Отложено сознательно — `PLAN-6.1`.
     """
+    banned = [m for m in matches if m.pattern_id in exclusive and used.get(m.pattern_id)]
+    if banned:
+        matches = [m for m in matches if m not in banned]
+        if fired is not None:
+            # Запрет **сработал**: кандидат был и был отброшен. Предупреждать
+            # о самом наличии исключительного донора незачем — он мог и не
+            # пригодиться дважды, а лишнее предупреждение обесценивает нужное.
+            fired.update(m.pattern_id for m in banned)
     if not used:
         return matches
     adjusted = [
@@ -119,7 +146,7 @@ def _avoid_repeat(matches: list[Match], used: dict[str, int]) -> list[Match]:
             kind=m.kind,
             fills=m.fills,
             score=round(
-                m.score - _REPEAT_PENALTY * min(used.get(m.pattern_id, 0), _REPEAT_CAP), 4
+                m.score - tuning.repeat * min(used.get(m.pattern_id, 0), _REPEAT_CAP), 4
             ),
             reason=m.reason,
             leftover=m.leftover,
@@ -167,6 +194,9 @@ def _place(
     last: bool,
     used: dict[str, int] | None = None,
     min_parts: int = 1,
+    tuning: Tuning = DEFAULT_TUNING,
+    exclusive: frozenset[str] = frozenset(),
+    fired: set[str] | None = None,
 ) -> tuple[list[tuple[ContentSection, Match]], int]:
     """Раскладывает раздел, дробя его при необходимости. Возвращает (пары, частей).
 
@@ -184,9 +214,11 @@ def _place(
         tally = dict(used or {})
         for n, chunk in enumerate(chunks):
             ranked = _positional(
-                rank(chunk, patterns), first=first and n == 0, last=last and n == len(chunks) - 1
+                rank(chunk, patterns, tuning),
+                first=first and n == 0,
+                last=last and n == len(chunks) - 1,
             )
-            ranked = _avoid_repeat(ranked, tally)
+            ranked = _avoid_repeat(ranked, tally, tuning, exclusive, fired)
             if not ranked:
                 placed = []
                 break
@@ -217,6 +249,8 @@ def _count_slides(
     sections: list[ContentSection],
     patterns: tuple[Pattern, ...],
     forced: dict[str, int],
+    tuning: Tuning = DEFAULT_TUNING,
+    exclusive: frozenset[str] = frozenset(),
 ) -> int:
     """Сколько слайдов даст такая раскладка. Планирование стоит доли секунды,
     поэтому подгонка считает результат, а не предсказывает его."""
@@ -226,7 +260,8 @@ def _count_slides(
         placed, _ = _place(
             section, patterns,
             first=(n == 0), last=(n == len(sections) - 1),
-            used=used, min_parts=forced.get(section.id, 1),
+            used=used, min_parts=forced.get(section.id, 1), tuning=tuning,
+            exclusive=exclusive,
         )
         for _, m in placed:
             used[m.pattern_id] = used.get(m.pattern_id, 0) + 1
@@ -253,6 +288,8 @@ def _forced_parts(
     patterns: tuple[Pattern, ...],
     target: tuple[int, int] | None,
     ceiling: int | None = None,
+    tuning: Tuning = DEFAULT_TUNING,
+    exclusive: frozenset[str] = frozenset(),
 ) -> dict[str, int]:
     """Кому из разделов велено разойтись на несколько слайдов.
 
@@ -272,7 +309,7 @@ def _forced_parts(
         return {}
     low = target[0]
     forced: dict[str, int] = {}
-    slides = _count_slides(sections, patterns, forced)
+    slides = _count_slides(sections, patterns, forced, tuning, exclusive)
     ceiling = len(patterns) if ceiling is None else ceiling
     while slides < low and slides < ceiling:
         # Самый крупный из тех, кого ещё можно разделить; при равенстве — первый
@@ -289,7 +326,7 @@ def _forced_parts(
             break
         section = best[1]
         forced[section.id] = forced.get(section.id, 1) + 1
-        grown = _count_slides(sections, patterns, forced)
+        grown = _count_slides(sections, patterns, forced, tuning, exclusive)
         if grown <= slides:
             # Дробление не дало прироста — дальше по этому разделу смысла нет.
             del forced[section.id]
@@ -303,6 +340,7 @@ def plan_deck(
     library: PatternLibrary,
     design_system_sha256: str,
     target: tuple[int, int] | None = None,
+    tuning: Tuning = DEFAULT_TUNING,
 ) -> DeckPlan:
     """План колоды. `target` — желаемое число слайдов (`Z-35`, `PLAN-2.3`).
 
@@ -327,7 +365,12 @@ def plan_deck(
         )
 
     sections = _with_cover(doc)
-    forced = _forced_parts(sections, patterns, target)
+    # Доноры, которые нельзя ставить в колоду дважды (`Z-44`). Множество
+    # считается один раз и передаётся вниз: пересчитывать его на каждом
+    # разделе значило бы звать `pkg.rels` в цикле.
+    exclusive = frozenset(p.id for p in patterns if getattr(p, "exclusive", False))
+    fired: set[str] = set()
+    forced = _forced_parts(sections, patterns, target, tuning=tuning, exclusive=exclusive)
     used: dict[str, int] = {}
     for n, section in enumerate(sections):
         placed, parts = _place(
@@ -337,6 +380,9 @@ def plan_deck(
             last=(n == len(sections) - 1),
             used=used,
             min_parts=forced.get(section.id, 1),
+            tuning=tuning,
+            exclusive=exclusive,
+            fired=fired,
         )
         if not placed:
             unplaced.append(section.id)
@@ -362,6 +408,36 @@ def plan_deck(
                     origin_part=part if parts > 1 else None,
                     origin_of=parts if parts > 1 else None,
                 )
+            )
+
+    # Донор с исключительными частями занят — и это надо сказать, а не
+    # подразумевать: иначе «почему тут другая раскладка» останется загадкой
+    # (`PLAN-6.1`, Ш1.3).
+    if fired:
+        names = ", ".join(
+            f"{pid} ({next((p.kind for p in patterns if p.id == pid), '?')})"
+            for pid in sorted(fired)
+        )
+        warnings.append(
+            f"Повтор запрещён для раскладок: {names}. Их доноры несут диаграмму "
+            f"или внедрённый объект, два клона делят одну часть, и PowerPoint "
+            f"отказывается открывать файл целиком (Z-44). Разделам, которым эти "
+            f"раскладки подошли бы, подобраны другие."
+        )
+
+    # Донор несёт часть, которой нет ни в списке разделяемых, ни в списке
+    # исключительных, и при этом повторён. Список исключительных типов собран
+    # из встреченных файлов и **неполон по построению**, поэтому здесь не
+    # запрет, а предупреждение: неизвестный тип должен проявляться словами, а
+    # не неоткрывающимся файлом у эксперта (`PLAN-6.1`, обратный план, п. 7).
+    for pattern in patterns:
+        unknown = getattr(pattern, "unknown_parts", ())
+        if unknown and used.get(pattern.id, 0) > 1:
+            warnings.append(
+                f"Раскладка {pattern.id} повторена {used[pattern.id]} раза, а её "
+                f"донор несёт части незнакомого нам вида: {', '.join(unknown)}. "
+                f"Разделяются ли они между клонами, мы не знаем — если файл не "
+                f"откроется, начинать искать надо отсюда (Z-44)."
             )
 
     if target:

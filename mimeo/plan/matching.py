@@ -52,6 +52,34 @@ _SLACK_RATIO = 0.25
 _OVERFLOW_HARD = 2.5
 _PENALTY_OVERFLOW = 0.35
 
+#: Штраф за повтор раскладки. Живёт здесь, а не в `deterministic`, чтобы все
+#: три настраиваемые величины ранга лежали в одном месте и в одном объекте.
+_REPEAT_PENALTY = 0.25
+
+
+@dataclass(frozen=True)
+class Tuning:
+    """Три величины ранга, которые `ADR-0020` перебирает политиками.
+
+    **Умолчания равны тому, что стоит в продукте**, поэтому вызов без `tuning`
+    ведёт себя ровно как раньше. Это не вежливость к старому коду: девять
+    сдаточных колод собираются той же командой, и молчаливая смена умолчания
+    испортила бы их незаметно.
+
+    Что сюда **не входит и не должно**: пороги весов (`quality.py`). Весы — это
+    линейка, и если каждый вариант мерить своей, сравнение вариантов теряет
+    смысл. Линейка одна на всех, политика меняет только ранг.
+    """
+
+    repeat: float = _REPEAT_PENALTY
+    slack: float = _SLACK_RATIO
+    over: float = _PENALTY_OVERFLOW
+
+
+#: Настройка «как в продукте». Отдельным именем, чтобы в коде было видно, что
+#: умолчание выбрано, а не забыто.
+DEFAULT_TUNING = Tuning()
+
 
 @dataclass(frozen=True)
 class Match:
@@ -152,7 +180,9 @@ def _pick(slots: list[Slot], text: str) -> Slot | None:
     return None
 
 
-def match(section: ContentSection, pattern: Pattern) -> Match | None:
+def match(
+    section: ContentSection, pattern: Pattern, tuning: Tuning = DEFAULT_TUNING
+) -> Match | None:
     """Пробует уложить раздел в паттерн. None — если не годится в принципе."""
     used: set[str] = set()
     fills: list[Fill] = []
@@ -298,7 +328,7 @@ def match(section: ContentSection, pattern: Pattern) -> Match | None:
     empty_required = sum(
         1 for s in pattern.slots if s.required and s.id not in used and s.content_type != "image"
     )
-    thin = sum(1 for ratio in slack if ratio < _SLACK_RATIO)
+    thin = sum(1 for ratio in slack if ratio < tuning.slack)
     over = sum(overflows) / len(overflows) if overflows else 0.0
 
     score = (
@@ -306,7 +336,7 @@ def match(section: ContentSection, pattern: Pattern) -> Match | None:
         + affinity
         - _PENALTY_EMPTY_SLOT * empty_required
         - _PENALTY_SLACK * (thin / max(1, len(slack)))
-        - _PENALTY_OVERFLOW * over
+        - tuning.over * over
     )
 
     return Match(
@@ -349,11 +379,15 @@ def _reason(
     return f"{head} — {fit}, заполнено {placed} мест{tail}"
 
 
-def rank(section: ContentSection, patterns: tuple[Pattern, ...]) -> list[Match]:
+def rank(
+    section: ContentSection,
+    patterns: tuple[Pattern, ...],
+    tuning: Tuning = DEFAULT_TUNING,
+) -> list[Match]:
     """Пригодные паттерны, от лучшего к худшему. Порядок детерминирован."""
     found = []
     for pattern in patterns:
-        m = match(section, pattern)
+        m = match(section, pattern, tuning)
         if m is not None and m.fits:
             found.append(m)
     return sorted(found, key=lambda m: (-m.score, m.pattern_id))
