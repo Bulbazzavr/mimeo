@@ -7,6 +7,11 @@
 
 from __future__ import annotations
 
+import os
+
+import pytest
+
+from mimeo.plan import load_content
 from mimeo.plan.content import ContentBlock, ContentDoc, ContentSection, parse_markdown
 from mimeo.plan.prose import (
     ProseConfig,
@@ -24,6 +29,9 @@ from mimeo.plan.prose import (
 )
 
 CFG = load_config()
+_EXAMPLES = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "examples"
+)
 
 CHAT = (
     "Привет! Нужна презентация про наш сервис доставки «Свежесть» для инвесторов. "
@@ -144,12 +152,30 @@ def test_heading_comes_from_the_start_of_the_topic() -> None:
 def test_single_thesis_topic_does_not_become_its_own_heading() -> None:
     """Тема из одного тезиса: взять его в заголовок значит либо задвоить текст,
     либо оставить слайд с одним заголовком. И то и другое — дефект из
-    Приложения 1 ТЗ. Нашлось при подгонке объёма (`PLAN-2.3`)."""
+    Приложения 1 ТЗ. Нашлось при подгонке объёма (`PLAN-2.3`).
+
+    **Первоисточник проверен 19 сентября и подтвердил это дословно:**
+    Приложение 1 перечисляет «пустой слайд или слайд с одним заголовком», а
+    контекстуальная проверка 5 спрашивает «на слайде есть содержание, а не
+    только заголовок?». `PLAN-7.2` собирался это правило снять, утверждая, что
+    раздел без тела штатно ляжет на разделитель, — **утверждение было неверным**,
+    и поймал его этот тест.
+
+    **Третье утверждение при этом снято, и тоже замером** (`Z-40`,
+    `WORKLOG/2026-09-19-z40-baseline.md`, замер 5). Здесь стояло «и при этом
+    заголовок нужен: пустой слот — дефект `Z-23`». Растр настоящего PowerPoint
+    на VK WorkSpace показал, что пустой слот заголовка **не оставляет ни рамки,
+    ни плашки** — просто пустое поле. А заголовок, который приходилось ради
+    этого утверждения выдумывать, давал «Вход движок» и «Корпусу дало»:
+    словосочетания, которых во входном тексте нет.
+
+    Лучше без заголовка, чем с выдуманным. Содержание при этом не теряется —
+    его и стережёт первое утверждение.
+    """
     topic = _Topic(label=None, theses=["То есть ниша почти пустая"])
     heading, body = heading_for(topic, CFG)
     assert body == ["То есть ниша почти пустая"], "тезис обязан остаться в теле"
     assert heading != body[0], "заголовок не должен повторять единственный абзац"
-    assert heading, "и при этом заголовок нужен: пустой слот — дефект Z-23"
 
 
 def test_lead_in_is_stripped_from_the_thesis() -> None:
@@ -414,3 +440,96 @@ def test_kept_preposition_saves_the_case() -> None:
     слайде колоды. С предлогом выходит правильная русская фраза."""
     title, _ = deck_title(list(split_sentences(BUSINESS, CFG)), CFG)
     assert title.startswith("По "), title
+
+
+# --- заголовок из слов автора: `Z-40`, план `PLAN-7.2` -------------------
+#
+# До 19 сентября был четвёртый путь — склеить два самых частых слова темы. Он
+# давал «Вход движок», «Корпусу дало», «Выдачи больше»: словосочетания, которых
+# во входном тексте нет. Убран не за некрасивость, а потому что `CLAUDE.md`
+# запрещает выдумывать содержание, которого во входе нет.
+
+
+@pytest.mark.parametrize(
+    "path",
+    sorted(
+        os.path.join(_EXAMPLES, n)
+        for n in os.listdir(_EXAMPLES)
+        if n.startswith("content-") and n.endswith(".md")
+    ),
+    ids=os.path.basename,
+)
+def test_no_heading_is_invented(path: str) -> None:
+    """Главная проверка задачи: **каждый заголовок есть во входе дословно.**
+
+    Машинная формулировка правила «не выдумывать содержание». Сравнение по
+    нижнему регистру — `_capitalize` меняет первую букву (логическая проверка
+    плана, Н7). Пробелы схлопываются: сегментатор нормализует их, и «два
+    пробела» не должны ронять проверку.
+    """
+    with open(path, encoding="utf-8") as fh:
+        source = " ".join(fh.read().split()).lower()
+    doc = load_content(path)
+    invented = [
+        s.heading
+        for s in doc.sections
+        if s.heading and s.id != "cover" and " ".join(s.heading.split()).lower() not in source
+    ]
+    assert not invented, f"заголовков, которых нет во входе: {invented}"
+
+
+def test_word_salad_generator_is_gone() -> None:
+    """`_synthesize` удалён, а не обойдён. Оставленная функция вернулась бы в
+    код при первой же правке «а давайте хоть что-нибудь напишем»."""
+    import mimeo.plan.prose as module
+
+    assert not hasattr(module, "_synthesize")
+
+
+def test_label_longer_than_five_words_is_accepted() -> None:
+    """«Доля заказов, выданных дольше пяти минут» — 39 знаков, шесть слов.
+
+    Счёт слов отвергал три готовых заголовка из четырёх, а `heading_max` и так
+    делает работу: при пределе 6, 7 и без предела вовсе результат одинаков."""
+    label = "Доля заказов, выданных дольше пяти минут"
+    assert len(label.split()) > 5
+    units, _ = _units([f"{label}: 4%, 5%, 9%, 11%, 8%, 14%."], CFG)
+    assert units[0].label == label
+
+
+def test_dangling_tail_of_a_label_is_trimmed() -> None:
+    """«По срокам мы отстаём, и это» — метка, оборванная на союзе.
+
+    Дефект внесён правкой привратника и найден **чтением вывода**: до неё такие
+    метки отвергались по числу слов, и один дефект прятался за другим."""
+    topic = _Topic(label="По срокам мы отстаём, и это", theses=["Прямо, а не прятать"])
+    heading, _ = heading_for(topic, CFG)
+    assert heading == "По срокам мы отстаём"
+
+
+def test_short_remainder_keeps_the_label_whole() -> None:
+    """Порог защищает «То, что нам нужно» от превращения в «То»."""
+    for label in ("То, что нам нужно", "Картинки, приложу две"):
+        heading, _ = heading_for(_Topic(label=label, theses=["тело"]), CFG)
+        assert heading == label, label
+
+
+def test_cut_is_taken_at_the_first_suitable_boundary_not_the_first() -> None:
+    """«Теперь про то, что проверено на чужом материале, это важнее…»
+
+    На первой запятой выходит «Теперь про то» — обрубок. На второй — заголовок.
+    Искать дальше первой границы стоило: растр показал, что слайд без заголовка
+    на карточной раскладке оставляет заметную пустоту сверху.
+    """
+    thesis = "Теперь про то, что проверено на чужом материале, это важнее всего"
+    heading, body = heading_for(_Topic(label=None, theses=[thesis]), CFG)
+    assert heading == "Теперь про то, что проверено на чужом материале"
+    assert body == ["это важнее всего"], body
+
+
+def test_stump_is_refused_rather_than_shipped() -> None:
+    """Извлечь нечего — заголовка нет, и содержание остаётся на слайде."""
+    thesis = "По нашему корпусу это дало 16 переполнений до и 1 после"
+    heading, body = heading_for(_Topic(label=None, theses=[thesis]), CFG)
+    assert heading is None
+    assert body == [thesis], "содержание обязано остаться"
