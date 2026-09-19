@@ -21,7 +21,6 @@
 
 from __future__ import annotations
 
-import dataclasses
 import functools
 import json
 import os
@@ -71,6 +70,8 @@ class ProseConfig:
     address_verbs: tuple[str, ...] = ()
     address_fillers: tuple[str, ...] = ()
     deck_title: tuple[str, ...] = ()
+    #: Предлоги, которые остаются в заголовке: без них ломается падеж.
+    deck_title_keep: tuple[str, ...] = ()
     stopwords: frozenset[str] = frozenset()
     loaded: bool = False
     source: str = "встроенные значения"
@@ -120,6 +121,7 @@ def load_config(path: str | None = None) -> ProseConfig:
         address_verbs=phrases("address_verbs"),
         address_fillers=phrases("address_fillers"),
         deck_title=phrases("deck_title"),
+        deck_title_keep=phrases("deck_title_keep"),
         loaded=True,
         source=path,
         **limits,
@@ -550,6 +552,36 @@ def heading_for(topic: _Topic, cfg: ProseConfig) -> tuple[str | None, list[str]]
     return _synthesize(theses, cfg), theses
 
 
+#: Сколько слов допускается между словом просьбы и предлогом: «презентация
+#: **с цифрами** по загрузке…». Три — с запасом: замер по корпусу нашёл максимум
+#: два (`WORKLOG/2026-09-19-z39-baseline.md`, замер 7). Больше значило бы ловить
+#: предлог из соседней мысли.
+_TITLE_GAP = 3
+
+
+@functools.lru_cache(maxsize=8)
+def _title_patterns(cues: tuple[str, ...], keep: tuple[str, ...]):
+    """Словарь просьб в выражения, терпимые к словам посередине.
+
+    Словарь остаётся в конфиге, механизм — здесь (`ADR-0022`). Скомпилированное
+    кэшируется: `deck_title` зовут на каждый блок прозы.
+    """
+    out = []
+    for cue in cues:
+        parts = cue.split()
+        if len(parts) < 2:
+            continue
+        head, tail = parts[0], " ".join(parts[1:])
+        out.append((
+            tail in keep,
+            re.compile(
+                rf"{re.escape(head)}(?:\s+\S+){{0,{_TITLE_GAP}}}\s+({re.escape(tail)})\s+",
+                re.IGNORECASE,
+            ),
+        ))
+    return tuple(out)
+
+
 def deck_title(sentences: list[str], cfg: ProseConfig) -> tuple[str | None, int]:
     """Заголовок колоды из просьбы: «презентация про X» → «X».
 
@@ -557,14 +589,25 @@ def deck_title(sentences: list[str], cfg: ProseConfig) -> tuple[str | None, int]
     первая версия принимала за просьбу «Привет!» (журнал `PLAN-2.2`). Возвращает
     заголовок и номер предложения, из которого он взят, — само предложение
     обращение, а не содержание, и в тело не идёт.
+
+    **Между словом просьбы и предлогом допускаются слова** (`Z-39`): «нужна
+    презентация *с цифрами* по загрузке…» до 19 сентября не давала заголовка
+    вовсе, потому что словарь искался подстрокой.
+
+    **Предлог из `deck_title_keep` остаётся в заголовке**, и это не мелочь.
+    «Презентация **по** загрузке» требует дательного падежа, и срезанный предлог
+    оставляет «Загрузке сети пунктов выдачи» — обрубок на самом заметном слайде
+    колоды. С предлогом выходит «По загрузке сети пунктов выдачи» — правильная
+    русская фраза. Проверено на корпусе: два новых заголовка, три прежних не
+    изменились ни на знак.
     """
+    patterns = _title_patterns(cfg.deck_title, cfg.deck_title_keep)
     for n, sentence in enumerate(sentences[:2]):
-        low = sentence.lower()
-        for cue in cfg.deck_title:
-            at = low.find(cue)
-            if at < 0:
+        for keep, pattern in patterns:
+            m = pattern.search(sentence)
+            if not m:
                 continue
-            rest = sentence[at + len(cue):].strip(" :—–")
+            rest = sentence[m.start(1) if keep else m.end():].strip(" :—–")
             rest = re.split(r"[,.;]| для | на \d| минут", rest)[0].strip()
             if len(rest) >= 3:
                 return _capitalize(rest), n
@@ -640,17 +683,31 @@ def fit_topic_count(
 # --- сборка ------------------------------------------------------------
 
 def _is_prose_section(section: ContentSection, cfg: ProseConfig) -> bool:
-    """Раздел без заголовка, в котором есть непорезанный абзац.
+    """Раздел без заголовка, который надо структурировать.
 
-    Два условия сразу, а не одно: размеченный вход заголовки имеет и потому не
-    трогается по построению, а не по удачно выбранному порогу (первый проход
-    логической проверки, дыра 2).
+    Размеченный вход заголовки имеет и потому не трогается **по построению**, а
+    не по удачно выбранному порогу (`PLAN-2.2`, первый проход, дыра 2).
+
+    Неразмеченность бывает двух видов, и раньше видели только первый
+    (`Z-39`, `PLAN-7.1`):
+
+    * **простыня** — один длинный абзац, который надо резать;
+    * **деловой текст** — много коротких абзацев без единого заголовка. Резать
+      внутри почти нечего, но структуры у него ровно столько же: ноль.
+
+    Спрашивать про длину абзаца — значит спрашивать «надо ли резать», а
+    вопрос здесь другой: «проза ли это вообще». Замер
+    (`WORKLOG/2026-09-19-z39-baseline.md`): у делового текста из девяти абзацев
+    самый длинный был **184 знака при пороге 200**, ворота отвечали «не проза»,
+    документ возвращался нетронутым, и колода выходила пустой на шести шаблонах
+    из одиннадцати. Весь отказ держался на шестнадцати знаках.
     """
     if section.heading:
         return False
-    return any(
-        b.kind == "paragraph" and b.length > cfg.prose_paragraph for b in section.blocks
-    )
+    paragraphs = [b for b in section.blocks if b.kind == "paragraph"]
+    if any(b.length > cfg.prose_paragraph for b in paragraphs):
+        return True
+    return len(paragraphs) > 1
 
 
 def needs_restructure(doc: ContentDoc, cfg: ProseConfig) -> bool:
@@ -659,11 +716,28 @@ def needs_restructure(doc: ContentDoc, cfg: ProseConfig) -> bool:
 
 @dataclass
 class _Numbering:
+    """Сквозные номера для блоков и разделов.
+
+    Счётчик разделов заведён 19 сентября (`Z-39`, `PLAN-7.1`). До него номер
+    темы начинался заново **на каждом блоке**, и разделы получали одинаковые
+    id: `sec01t01` семь раз подряд. Дефект был тихим, пока блок в разделе был
+    один; правка `Z-39` делает блоков много, и он стал бы систематическим.
+
+    Цена не косметическая: `deterministic.py` держит `forced: dict[str, int]`
+    по `section.id`, и два раздела с одним id делят одну запись —
+    принудительное дробление одного молча применяется к другому.
+    """
+
     n: int = 0
+    s: int = 0
 
     def next(self) -> str:
         self.n += 1
         return f"b{self.n:02d}"
+
+    def section(self, base: str) -> str:
+        self.s += 1
+        return f"{base}t{self.s:02d}"
 
 
 def _blocks_from(theses: list[str], cfg: ProseConfig, ids: _Numbering) -> tuple[ContentBlock, ...]:
@@ -751,31 +825,24 @@ def restructure(
         if not _is_prose_section(section, cfg):
             sections.append(section)
             continue
+        # Темы собираются по ВСЕМУ разделу, а не по блоку (`Z-39`, `PLAN-7.1`).
+        # Так надо по двум причинам, и вторая обнаружилась логической проверкой.
+        #
+        # Первая: **абзац идёт в разбор всегда**, независимо от длины. Раньше
+        # короткий абзац миновал разбор и прилипал к предыдущей теме, и деловой
+        # текст из девяти коротких абзацев слипался в одну тему. Прилипают
+        # теперь только не-абзацы — список, метрика, картинка: список под
+        # строкой «Вот выдача по месяцам:» принадлежит ей, а не себе.
+        #
+        # Вторая: подгонка объёма (`Z-35`) обязана вызываться **один раз на
+        # раздел**. На каждый блок — значит на каждый абзац, и цель «10–15
+        # слайдов» пришлась бы на каждый абзац по отдельности.
+        topics: list[_Topic] = []
+        strays: dict[int, list[ContentBlock]] = {}
         for block in section.blocks:
-            if block.kind != "paragraph" or block.length <= cfg.prose_paragraph:
-                # Короткий абзац, список, метрика, картинка — прилипают к
-                # последней теме; своего слайда такой блок не заслуживает.
-                #
-                # Но обращение к исполнителю снять с него надо всё равно
-                # (`Z-41`): этот блок минует разбор на предложения, а значит и
-                # `_strip_lead_in`, и «Начни со статуса: …» уезжало на слайд
-                # дословно. Замер по корпусу нашёл ровно один такой случай —
-                # последний из десяти, и единственный, который пережил первую
-                # редакцию правила.
-                if block.kind == "paragraph" and block.text:
-                    clean, lost = _strip_lead_in(block.text, cfg)
-                    if lost:
-                        dropped += lost
-                        block = dataclasses.replace(block, text=clean)
-                if sections and sections[-1].id.startswith(f"{section.id}t"):
-                    last = sections[-1]
-                    sections[-1] = ContentSection(
-                        id=last.id, heading=last.heading, blocks=last.blocks + (block,)
-                    )
-                else:
-                    sections.append(
-                        ContentSection(id=section.id, heading=None, blocks=(block,))
-                    )
+            if block.kind != "paragraph":
+                # Привязка к теме, после которой блок стоял; -1 — до всякой темы.
+                strays.setdefault(len(topics) - 1, []).append(block)
                 continue
 
             sentences = list(split_sentences(block.text, cfg))
@@ -786,22 +853,37 @@ def restructure(
 
             units, lost = _units(sentences, cfg)
             dropped += lost
-            topics = group_topics(units, cfg)
-            # Подгонка объёма идёт ДО заголовков: слияние тем иначе осиротило бы
-            # заголовок, а деление — присвоило бы чужой (`PLAN-2.3`, дыра 3).
-            wanted = (max(1, target[0] - 1), max(1, target[1] - 1)) if target else None
-            topics, shortfall = fit_topic_count(topics, wanted, cfg)
-            if shortfall:
-                notes.append(f"Целевой объём не достигнут: {shortfall}.")
-            for n, topic in enumerate(topics, 1):
-                heading, body = heading_for(topic, cfg)
-                sections.append(
-                    ContentSection(
-                        id=f"{section.id}t{n:02d}",
-                        heading=heading,
-                        blocks=_blocks_from(body, cfg, ids),
-                    )
+            topics.extend(group_topics(units, cfg))
+
+        # Подгонка объёма идёт ДО заголовков: слияние тем иначе осиротило бы
+        # заголовок, а деление — присвоило бы чужой (`PLAN-2.3`, дыра 3).
+        wanted = (max(1, target[0] - 1), max(1, target[1] - 1)) if target else None
+        topics, shortfall = fit_topic_count(topics, wanted, cfg)
+        if shortfall:
+            notes.append(f"Целевой объём не достигнут: {shortfall}.")
+
+        # Прилипший блок садится на свою тему. После подгонки объёма тем могло
+        # стать меньше или больше, и точное место теряется — тогда блок садится
+        # на ближайшую существующую. Приблизительность здесь сознательная:
+        # потерять блок с содержанием хуже, чем посадить его через один.
+        for n, topic in enumerate(topics, 1):
+            heading, body = heading_for(topic, cfg)
+            extra = strays.pop(min(n - 1, len(topics) - 1), []) if strays else []
+            sections.append(
+                ContentSection(
+                    id=ids.section(section.id),
+                    heading=heading,
+                    blocks=_blocks_from(body, cfg, ids) + tuple(extra),
                 )
+            )
+        # Блоки, стоявшие до первой темы, и остаток после клампа — своим
+        # разделом: без этого они бы просто пропали.
+        leftover = [b for key in sorted(strays) for b in strays[key]]
+        if leftover:
+            sections.append(
+                ContentSection(id=ids.section(section.id), heading=None,
+                               blocks=tuple(leftover))
+            )
 
     # Обложку `_with_cover` выделяет, только если заголовок колоды совпадает с
     # заголовком первого раздела (`deterministic.py`). Без этих строк колода

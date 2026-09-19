@@ -311,3 +311,106 @@ def test_config_phrase_order_does_not_depend_on_file_order() -> None:
     ordered = load_config().lead_in
     assert list(ordered) == sorted(ordered, key=lambda s: (-len(s), s))
     assert cfg.lead_in != ordered
+
+
+# --- деловой текст: `Z-39`, план `PLAN-7.1` ------------------------------
+#
+# Форма, из-за которой заведена задача: короткие абзацы без единого заголовка,
+# темы помечены не вводным словом, а именной группой с двоеточием. До
+# 19 сентября такой текст не входил в сегментатор **вовсе**: ворота спрашивали
+# «есть ли абзац длиннее порога», а самый длинный был 184 знака при пороге 200.
+
+BUSINESS = (
+    "Нужна презентация с цифрами по загрузке сети пунктов выдачи за полугодие.\n\n"
+    "Среднее время выдачи одного заказа: январь 2.8 мин, июнь 3.9.\n\n"
+    "По регионам за июнь: Центр 22 400 заказов, Урал 11 800.\n\n"
+    "Нагрузка на сотрудника в пике: 19 заказов в час при норме 14.\n\n"
+    "Что предлагаем: открыть 12 пунктов в Центре, добавить вторую смену.\n"
+)
+
+
+def _business() -> ContentDoc:
+    return ContentDoc(name="x", sections=list(parse_markdown(BUSINESS).sections))
+
+
+def test_many_short_paragraphs_without_headings_are_prose() -> None:
+    """Неразмеченность бывает двух видов, и раньше видели только один.
+
+    Простыня — один длинный абзац. Деловой текст — много коротких. Структуры у
+    второго ровно столько же: ноль. Ворота, спрашивающие про длину абзаца,
+    отвечали «не проза» и возвращали документ нетронутым.
+    """
+    doc = _business()
+    assert all(
+        b.length <= CFG.prose_paragraph
+        for s in doc.sections
+        for b in s.blocks
+        if b.kind == "paragraph"
+    ), "текст перестал быть примером: появился абзац длиннее порога"
+    assert needs_restructure(doc, CFG)
+
+
+def test_business_text_gives_a_topic_per_paragraph() -> None:
+    """Раньше девять абзацев слипались в одну тему, и колода выходила пустой."""
+    out = restructure(_business(), CFG)
+    assert len(out.sections) >= 4, [s.heading for s in out.sections]
+
+
+def test_labels_become_headings_without_any_new_vocabulary() -> None:
+    """Метку через двоеточие механизм понимал и до `Z-39` — до него просто не
+    доходило. Словарь оборотов смены темы тут ни при чём."""
+    headings = {s.heading for s in restructure(_business(), CFG).sections}
+    assert "По регионам за июнь" in headings, headings
+    assert "Нагрузка на сотрудника в пике" in headings, headings
+    assert "Что предлагаем" in headings, headings
+
+
+def test_section_ids_are_unique() -> None:
+    """Дубль id — не косметика: `deterministic.py` держит `forced` словарём по
+    `section.id`, и два раздела с одним id делят одну запись, то есть
+    принудительное дробление одного молча применяется к другому."""
+    for text in (BUSINESS, CHAT):
+        ids = [s.id for s in restructure(_doc(text), CFG).sections]
+        assert len(ids) == len(set(ids)), ids
+
+
+def test_volume_target_is_applied_once_per_section() -> None:
+    """Подгонка объёма вызывалась на каждый блок. Когда блок в разделе один —
+    незаметно; после `Z-39` блоков много, и цель «десять тем» пришлась бы на
+    каждый абзац по отдельности."""
+    out = restructure(_business(), CFG, target=(4, 5))
+    # Обложка не тема: у неё есть заголовок и нет содержимого, и в цель по
+    # слайдам она входит отдельно (`PLAN-2.3` — цель уменьшается на единицу).
+    topics = [s for s in out.sections if s.heading and s.id != "cover"]
+    assert len(topics) <= 4, [s.heading for s in out.sections]
+    shortfall = [n for n in out.notes if "Целевой объём не достигнут" in n]
+    assert len(shortfall) <= 1, shortfall
+
+
+def test_non_paragraph_block_sticks_to_its_topic() -> None:
+    """Список под строкой «Вот выдача по месяцам:» принадлежит ей, а не себе."""
+    text = (
+        "Нужна презентация про загрузку сети.\n\n"
+        "Вот выдача по месяцам, заказов:\n\n"
+        "- январь — 41 200\n- февраль — 38 900\n- март — 52 400\n\n"
+        "Что предлагаем: открыть 12 пунктов в Центре, добавить вторую смену.\n"
+    )
+    out = restructure(_doc(text), CFG)
+    kinds = [b.kind for s in out.sections for b in s.blocks]
+    assert "list" in kinds, "список пропал"
+    holder = next(s for s in out.sections if any(b.kind == "list" for b in s.blocks))
+    assert holder.heading, "список оказался в разделе без темы"
+
+
+def test_deck_title_tolerates_words_before_the_preposition() -> None:
+    """«Нужна презентация **с цифрами** по загрузке…» до `Z-39` не давала
+    заголовка вовсе: словарь искался подстрокой."""
+    title, _ = deck_title(list(split_sentences(BUSINESS, CFG)), CFG)
+    assert title and "загрузке" in title.lower(), title
+
+
+def test_kept_preposition_saves_the_case() -> None:
+    """Срезанный предлог оставляет «Загрузке сети…» — обрубок на самом заметном
+    слайде колоды. С предлогом выходит правильная русская фраза."""
+    title, _ = deck_title(list(split_sentences(BUSINESS, CFG)), CFG)
+    assert title.startswith("По "), title
