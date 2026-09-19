@@ -241,14 +241,20 @@ python tools/rank_dump.py      <шаблон.pptx> <контент.md>  # из �
 **Материалы ТЗ лежат в `tz/` и в репозиторий не коммитятся** — там же заметки о
 том, что это за файлы (`tz/notes/README.md`).
 
-### Локальная модель
+### Локальные модели
 
 Веса и сервер лежат **вне репозитория**, пути машинные:
 
 ```
-D:\0_model_llm\llama.cpp\llama-server.exe          распакованный llama.cpp, ничего не устанавливалось
-D:\0_model_llm\lmstudio-community\Qwen3.5-9B-GGUF  чемпион замера 17 сентября
+D:\0_model_llm\llama.cpp\llama-server.exe                 llama.cpp b11011, ничего не устанавливалось
+D:\0_model_llm\lmstudio-community\gemma-4-12B-it-QAT-GGUF  лучшая на тексте: роли, 89%
+D:\0_model_llm\lmstudio-community\Qwen3.5-9B-GGUF          лучшая на зрении: различает пару
+D:\0_model_llm\openbmb\MiniCPM-V-4_5-gguf                  отвергнута 19.09, оставлена до Z-34
+D:\0_model_llm\openbmb\MiniCPM-V-4.6-gguf                  отвергнута 19.09, можно удалять
 ```
+
+Подъём занимает 4–7 с и **9 ГБ видеопамяти из 12** — держать модель включённой
+между замерами незачем. Остановка: `Get-Process llama-server | Stop-Process -Force`.
 
 ```
 llama-server.exe -m <веса.gguf> --mmproj <mmproj.gguf> -c 8192 -ngl 99 --host 127.0.0.1 --port 8080
