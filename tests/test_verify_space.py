@@ -144,3 +144,69 @@ def test_shapes_from_another_slide_are_not_neighbours():
     m = shape()
     other = Box(slide=2, shape_id="99", x=100.0, y=160.0, w=200.0, h=30.0)
     assert height_ratio(m, scene(m, other)) <= 1.0
+
+
+# --- подложка: её низ тоже граница (`Z-38`) ----------------------------
+
+
+def backing(top, height, x=90.0, w=220.0, shape_id="33", visible=True):
+    """Плашка, внутри которой лежит текстовый бокс."""
+    return Box(slide=1, shape_id=shape_id, x=x, y=top, w=w, h=height, visible=visible)
+
+
+def test_text_may_not_grow_past_the_bottom_of_its_backing():
+    """Главный случай задачи.
+
+    Бокс 100..150 лежит в плашке 60..170. Ближайшая соседняя фигура далеко
+    внизу, но плашка кончается на 170 — дальше текст выходит из карточки, и
+    зритель это видит. Замер на VK Tech: текст 4.10 дюйма, карточка 4.02.
+    """
+    m = shape(top=100.0, height=50.0, text=120.0)
+    scn = scene(m, backing(60.0, 110.0), neighbour(400.0))
+    assert available_height(m, scn) == 70.0        # 50 бокса + 20 до дна плашки
+    assert height_ratio(m, scn) > 1.0
+
+
+def test_without_the_backing_the_same_text_fits():
+    """Та же фигура без плашки: места до соседа хватает, дефекта нет.
+
+    Пара нужна, чтобы проверка не оказалась зелёной по любой причине.
+    """
+    m = shape(top=100.0, height=50.0, text=120.0)
+    scn = scene(m, neighbour(400.0))
+    assert available_height(m, scn) > 120.0
+    assert height_ratio(m, scn) < 1.0
+
+
+def test_a_narrow_icon_overlapping_the_edge_is_not_a_backing():
+    """Узкая иконка, задевшая бокс краем, подложкой не является.
+
+    Иначе она обрезала бы место по своему низу, и мы получили бы ложный
+    дефект — `PLAN-6.1`, логическая проверка 1, дыра 1.
+    """
+    m = shape(top=100.0, height=50.0, text=120.0, left=100.0, width=200.0)
+    icon = backing(60.0, 110.0, x=280.0, w=40.0)   # перекрывает 20 из 200
+    scn = scene(m, icon, neighbour(400.0))
+    assert height_ratio(m, scn) < 1.0
+
+
+def test_the_nearest_backing_wins():
+    """Плашек может быть несколько, вложенных: карточка внутри секции."""
+    m = shape(top=100.0, height=50.0, text=200.0)
+    scn = scene(m, backing(50.0, 300.0, shape_id="outer"),
+                backing(60.0, 110.0, shape_id="inner"), neighbour(500.0))
+    assert available_height(m, scn) == 70.0        # по внутренней, не по внешней
+
+
+def test_a_hidden_backing_does_not_constrain():
+    """Невидимая фигура зрителю не мешает — и границей быть не может."""
+    m = shape(top=100.0, height=50.0, text=120.0)
+    scn = scene(m, backing(60.0, 110.0, visible=False), neighbour(400.0))
+    assert height_ratio(m, scn) < 1.0
+
+
+def test_bottom_anchored_text_is_bounded_by_the_backing_top():
+    """Зеркальный случай: текст растёт вверх, границей служит верх плашки."""
+    m = shape(top=300.0, height=50.0, text=120.0, anchor=3)
+    scn = scene(m, backing(280.0, 100.0), neighbour(0.0, h=10.0))
+    assert available_height(m, scn) == 70.0        # 50 бокса + 20 до верха плашки

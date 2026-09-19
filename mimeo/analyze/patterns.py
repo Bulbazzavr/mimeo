@@ -452,9 +452,44 @@ def _from_layouts(deck: Deck, design_system, body: float) -> tuple[Pattern, ...]
                 cohesion=None,
                 donor_reason="выведен из макета: слайдов в шаблоне недостаточно",
                 source="layouts",
+                **dict(zip(("exclusive", "unknown_parts"), _donor_parts(deck, part))),
             )
         )
     return tuple(out)
+
+
+#: Типы частей, которые два клона одного донора **разделить не могут**.
+#: Каждый добыт замером, а не спецификацией: донор с такой частью, поставленный
+#: в колоду дважды, даёт файл, который PowerPoint отказывается открывать
+#: (`Z-44`, `WORKLOG/2026-09-19-z38-baseline.md`, `DOM-PKG §9`).
+_EXCLUSIVE_RELS = ("chart", "oleObject", "vmlDrawing")
+
+#: Типы, про которые известно, что разделяются законно: картинку можно
+#: показать хоть на пяти слайдах, и замер это подтвердил (`p12` ×3 — цел).
+_SHAREABLE_RELS = (
+    "image", "hdphoto", "slideLayout", "notesSlide", "tags", "hyperlink",
+    "themeOverride",
+)
+
+
+def _donor_parts(deck: Deck, part: str) -> tuple[bool, tuple[str, ...]]:
+    """Что несёт донорский слайд: исключительное и незнакомое.
+
+    **Список исключительных типов неполон по построению** — он собран из
+    встреченных файлов, а не из спецификации. Поэтому возвращается ещё и
+    перечень типов, которых нет ни в одном из двух списков: повтор такого
+    донора не запрещается, но сопровождается предупреждением. Иначе новый тип
+    исключительной части проявится тем же способом, каким нашёлся этот, —
+    неоткрывающимся файлом у эксперта (`PLAN-6.1`, обратный план, п. 7).
+    """
+    try:
+        rels = deck.pkg.rels(part)
+    except Exception:                                    # noqa: BLE001
+        return False, ()
+    kinds = {r.type.rsplit("/", 1)[-1] for r in rels.values() if not r.external}
+    exclusive = bool(kinds & set(_EXCLUSIVE_RELS))
+    unknown = tuple(sorted(kinds - set(_EXCLUSIVE_RELS) - set(_SHAREABLE_RELS)))
+    return exclusive, unknown
 
 
 def build_pattern_library(
@@ -516,6 +551,8 @@ def build_pattern_library(
                 cohesion=cohesion,
                 donor_reason=reason,
                 source="slides",
+                **dict(zip(("exclusive", "unknown_parts"),
+                           _donor_parts(deck, slides[donor_index].part))),
             )
         )
 

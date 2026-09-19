@@ -291,12 +291,27 @@ class Pattern:
     cohesion: float | None
     donor_reason: str
     source: str
+    #: Донор несёт части, которые **нельзя разделить между двумя клонами**:
+    #: диаграмму, внедрённый объект, VML-рисунок. Такой донор допустимо
+    #: использовать в колоде **только один раз** — иначе PowerPoint отказывается
+    #: открывать файл целиком (`Z-44`, `DOM-PKG §9`).
+    #:
+    #: Замер 19 сентября: `chart` ×2 и ×3, `oleObject` ×2 и ×3 — файл не
+    #: открывается; картинки ×3 — открывается
+    #: (`WORKLOG/2026-09-19-z38-baseline.md`).
+    exclusive: bool = False
+    #: Части донора, которые мы **не знаем как разделять**: всё, кроме картинок,
+    #: макета и заметок. Список исключительных типов получен от встреченных
+    #: файлов и **неполон по построению**, поэтому повтор донора с незнакомой
+    #: частью не запрещается, а сопровождается предупреждением.
+    unknown_parts: tuple[str, ...] = ()
 
     def to_json(self) -> dict:
         return {
             "id": self.id,
             "kind": self.kind,
             "source": self.source,
+            "exclusive": self.exclusive,
             "donor": {
                 "part": self.donor_part,
                 "index": self.donor_index if self.donor_index >= 0 else None,
