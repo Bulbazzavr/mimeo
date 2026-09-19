@@ -21,6 +21,8 @@
 
 from __future__ import annotations
 
+import dataclasses
+import functools
 import json
 import os
 import re
@@ -66,6 +68,8 @@ class ProseConfig:
     abbreviations: frozenset[str] = _ABBREVIATIONS
     topic_shift: tuple[str, ...] = ()
     lead_in: tuple[str, ...] = ()
+    address_verbs: tuple[str, ...] = ()
+    address_fillers: tuple[str, ...] = ()
     deck_title: tuple[str, ...] = ()
     stopwords: frozenset[str] = frozenset()
     loaded: bool = False
@@ -113,6 +117,8 @@ def load_config(path: str | None = None) -> ProseConfig:
         stopwords=words("stopwords"),
         topic_shift=phrases("topic_shift"),
         lead_in=phrases("lead_in"),
+        address_verbs=phrases("address_verbs"),
+        address_fillers=phrases("address_fillers"),
         deck_title=phrases("deck_title"),
         loaded=True,
         source=path,
@@ -175,9 +181,115 @@ _COMMA = re.compile(r",\s+")
 _LABEL = re.compile(r"^([^:]{3,64}):\s+(.+)$")
 
 
+#: Докуда от начала предложения ищем обращение к исполнителю. Дальше — уже
+#: содержание: глагол в повелительном наклонении в середине длинной фразы
+#: скорее часть текста, чем указание ассистенту. Замер: все десять обращений
+#: по корпусу начинаются в первых 60 знаках (`Z-41`).
+_ADDRESS_REACH = 60
+
+#: Что может стоять после глагола и вводить содержание: «скажи, **что**…»,
+#: «упомяни **про**…». Отдельно от заполнителей: это не мусор, а рамка.
+_ADDRESS_FRAME = r"о том,? что|про|об|о|что"
+
+#: Безличное обращение: модальное слово плюс инфинитив — «нужно рассказать
+#: про», «стоит упомянуть, что». Глагола второго лица здесь нет, и прямая
+#: конструкция такое не видит.
+_ADDRESS_MODAL = r"нужно|надо|стоит|важно|хочу|хочется|можно|давай(?:те)?"
+_ADDRESS_INF = (
+    r"сказать|рассказать|упомянуть|написать|отметить|добавить|показать|"
+    r"объяснить|подчеркнуть|перечислить|описать|начать|завершить|сделать"
+)
+
+
+def _address_re(cfg: ProseConfig) -> re.Pattern[str] | None:
+    """Регулярка обращения к исполнителю, собранная из конфига (`Z-41`).
+
+    Повторы **ограничены** `{0,3}` и `{0,2}` не для красоты: со звёздочками
+    вложенные альтернативы дают катастрофический бэктрекинг, и первая же
+    версия этой регулярки повесила прогон на две минуты.
+    """
+    if not cfg.address_verbs:
+        return None
+    verbs = "|".join(cfg.address_verbs)
+    fillers = "|".join(cfg.address_fillers) or r"(?!)"
+    # Две конструкции, а не одна. Прямая — глагол второго лица: «скажи».
+    # Безличная — модальное слово плюс инфинитив: «нужно рассказать про».
+    # Вторая нашлась чтением вывода: заголовок «Отдельно нужно рассказать про
+    # проверку вёрстки» пережил первую редакцию правила.
+    core = rf"(?:{_ADDRESS_MODAL})[ ,]+(?:{_ADDRESS_INF})|{verbs}"
+    return re.compile(
+        rf"(?:\b(?:{fillers})\b[ ,]+){{0,3}}"
+        rf"\b(?:{core})\b"
+        rf"(?:[ ,]+\b(?:{fillers})\b){{0,2}}"
+        rf"(?:[ ,]*\b(?:{_ADDRESS_FRAME})\b)?"
+        rf"[ ,:—–]*",
+        re.IGNORECASE,
+    )
+
+
+@functools.lru_cache(maxsize=8)
+def _address_re_cached(verbs: tuple[str, ...], fillers: tuple[str, ...]):
+    return _address_re(ProseConfig(address_verbs=verbs, address_fillers=fillers))
+
+
+def _strip_address(text: str, cfg: ProseConfig) -> str | None:
+    """Убирает обращение к исполнителю: «Дальше скажи, что…», «В конце
+    попроси…». Возвращает `None`, если обращения нет.
+
+    **Почему не хватило списка фраз.** До 19 сентября обращения снимал только
+    `lead_in` — 23 литерала, и все якорем на начало предложения. Замер по
+    корпусу: обращений десять, и **в половине глагол стоит не первым** («Про
+    зависимости тоже упомяни…», «В конце попроси…»). Правило «глагол в начале»,
+    как оно было записано в задаче, поймало бы четыре из восьми (`Z-41`).
+
+    **Почему нельзя просто дописать фраз в список.** Способов обратиться к
+    ассистенту столько же, сколько способов говорить; словарь неполон по
+    построению. Считается не фраза, а конструкция: глагол второго лица
+    повелительного наклонения плюс рамка ввода содержания.
+    """
+    rx = _address_re_cached(cfg.address_verbs, cfg.address_fillers)
+    if rx is None:
+        return None
+    m = rx.search(text)
+    if m is None or m.start() > _ADDRESS_REACH or not m.group().strip(" ,:—–"):
+        return None
+    before = text[: m.start()].strip(" ,:—–")
+    after = text[m.end() :].strip(" ,:—–")
+    if not after:
+        return None
+    if not before:
+        return after
+
+    # Обращение в середине: «Про зависимости тоже упомяни, я этим горжусь: у
+    # движка их ноль», «Риски тоже нужно упомянуть честно: сезонность…». То,
+    # что стоит **до** глагола, — тема, и терять её жалко.
+    #
+    # Склеивать `before` с `after` в одну строку **нельзя**, и это не
+    # придирка: `test_text_survives_any_target` поймал ровно это. Любой кусок
+    # в выводе обязан находиться в исходнике дословно, иначе движок начинает
+    # сочинять — то, что `CLAUDE.md` запрещает прямо. Поэтому сюда ставится
+    # двоеточие, а разбирает его `_LABEL` в `_units`: тема уходит в заголовок,
+    # остаток — в тезис, и **оба куска остаются подстроками исходника**.
+    return f"{before}: {after}"
+
+
 def _strip_lead_in(text: str, cfg: ProseConfig) -> tuple[str, int]:
     """Снимает вводный оборот («расскажи, что…»). Возвращает текст и сколько
-    знаков отброшено: потеря считается, а не замалчивается (`PLAN-2.2`)."""
+    знаков отброшено: потеря считается, а не замалчивается (`PLAN-2.2`).
+
+    Два прохода, и оба нужны, но **конструкция идёт первой**. Она снимает
+    больше: на «Расскажи сначала, в чём вообще беда» литерал `расскажи`
+    останавливается сразу за глаголом и оставляет заголовок «Сначала, в чём
+    вообще беда». Порядок виден только в собранном заголовке, замером его не
+    поймать (`Z-41`).
+
+    Список `lead_in` остаётся вторым проходом и нужен для оборотов, которые
+    конструкцией не описываются: «тоже нужно упомянуть», «хочу сказать, что».
+    """
+    rest = _strip_address(text, cfg)
+    if rest is not None and len(rest) >= cfg.thesis_min:
+        return _capitalize(rest), len(text) - len(rest)
+
     low = text.lower()
     for phrase in cfg.lead_in:
         if low.startswith(phrase):
@@ -643,6 +755,18 @@ def restructure(
             if block.kind != "paragraph" or block.length <= cfg.prose_paragraph:
                 # Короткий абзац, список, метрика, картинка — прилипают к
                 # последней теме; своего слайда такой блок не заслуживает.
+                #
+                # Но обращение к исполнителю снять с него надо всё равно
+                # (`Z-41`): этот блок минует разбор на предложения, а значит и
+                # `_strip_lead_in`, и «Начни со статуса: …» уезжало на слайд
+                # дословно. Замер по корпусу нашёл ровно один такой случай —
+                # последний из десяти, и единственный, который пережил первую
+                # редакцию правила.
+                if block.kind == "paragraph" and block.text:
+                    clean, lost = _strip_lead_in(block.text, cfg)
+                    if lost:
+                        dropped += lost
+                        block = dataclasses.replace(block, text=clean)
                 if sections and sections[-1].id.startswith(f"{section.id}t"):
                     last = sections[-1]
                     sections[-1] = ContentSection(
