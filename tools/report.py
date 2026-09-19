@@ -7,6 +7,8 @@
     python tools/report.py plan        раскладка контента по шаблонам
     python tools/report.py compose     сборка готовых файлов и три проверки
     python tools/report.py volume      объём колоды: без цели и с целью (`--slides`)
+    python tools/report.py llm         цена обращения к модели: сколько вызовов на колоду
+                                       и какого размера каждый (`--content путь`)
     python tools/report.py prose       что даёт вход: форма, ёмкость слотов, колода
                                        (`--content путь`, по умолчанию прозаический пример;
                                        `--raw` — без сегментации, как было до `Z-25`)
@@ -35,7 +37,8 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 from mimeo.analyze import analyze_template  # noqa: E402
 from mimeo.compose import build, inspect  # noqa: E402
 from mimeo.oxml.units import emu_to_inch as inch  # noqa: E402
-from mimeo.plan import load_content, load_markdown, plan_deck  # noqa: E402
+from mimeo.plan import load_content, load_markdown, plan_deck, rank  # noqa: E402
+from mimeo.plan.prompt import build_request  # noqa: E402
 
 CONTENT = "examples/content-demo.md"
 
@@ -165,6 +168,39 @@ def _quartiles(values: list[int]) -> tuple[int, int, int]:
         raise ValueError("нечего мерить")
     v = sorted(values)
     return v[len(v) // 4], v[len(v) // 2], v[3 * len(v) // 4]
+
+
+def report_llm(content: str) -> None:
+    """Цена обращения к модели: сколько вызовов на колоду и какого размера.
+
+    Обращения ещё нет — считается то, что УШЛО БЫ, если звать модель на каждую
+    секцию. Нужно, чтобы решать про кэш и про потолок в пять минут из ТЗ, а не
+    прикидывать. Числа последнего прогона — `WORKLOG/2026-09-17-llm-client.md`.
+    """
+    doc = load_content(content)
+    print("| Шаблон | Паттернов | Секций | Макс. запрос, зн. | Сумма, зн. |")
+    print("|---|---|---|---|---|")
+    peaks: list[int] = []
+    counts: list[int] = []
+    for f in samples():
+        a = analyze_template(f)
+        by_id = {x.id: x for x in a.patterns.patterns}
+        sizes = []
+        for section in doc.sections:
+            matches = rank(section, a.patterns.patterns)
+            if not matches:
+                continue
+            r = build_request(section, matches, by_id, a.design_system)
+            sizes.append(len(r.system) + len(r.user))
+        peaks.append(max(sizes) if sizes else 0)
+        counts.append(len(sizes))
+        print(f"| `{os.path.basename(f)}` | {len(a.patterns.patterns)} | {len(sizes)} "
+              f"| {max(sizes) if sizes else 0} | {sum(sizes)} |")
+    if peaks:
+        print()
+        print(f"**Вызовов на колоду {min(counts)}–{max(counts)}, "
+              f"самый большой запрос {min(peaks)}–{max(peaks)} знаков.** "
+              f"Контент: `{content}`.")
 
 
 def report_prose(content: str, raw: bool = False) -> None:
@@ -303,7 +339,10 @@ def report_quality() -> None:
 def main() -> int:
     global TEMPLATES
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("stage", choices=("analyze", "plan", "compose", "prose", "volume", "quality"))
+    parser.add_argument(
+        "stage",
+        choices=("analyze", "plan", "compose", "prose", "volume", "quality", "llm"),
+    )
     parser.add_argument("--content", default="examples/content-prose.md",
                         help="вход для stage=prose (по умолчанию прозаический пример)")
     parser.add_argument("--slides", help="цель для stage=volume (по умолчанию 10-15)")
@@ -321,6 +360,9 @@ def main() -> int:
         return 0
     if args.stage == "quality":
         report_quality()
+        return 0
+    if args.stage == "llm":
+        report_llm(args.content)
         return 0
     {"analyze": report_analyze, "plan": report_plan, "compose": report_compose}[args.stage]()
     return 0
