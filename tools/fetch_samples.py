@@ -96,6 +96,18 @@ def fetch(url: str, dest_dir: str, label: str, min_slides: int) -> dict | None:
 
 def main() -> int:
     dest = sys.argv[1] if len(sys.argv) > 1 else "samples"
+    # Единственный аргумент — каталог назначения, флагов у скрипта нет. Но без
+    # этой проверки `--help` молча трактовался как имя каталога, и вместо
+    # справки скрипт качал пять чужих шаблонов в каталог `--help`. Поймано
+    # 19 сентября собственной проверкой «все команды запускаются»: она увидела
+    # код возврата 0 и записала «ок». Отказ и успех обязаны различаться.
+    if dest.startswith("-"):
+        print(__doc__ or "", file=sys.stderr)
+        print("Флагов у скрипта нет. Единственный аргумент — каталог назначения.",
+              file=sys.stderr)
+        print("  python tools/fetch_samples.py samples", file=sys.stderr)
+        print(f"Получено: {dest!r}", file=sys.stderr)
+        return 2
     os.makedirs(dest, exist_ok=True)
     collected: list[dict] = []
 
