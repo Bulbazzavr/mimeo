@@ -10,6 +10,7 @@ import time
 import zipfile
 from xml.etree import ElementTree as ET
 
+from . import config as cfg
 from .analyze import Analysis, analyze_template
 from .model import DeckPlan, DesignSystem, PatternLibrary
 from .compose import build as compose_deck
@@ -383,17 +384,22 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     analyze = sub.add_parser("analyze", help="разобрать шаблон и извлечь дизайн-систему")
-    analyze.add_argument("template", help="путь к .pptx или .potx")
+    analyze.add_argument("template", nargs="?", help="путь к .pptx или .potx")
     analyze.add_argument("-o", "--out", default="out", help="каталог для артефактов")
     analyze.add_argument("--validate", action="store_true", help="проверить артефакт по схеме")
     analyze.add_argument("-q", "--quiet", action="store_true", help="без сводки")
+    analyze.add_argument(
+        "--config",
+        metavar="ФАЙЛ",
+        help="JSON с аргументами прогона: те же ключи, что у флагов. Командная строка важнее файла (ТЗ, раздел 6)",
+    )
     analyze.set_defaults(func=cmd_analyze)
 
     plan = sub.add_parser(
         "plan", help="разложить контент по раскладкам шаблона (без обращения к модели)"
     )
-    plan.add_argument("template", help="путь к .pptx или .potx")
-    plan.add_argument("content", help="путь к markdown или текстовому файлу с контентом")
+    plan.add_argument("template", nargs="?", help="путь к .pptx или .potx")
+    plan.add_argument("content", nargs="?", help="путь к markdown или текстовому файлу с контентом")
     plan.add_argument("-o", "--out", default="out", help="каталог для артефактов")
     plan.add_argument("--validate", action="store_true", help="проверить артефакт по схеме")
     plan.add_argument(
@@ -403,13 +409,18 @@ def build_parser() -> argparse.ArgumentParser:
              "По умолчанию объём определяется контентом",
     )
     plan.add_argument("-q", "--quiet", action="store_true", help="без сводки")
+    plan.add_argument(
+        "--config",
+        metavar="ФАЙЛ",
+        help="JSON с аргументами прогона: те же ключи, что у флагов. Командная строка важнее файла (ТЗ, раздел 6)",
+    )
     plan.set_defaults(func=cmd_plan)
 
     build = sub.add_parser(
         "build", help="шаблон плюс контент -> готовый .pptx, без обращения к модели"
     )
-    build.add_argument("template", help="путь к .pptx или .potx")
-    build.add_argument("content", help="путь к markdown или текстовому файлу с контентом")
+    build.add_argument("template", nargs="?", help="путь к .pptx или .potx")
+    build.add_argument("content", nargs="?", help="путь к markdown или текстовому файлу с контентом")
     build.add_argument("-o", "--out", default="out", help="каталог для артефактов")
     build.add_argument("--output", help="путь к итоговому файлу (по умолчанию out/deck.pptx)")
     build.add_argument(
@@ -441,9 +452,116 @@ def build_parser() -> argparse.ArgumentParser:
         default=VERIFY_ROUNDS,
         help=f"сколько раундов ремонта при --verify (по умолчанию {VERIFY_ROUNDS})",
     )
+    build.add_argument(
+        "--config",
+        metavar="ФАЙЛ",
+        help="JSON с аргументами прогона: те же ключи, что у флагов. Командная строка важнее файла (ТЗ, раздел 6)",
+    )
     build.set_defaults(func=cmd_build)
 
     return parser
+
+
+#: Ключи конфига прогона, которые не являются аргументами команды.
+#: `_`-ключи — комментарии рядом со значением, как в остальных конфигах.
+_RUN_META = ("version", "config", "func", "command")
+
+
+def _named_explicitly(argv: list[str] | None) -> set[str]:
+    """Что пользователь назвал в командной строке **явно**.
+
+    Нужно ради приоритета: командная строка важнее файла. Сравнивать значение с
+    умолчанием нельзя — `--variants 1` совпадает с умолчанием и выглядел бы как
+    «не задано», и тогда конфиг молча перебил бы явную просьбу пользователя.
+
+    Поэтому разбор идёт вторым парсером, у которого умолчания сняты: в
+    результат попадает только то, что действительно было в `argv`.
+    """
+    shadow = build_parser()
+    stack = [shadow]
+    while stack:
+        parser = stack.pop()
+        for action in parser._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                stack.extend(action.choices.values())
+                continue
+            action.default = argparse.SUPPRESS
+    try:
+        return set(vars(shadow.parse_args(argv)))
+    except SystemExit:
+        # Настоящий парсер разберёт те же аргументы и сам скажет, что не так.
+        return set()
+
+
+def apply_run_config(args: argparse.Namespace, argv: list[str] | None) -> list[str]:
+    """Подставить значения из `--config` туда, где пользователь смолчал.
+
+    Возвращает строки для сводки: чем прогон задан и что в файле лишнее.
+    Приоритет — командная строка выше файла выше умолчания (ТЗ, раздел 6:
+    «воспроизводимый сетап и запуск конфиг файлом»).
+    """
+    path = getattr(args, "config", None)
+    if not path:
+        return []
+
+    stamp = cfg.stamp_file(path)
+    if not stamp.loaded:
+        raise SystemExit(f"Конфиг прогона не прочитан: {path}")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            raw = json.load(fh)
+    except ValueError as exc:
+        # Словами, а не трассировкой. Частая причина на Windows — путь с
+        # обратными слэшами: в JSON это управляющая последовательность.
+        raise SystemExit(
+            f"Конфиг прогона — не JSON: {path}{NL}  {exc}{NL}"
+            f"  Пути в JSON пишутся через / или с удвоенным обратным слэшем."
+        ) from exc
+    if not isinstance(raw, dict):
+        raise SystemExit(f"Конфиг прогона должен быть объектом JSON: {path}")
+
+    explicit = _named_explicitly(argv)
+    known = set(vars(args)) - set(_RUN_META)
+    taken, ignored, unknown = [], [], []
+    for key, value in raw.items():
+        # Пояснения рядом со значением. В конфигах движка их две формы, и обе
+        # настоящие: `"_"` — заметка про весь файл, `"ключ__"` — про соседний
+        # ключ (`config/variants.json`, `config/prose.json`). Знать надо обе:
+        # проверка поймала ровно это — половина пояснений уходила в «не знает
+        # таких ключей» и выглядела как россыпь опечаток.
+        if key.startswith("_") or key.endswith("__") or key in _RUN_META:
+            continue
+        if key not in known:
+            unknown.append(key)
+            continue
+        if key in explicit:
+            ignored.append(key)
+            continue
+        setattr(args, key, value)
+        taken.append(key)
+
+    version = f" версия {stamp.version}" if stamp.version else " версия не объявлена"
+    lines = [f"конфиг      {path}{version}, sha256 {stamp.sha256[:12]}…"]
+    if taken:
+        lines.append(f"            из файла: {', '.join(sorted(taken))}")
+    if ignored:
+        lines.append(f"            перекрыто командной строкой: {', '.join(sorted(ignored))}")
+    if unknown:
+        # Не «мягко проигнорировать»: опечатка в ключе иначе останется незамеченной,
+        # а прогон тихо пойдёт не на тех значениях.
+        lines.append(f"            команда {args.command} не знает ключей: {', '.join(sorted(unknown))}")
+    return lines
+
+
+def _require(args: argparse.Namespace, *names: str) -> None:
+    """Позиционные стали необязательными ради `--config`; проверить их теперь
+    наша работа, а не argparse."""
+    missing = [n for n in names if not getattr(args, n, None)]
+    if missing:
+        hint = " или задайте их в --config" if not getattr(args, "config", None) else ""
+        raise SystemExit(
+            f"{args.command}: не задано обязательное — {', '.join(missing)}{hint}"
+        )
 
 
 def _force_utf8_output() -> None:
@@ -461,6 +579,10 @@ def main(argv: list[str] | None = None) -> int:
     _force_utf8_output()
     args = build_parser().parse_args(argv)
     try:
+        notes = apply_run_config(args, argv)
+        _require(args, *(("template",) if args.command == "analyze" else ("template", "content")))
+        if notes and not getattr(args, "quiet", False):
+            print(NL.join(notes))
         return args.func(args)
     except FileNotFoundError as exc:
         print(f"Файл не найден: {exc.filename}", file=sys.stderr)

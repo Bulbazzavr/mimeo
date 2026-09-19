@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+from .. import config as cfg
 from ..model import DeckPlan, Pattern, PatternLibrary, PlannedSlide, PlanSource
 from .content import ContentBlock, ContentDoc, ContentSection
 from .matching import DEFAULT_TUNING, Match, Tuning, rank
@@ -350,6 +351,9 @@ def plan_deck(
     `prose.py`, до планирования (`PLAN-2.3`, дыра 2).
     """
     patterns = library.patterns
+    # Паспорт конфигов снимается один раз на план, а не на каждый возврат:
+    # два выхода из функции не должны давать разный `source` (`Z-33`).
+    configs = cfg.stamps()
     slides: list[PlannedSlide] = []
     unplaced: list[str] = []
     # Что сделал сегментатор прозы, читается из документа: «вход распознан как
@@ -358,7 +362,7 @@ def plan_deck(
 
     if not patterns:
         return DeckPlan(
-            source=PlanSource(doc.name, design_system_sha256, library.source.sha256),
+            source=PlanSource(doc.name, design_system_sha256, library.source.sha256, configs),
             slides=(),
             unplaced=tuple(s.id for s in doc.sections),
             warnings=tuple(warnings) + ("В библиотеке нет ни одного паттерна: планировать не на что.",),
@@ -444,7 +448,7 @@ def plan_deck(
         warnings.append(_volume_note(len(slides), target, forced, len(patterns)))
 
     return DeckPlan(
-        source=PlanSource(doc.name, design_system_sha256, library.source.sha256),
+        source=PlanSource(doc.name, design_system_sha256, library.source.sha256, configs),
         slides=tuple(slides),
         planner="deterministic",
         unplaced=tuple(unplaced),

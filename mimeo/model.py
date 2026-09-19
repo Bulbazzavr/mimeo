@@ -11,7 +11,36 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-SCHEMA_VERSION = "1.1"
+#: 1.2 — `deck-plan.source.configs`, паспорт конфигов прогона (`Z-33`,
+#: `ADR-0022`). Поле обязательное, и потому число поднято у всех четырёх
+#: артефактов: конвенция «артефакты одного прогона несут одно число»
+#: (`ARCH-CONTRACTS`, история версий).
+SCHEMA_VERSION = "1.2"
+
+
+@dataclass(frozen=True)
+class ConfigStamp:
+    """Паспорт одного конфига: чем разложили эту колоду (`Z-33`, `ADR-0022`).
+
+    Живёт здесь, а не в `mimeo/config.py`, потому что это **форма артефакта**:
+    `to_dict` уезжает в `deck-plan.json`, `source.configs`. Чтение файлов —
+    работа `mimeo/config.py`, и оно импортирует отсюда, а не наоборот: `model`
+    остаётся листом (`ARCH`, таблица границ).
+
+    Отсутствие файла — не ошибка, а состояние: движок работает на встроенных
+    значениях, и это должно быть видно, а не угадываться по молчанию.
+    """
+
+    name: str
+    version: str = ""      #: объявлена в файле; пусто — не объявлена или файла нет
+    sha256: str = ""       #: от байтов файла; пусто — файла нет
+    loaded: bool = False
+    source: str = ""       #: путь, по которому искали
+
+    def to_dict(self) -> dict:
+        """То, что уходит в артефакт. `loaded` и `source` не уходят: путь у
+        каждой машины свой, а артефакт обязан быть одинаковым."""
+        return {"name": self.name, "version": self.version, "sha256": self.sha256}
 
 
 @dataclass(frozen=True)
@@ -413,15 +442,25 @@ class PlannedSlide:
 
 @dataclass(frozen=True)
 class PlanSource:
+    """В чём собирался этот план: что разложили, из чего и **чем**.
+
+    Третье добавлено 19 сентября (`Z-33`, `ADR-0022`). Двух `sha256` шаблона
+    мало: они опознают вход, но не настройки, а тот же вход при другом
+    `config/prose.json` даёт другую колоду. Без `configs` «воспроизводимый
+    прогон» из критерия 2 ТЗ проверить по артефакту нельзя.
+    """
+
     content: str
     design_system_sha256: str
     patterns_sha256: str
+    configs: tuple[ConfigStamp, ...] = ()
 
     def to_json(self) -> dict:
         return {
             "content": self.content,
             "design_system_sha256": self.design_system_sha256,
             "patterns_sha256": self.patterns_sha256,
+            "configs": [c.to_dict() for c in self.configs],
         }
 
 

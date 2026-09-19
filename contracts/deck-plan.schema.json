@@ -13,7 +13,7 @@
   ],
   "properties": {
     "version": {
-      "const": "1.1"
+      "const": "1.2"
     },
     "source": {
       "type": "object",
@@ -22,7 +22,8 @@
       "required": [
         "content",
         "design_system_sha256",
-        "patterns_sha256"
+        "patterns_sha256",
+        "configs"
       ],
       "properties": {
         "content": {
@@ -36,6 +37,34 @@
         "patterns_sha256": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
+        },
+        "configs": {
+          "type": "array",
+          "description": "Паспорт конфигов движка на момент прогона (Z-33, ADR-0022). Перечислены ВСЕ конфиги, которые движок читает, а не только повлиявшие на этот план: чтобы повторить прогон, нужны они все. Отсортированы по имени — артефакт обязан быть побайтово одинаков от прогона к прогону.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "version",
+              "sha256"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Имя файла в config/"
+              },
+              "version": {
+                "type": "string",
+                "description": "Версия, объявленная в самом файле. Пустая строка — не объявлена или файла нет; движок в этом случае работал на встроенных значениях."
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^([0-9a-f]{64})?$",
+                "description": "Хеш байтов файла. Пусто — файла не было. Два носителя версии не дубль: version говорит, ЧТО поменялось, sha256 — что работало ИМЕННО ЭТО (ADR-0022)."
+              }
+            }
+          }
         }
       }
     },

@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
+import sys
 
 import pytest
 
@@ -23,10 +25,25 @@ DOCS = os.path.join(ROOT, "docs")
 _LINK = re.compile(r"\[[^\]]*\]\((?!https?:|mailto:|#)([^)#]+)(?:#[^)]*)?\)")
 
 
+#: Документы в корне. Четыре первых названы ТЗ (раздел 4) и их читает эксперт;
+#: список перечислен руками, а не собран обходом, чтобы случайный `.md` в корне
+#: не попадал под проверки молча. **Добавляя документ в корень, добавь его
+#: сюда**: 19 сентября `ARCHITECTURE`, `MODELS` и `AUDIT` были написаны и
+#: оказались вне всех проверок — битая ссылка в них не уронила бы ничего.
+_ROOT_DOCS = (
+    "README.md",
+    "ARCHITECTURE.md",
+    "MODELS.md",
+    "AUDIT.md",
+    "CLAUDE.md",
+    "THIRD-PARTY.md",
+)
+
+
 def _markdown_files() -> list[str]:
     found = [
         os.path.join(ROOT, name)
-        for name in ("README.md", "CLAUDE.md", "THIRD-PARTY.md")
+        for name in _ROOT_DOCS
         if os.path.exists(os.path.join(ROOT, name))
     ]
     for directory in ("docs", "WORKLOG"):
@@ -335,3 +352,58 @@ def test_completed_plans_are_marked_completed_on_the_map() -> None:
         if status and status.group(1) == "done":
             row = next((ln for ln in index.splitlines() if name in ln), "")
             assert "Выполнено" in row, f"{name}: в INDEX не помечен выполненным"
+
+
+def test_documents_required_by_the_tz_exist() -> None:
+    """Четыре документа названы ТЗ поимённо (раздел 4), и эксперт пойдёт
+    по этим именам, а не по `docs/INDEX.md`.
+
+    Отсутствующий документ — это ноль по пункту, который проверяют наличием.
+    """
+    missing = [
+        name
+        for name in ("README.md", "ARCHITECTURE.md", "MODELS.md", "AUDIT.md")
+        if not os.path.exists(os.path.join(ROOT, name))
+    ]
+    assert not missing, f"требует ТЗ, раздел 4, но нет в корне: {missing}"
+
+
+def test_audit_table_is_current() -> None:
+    """Таблица тестов в `AUDIT.md` совпадает с тем, что порождает скрипт.
+
+    Падение чинится одной командой — `python tools/audit_doc.py --write`, — и
+    в тексте падения она названа. Цена невысокая, а без этой проверки документ
+    со списком тестов разойдётся с тестами и никто не заметит.
+    """
+    done = subprocess.run(
+        [sys.executable, os.path.join(ROOT, "tools", "audit_doc.py"), "--check"],
+        cwd=ROOT,
+        capture_output=True,
+        check=False,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    assert done.returncode == 0, done.stdout + done.stderr
+
+
+def test_every_test_file_is_described_in_audit() -> None:
+    """Новый файл тестов обязан быть описан, а не просто посчитан.
+
+    Число порождается скриптом и появится само; **смысл** — нет. Поэтому
+    отдельно: пустой docstring делает строку таблицы бессодержательной, и это
+    должно ронять прогон, а не молча проходить.
+    """
+    audit = _read(os.path.join(ROOT, "AUDIT.md"))
+    tests_dir = os.path.join(ROOT, "tests")
+    undescribed = []
+    for name in sorted(os.listdir(tests_dir)):
+        if not (name.startswith("test_") and name.endswith(".py")):
+            continue
+        if name not in audit:
+            undescribed.append(name)
+    assert not undescribed, f"нет в AUDIT.md: {undescribed}"
+    assert "**нет docstring**" not in audit, (
+        "у файла тестов пустой docstring: в AUDIT.md нечего написать про его "
+        "область покрытия. Добавьте первую строку docstring и перегенерируйте."
+    )
