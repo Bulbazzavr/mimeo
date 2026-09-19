@@ -1,0 +1,8 @@
+{
+ "version": 1,
+ "key": "c5332403ffd17f029eb6b795d0c463d91945d2110fe0140f352b409a8064e5a0",
+ "model": "qwen3.5-9b",
+ "mode": "json_schema",
+ "label": "sec01t08",
+ "response": "{\n  \"pattern_id\": \"p05\",\n  \"fills\": [\n    {\n      \"slot_id\": \"s01\",\n      \"kind\": \"text\",\n      \"text\": \"К концу 2027 года хотим выйти на 20 городов, 150 тысяч подписчиков и выручку 4 миллиарда рублей\"\n    },\n    {\n      \"slot_id\": \"s02\",\n      \"kind\": \"text\",\n      \"text\": \"Заканчиваем планами\"\n    }\n  ]\n}"
+}

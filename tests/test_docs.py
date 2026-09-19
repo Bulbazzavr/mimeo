@@ -228,6 +228,46 @@ def test_engine_has_no_third_party_imports() -> None:
     assert not outside, f"сторонние импорты в движке: {sorted(outside)}"
 
 
+def test_state_and_backlog_agree_on_the_next_task() -> None:
+    """Точки входа обязаны называть ОДНУ следующую задачу.
+
+    19 сентября они разошлись: таблица фаз в `BACKLOG` вела на `Z-37`, а список
+    в `STATE` — на `Z-41`. Новая сессия следует инструкции «начни с таблицы фаз»
+    и взяла бы не ту задачу, пропустив единственный дефект, который портит
+    сдаточный артефакт.
+
+    Это второй случай расхождения сводки с карточкой за три дня, и первый
+    нашёлся только чтением. Поэтому проверка автоматическая: сводка устаревает
+    раньше всего остального, а замечают её последней.
+    """
+    backlog = _read(os.path.join(DOCS, "BACKLOG.md"))
+    state = _read(os.path.join(DOCS, "STATE.md"))
+
+    rows = [ln for ln in backlog.splitlines() if ln.startswith("| 16–29 сентября")]
+    assert len(rows) == 1, "строка активной фазы в таблице фаз не одна"
+    queue = re.findall(r"`(Z-\d+)`", rows[0].split("**Первым идёт")[0])
+    done = set(re.findall(r"~~`(Z-\d+)`", rows[0]))
+    backlog_next = next(z for z in queue if z not in done)
+
+    block = state.split("**Ближайшая работа")[1].split("`Z-29` — единственная")[0]
+    state_next = None
+    for item in re.split(r"\n(?=\d+\. )", block):
+        head = item.strip().split(chr(10))[0] if item.strip() else ""
+        if not head or not head[0].isdigit():
+            continue
+        if "~~" in head:                       # пункт целиком про сделанное
+            continue
+        found = re.findall(r"`(Z-\d+)`", item)
+        if found:
+            state_next = found[0]
+            break
+
+    assert backlog_next == state_next, (
+        f"точки входа расходятся: BACKLOG ведёт на {backlog_next}, "
+        f"STATE на {state_next}. Новая сессия возьмёт не ту задачу."
+    )
+
+
 def test_backlog_is_not_frozen_to_the_day_it_was_written() -> None:
     """Бэклог читают в неизвестный день.
 
