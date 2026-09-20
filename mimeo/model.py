@@ -15,6 +15,10 @@ from dataclasses import dataclass
 #: `ADR-0022`). Поле обязательное, и потому число поднято у всех четырёх
 #: артефактов: конвенция «артефакты одного прогона несут одно число»
 #: (`ARCH-CONTRACTS`, история версий).
+#:
+#: **`slots[].typeface_kind` (`Z-43`) номер не поднял** — поле необязательное,
+#: старый артефакт проходит новую схему. Так же поступили с `exclusive`
+#: (`Z-44`) и `fills[].font_scale`: правило 3 там же.
 SCHEMA_VERSION = "1.2"
 
 
@@ -292,6 +296,17 @@ class Slot:
     capacity: Capacity | None
     required: bool
     shape_id: str = ""    # p:cNvPr/@id фигуры донора — якорь для стадии COMPOSE
+    #: Годится ли гарнитура слота под обычный текст доклада (`Z-43`,
+    #: `PLAN-7.3`): `prose`, `mono` — набрано как код, `icon` — пиктограммный
+    #: шрифт. `None` отдельно от них и означает «судить не по чему»: у фигуры
+    #: нет ни одного прогона, как у слотов запасного пути `_from_layouts`
+    #: (`ADR-0006`). Измеритель обязан отличать «проверено и чисто» от
+    #: «проверить не смог».
+    #:
+    #: Ранг штрафует `mono` и `icon` (`matching.py`): проза, набранная
+    #: моноширинным шрифтом жёлтым по чёрному, соблюдает правила шаблона и
+    #: выглядит фрагментом кода. Найдено растром, `DOM-TEXT §11`, `§12`.
+    typeface_kind: str | None = None
 
     def to_json(self) -> dict:
         return {
@@ -304,6 +319,7 @@ class Slot:
                 "cx": self.rect.cx, "cy": self.rect.cy,
             },
             "type_role": self.type_role,
+            "typeface_kind": self.typeface_kind,
             "capacity": self.capacity.to_json() if self.capacity else None,
             "required": self.required,
         }

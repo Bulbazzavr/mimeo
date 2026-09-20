@@ -197,6 +197,19 @@
                   "pattern": "^t[0-9]{2}$",
                   "description": "Ссылка на id записи из design-system.type_scale. Именно на id, а не на role: role не уникален."
                 },
+                "typeface_kind": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "prose",
+                    "mono",
+                    "icon",
+                    null
+                  ],
+                  "description": "Годится ли гарнитура слота под обычный текст доклада. prose — годится; mono — набрано моноширинным шрифтом, то есть слот у донора под код; icon — пиктограммный шрифт, знаки из области частного использования Unicode. null означает 'судить не по чему': у фигуры донора нет ни одного прогона. Ранг штрафует mono и icon. Z-43, PLAN-7.3, DOM-TEXT §11-§12."
+                },
                 "capacity": {
                   "type": [
                     "object",

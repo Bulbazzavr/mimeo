@@ -19,6 +19,9 @@ from .deck import Deck, Rect
 from .fitting import estimate
 from .shapes import CHROME_PH, ShapeObs, SlideObs
 from .tokens import is_numeric_text
+from .typeface import TypefaceConfig
+from .typeface import classify as classify_typeface
+from .typeface import load_config as load_typeface_config
 
 #: Разрешение сигнатуры. Ячейка считается занятой, если внутрь попадает её
 #: ЦЕНТР: при проверке «задета ли ячейка» три карточки в ряд покрывают ровно те
@@ -343,7 +346,12 @@ def _type_index(design_system) -> dict[tuple, str]:
     }
 
 
-def _slots(shapes: list[ShapeObs], design_system, body_size: float) -> tuple[Slot, ...]:
+def _slots(
+    shapes: list[ShapeObs],
+    design_system,
+    body_size: float,
+    typo: TypefaceConfig | None = None,
+) -> tuple[Slot, ...]:
     """Слоты — это то, что стадия PLAN наполняет.
 
     Декоративные фигуры сюда не попадают намеренно: слайд собирается
@@ -352,6 +360,7 @@ def _slots(shapes: list[ShapeObs], design_system, body_size: float) -> tuple[Slo
     никто не пользуется: на реальных шаблонах декор давал до 80 слотов из 142.
     """
     index = _type_index(design_system)
+    typo = typo or load_typeface_config()
     out: list[Slot] = []
     seen_text = False
     n = 0
@@ -366,9 +375,14 @@ def _slots(shapes: list[ShapeObs], design_system, body_size: float) -> tuple[Slo
             seen_text = True
 
         run = _dominant_run(shape)
+        # Вид гарнитуры считается по фигуре, а не по прогону (`DOM-TEXT §8`):
+        # гарнитура берётся у доминирующего прогона, текст — весь, какой есть.
+        # Без прогона остаётся `None` — «судить не по чему», а не `prose`.
+        typeface_kind = None
         type_role = None
         capacity = None
         if run is not None:
+            typeface_kind = classify_typeface(run.latin, shape.text, typo)
             key = (run.latin or "", round((run.size_pt or body_size) * 2) / 2,
                    run.bold, run.italic, run.caps or "none")
             type_role = index.get(key)
@@ -392,6 +406,7 @@ def _slots(shapes: list[ShapeObs], design_system, body_size: float) -> tuple[Slo
                 content_type=content_type,
                 rect=shape.rect,
                 type_role=type_role,
+                typeface_kind=typeface_kind,
                 capacity=capacity,
                 required=content_type in ("text", "list", "number"),
             )
@@ -498,6 +513,8 @@ def build_pattern_library(
     cx, cy = deck.slide_cx, deck.slide_cy
     body = _body_size(design_system)
     source = PatternSource(filename=filename, sha256=deck.pkg.sha256)
+    # Один раз на шаблон, а не на каждую раскладку: файл один и тот же.
+    typo = load_typeface_config()
 
     per_slide = {s.index: _shapes_of(s, cx, cy) for s in slides}
     usable = [s.index for s in slides if per_slide[s.index]]
@@ -546,7 +563,7 @@ def build_pattern_library(
                 kind=_classify(donor_shapes, cx, cy, donor_index, len(slides)),
                 donor_part=slides[donor_index].part,
                 donor_index=donor_index,
-                slots=_slots(donor_shapes, design_system, body),
+                slots=_slots(donor_shapes, design_system, body, typo),
                 members=tuple(members),
                 cohesion=cohesion,
                 donor_reason=reason,

@@ -13,6 +13,10 @@
       "version": "1.1",
       "sha256": "5e7e0ac7fa9ca3ef196b2946b24f516e48c78fe94afb49c38484a3bb6e26b5d8"
     },
+    "typography.json": {
+      "version": "1.0",
+      "sha256": "0def0f447576bb3cacf253a1c662143a715cdebc14059ca99aaf0208515448e3"
+    },
     "variants.json": {
       "version": "1.0",
       "sha256": "589b90c3c39ebd96f64039637e4661ab7761c1674689e510cb49a5aeb1ac97e0"

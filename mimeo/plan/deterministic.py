@@ -12,9 +12,12 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from .. import config as cfg
 from ..model import DeckPlan, Pattern, PatternLibrary, PlannedSlide, PlanSource
 from .content import ContentBlock, ContentDoc, ContentSection
+from .matching import _REPEAT_CAP as MATCHING_REPEAT_CAP
 from .matching import DEFAULT_TUNING, Match, Tuning, rank
 
 #: На сколько частей максимум дробится один раздел. Дальше честнее признать, что
@@ -42,7 +45,20 @@ _REPEAT_PENALTY = DEFAULT_TUNING.repeat
 #: Потолок кратности, с которой штраф перестаёт расти. Без потолка раскладка,
 #: использованная пять раз на длинной колоде, проигрывала бы заведомо негодной.
 #: Три — это «повтор уже бросается в глаза», дальше усиливать нечего.
-_REPEAT_CAP = 3
+#: Значение живёт в `matching`, рядом с самим штрафом и со штрафом за чужую
+#: гарнитуру, который от него считается (`Z-43`).
+_REPEAT_CAP = MATCHING_REPEAT_CAP
+
+#: Как называть человеку чужую гарнитуру слота и то, чем она оборачивается на
+#: слайде. Это читает эксперт, а не лог (`Z-43`).
+_FOREIGN_WORDS = {
+    "mono": "моноширинным шрифтом",
+    "icon": "пиктограммным шрифтом",
+}
+_FOREIGN_LOOKS = {
+    "mono": "фрагментом кода, а не текстом доклада",
+    "icon": "набором значков вместо букв",
+}
 
 
 # --- дробление раздела -------------------------------------------------
@@ -141,16 +157,15 @@ def _avoid_repeat(
             fired.update(m.pattern_id for m in banned)
     if not used:
         return matches
+    # `replace`, а не сборка руками: поля `Match` прибавляются, и перечисленный
+    # руками список молча теряет новое. Так и вышло с `foreign` (`Z-43`):
+    # предупреждение не выводилось ни разу, а поймал это замер, не тест.
     adjusted = [
-        Match(
-            pattern_id=m.pattern_id,
-            kind=m.kind,
-            fills=m.fills,
+        replace(
+            m,
             score=round(
                 m.score - tuning.repeat * min(used.get(m.pattern_id, 0), _REPEAT_CAP), 4
             ),
-            reason=m.reason,
-            leftover=m.leftover,
         )
         for m in matches
     ]
@@ -175,16 +190,7 @@ def _positional(matches: list[Match], first: bool, last: bool) -> list[Match]:
             misplaced = (m.kind == "cover" and not first) or (m.kind == "closing" and not last)
             if misplaced:
                 score -= _POSITION_PENALTY
-        adjusted.append(
-            Match(
-                pattern_id=m.pattern_id,
-                kind=m.kind,
-                fills=m.fills,
-                score=round(score, 4),
-                reason=reason,
-                leftover=m.leftover,
-            )
-        )
+        adjusted.append(replace(m, score=round(score, 4), reason=reason))
     return sorted(adjusted, key=lambda m: (-m.score, m.pattern_id))
 
 
@@ -373,6 +379,8 @@ def plan_deck(
     # считается один раз и передаётся вниз: пересчитывать его на каждом
     # разделе значило бы звать `pkg.rels` в цикле.
     exclusive = frozenset(p.id for p in patterns if getattr(p, "exclusive", False))
+    #: Слайды, где текст всё-таки лёг в слот с чужой гарнитурой (`Z-43`).
+    foreign_used: list[tuple[int, str, str]] = []
     fired: set[str] = set()
     forced = _forced_parts(sections, patterns, target, tuning=tuning, exclusive=exclusive)
     used: dict[str, int] = {}
@@ -402,6 +410,11 @@ def plan_deck(
             )
         for part, (chunk, m) in enumerate(placed, 1):
             used[m.pattern_id] = used.get(m.pattern_id, 0) + 1
+            # Раскладку со слотом под код или пиктограммы ранг штрафует, но не
+            # запрещает: она бывает единственной пригодной. Раз уж взяли —
+            # сказать вслух, какой слайд и почему (`Z-43`, `PLAN-7.3`).
+            for kind in sorted(set(getattr(m, "foreign", ()))):
+                foreign_used.append((len(slides), m.pattern_id, kind))
             slides.append(
                 PlannedSlide(
                     index=len(slides),
@@ -442,6 +455,17 @@ def plan_deck(
                 f"донор несёт части незнакомого нам вида: {', '.join(unknown)}. "
                 f"Разделяются ли они между клонами, мы не знаем — если файл не "
                 f"откроется, начинать искать надо отсюда (Z-44)."
+            )
+
+    if foreign_used:
+        for kind in sorted({k for _, _, k in foreign_used}):
+            hits = [(n, pid) for n, pid, k in foreign_used if k == kind]
+            where = ", ".join(f"слайд {n} ({pid})" for n, pid in hits)
+            warnings.append(
+                f"Текст лёг в слот, набранный {_FOREIGN_WORDS[kind]}: {where}. "
+                f"Правила шаблона это не нарушает — гарнитура его собственная, —"
+                f" но на слайде так выглядит {_FOREIGN_LOOKS[kind]}. Раскладка "
+                f"взята потому, что лучшей пригодной не нашлось (Z-43)."
             )
 
     if target:

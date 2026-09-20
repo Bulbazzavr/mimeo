@@ -19,8 +19,9 @@
 какой шаблон разложили, но и **чем**.
 
 Здесь нет чтения самих настроек — только их паспорт. Значения читают
-`plan/prose.py`, `plan/variants.py`, `plan/client.py` и `plan/prompt.py`,
-каждый по-своему и каждый со своими встроенными запасными.
+`plan/prose.py`, `plan/variants.py`, `plan/client.py`, `plan/prompt.py` и
+`analyze/typeface.py`, каждый по-своему и каждый со своими встроенными
+запасными.
 """
 
 from __future__ import annotations
@@ -41,6 +42,7 @@ KNOWN = (
     "model.json",
     "prompt.json",
     "prose.json",
+    "typography.json",
     "variants.json",
 )
 
