@@ -40,7 +40,7 @@ python tools/audit_doc.py --write
 | [`tests/test_compose.py`](tests/test_compose.py) | 18 | Сборка колоды. ADR-0011, ADR-0012. |
 | [`tests/test_config_version.py`](tests/test_config_version.py) | 8 | Замок версий конфигов: он обязан уметь падать. |
 | [`tests/test_content.py`](tests/test_content.py) | 9 | Нормализация контента. Шаг Ш1 плана `PLAN-2.0`. |
-| [`tests/test_docs.py`](tests/test_docs.py) | 21 | Целостность документации. |
+| [`tests/test_docs.py`](tests/test_docs.py) | 22 | Целостность документации. |
 | [`tests/test_exclusive_donors.py`](tests/test_exclusive_donors.py) | 9 | Доноры, которые нельзя клонировать дважды. `Z-44`, `DOM-PKG §9`, `PLAN-6.1`. |
 | [`tests/test_fitting.py`](tests/test_fitting.py) | 8 | Оценка вместимости. DOM-TEXT §6, §10, ADR-0008. |
 | [`tests/test_mce_prefixes.py`](tests/test_mce_prefixes.py) | 5 | Пространства имён Markup Compatibility переживают пересериализацию. |
@@ -60,7 +60,7 @@ python tools/audit_doc.py --write
 | [`tests/test_verify_repair.py`](tests/test_verify_repair.py) | 20 | Ремонт плана шкалой кегля: монотонность, предел читаемости, честность. |
 | [`tests/test_verify_space.py`](tests/test_verify_space.py) | 19 | Доступное место вместо бокса (`PLAN-4.2`, `ADR-0015`). |
 | [`tests/test_volume.py`](tests/test_volume.py) | 15 | Объём колоды: 10–15 слайдов или сколько задали. `Z-35`, план `PLAN-2.3`. |
-| **всего** | **381** | в 25 файлах |
+| **всего** | **382** | в 25 файлах |
 
 <!-- /порождается -->
 

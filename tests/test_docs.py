@@ -428,3 +428,46 @@ def test_tests_named_in_audit_exist() -> None:
             )
     missing = sorted(n for n in named if n not in defined and f"{n}.py" not in defined)
     assert not missing, f"в AUDIT.md названы, но не существуют: {missing}"
+
+
+def _closed_tasks() -> set[str]:
+    """Задачи, чьи карточки в `BACKLOG` помечены закрытыми."""
+    backlog = _read(os.path.join(DOCS, "BACKLOG.md"))
+    closed = set()
+    for head in re.findall(r"^### (Z-\d+)\.[^\n]*", backlog, re.MULTILINE):
+        card = re.search("^### " + re.escape(head) + r"\.[^\n]*", backlog, re.MULTILINE).group(0)
+        if any(w in card.lower() for w in ("сделано", "сделана", "отменена")):
+            closed.add(head)
+    return closed
+
+
+def test_state_does_not_point_at_a_closed_task() -> None:
+    """`STATE` называет «что дальше» **в двух местах** — нумерованным списком и
+    короткой цепочкой со стрелками. Тест на согласие точек входа читает только
+    первое.
+
+    19 сентября это разошлось: список вёл на `Z-43`, а цепочка всё ещё звала
+    делать `Z-30` + `Z-33`, закрытые в тот же день. Оба места по отдельности
+    выглядели осмысленно, и поймало это только чтение подряд.
+
+    **Стрелка сама по себе не признак:** ею же записаны числа, «9 → 5».
+    Цепочкой задач считается стрелка, у которой **с обеих сторон** стоит ссылка
+    на задачу.
+    """
+    closed = _closed_tasks()
+    assert closed, "ни одной закрытой карточки не найдено — проверка бесполезна"
+
+    text = _read(os.path.join(DOCS, "STATE.md"))
+    bad = []
+    for arrow in re.finditer(r"→", text):
+        left = text[max(0, arrow.start() - 40):arrow.start()]
+        right = text[arrow.end():arrow.end() + 40]
+        lt, rt = re.findall(r"`(Z-\d+)`", left), re.findall(r"`(Z-\d+)`", right)
+        if not (lt and rt):
+            continue                                   # не цепочка задач
+        struck = set(re.findall(r"~~`?(Z-\d+)`?~~", left + "→" + right))
+        for task in (lt[-1], rt[0]):
+            if task in closed and task not in struck:
+                context = " ".join((left[-30:] + "→" + right[:30]).split())
+                bad.append((task, context))
+    assert not bad, f"STATE зовёт делать закрытые задачи: {bad}"
