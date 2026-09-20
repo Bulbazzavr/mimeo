@@ -99,6 +99,26 @@ def typeface_penalty(tuning: Tuning) -> float:
     return _PENALTY_TYPEFACE + tuning.repeat * _REPEAT_CAP
 
 
+#: Штраф за то, что тезисы легли не в порядке чтения (`Z-31`, `PLAN-7.6`).
+#: Умножается на долю переставленных пар: слайд, прочитанный задом наперёд,
+#: платит полную величину, слайд с одной перестановкой из шести — шестую часть.
+#:
+#: **Назначение при этом не меняется: полнота важнее порядка.** На бедной
+#: раскладке они несовместимы — на `p09` шаблона VK Tech ёмкости по чтению идут
+#: 287, 18, 28, 46, а тезисы 25, 86, 50, 32, и расстановки, которая и влезает, и
+#: сохраняет порядок, не существует. Поэтому штраф не переставляет тезисы, а
+#: **уводит выбор** на раскладку, где противоречия нет.
+#:
+#: Величина взята перебором: полка начинается на 0.8, нарушений по корпусу
+#: 32 → 19, и при этом не меняется ничего постороннего — ни число слайдов
+#: (761), ни чужие гарнитуры (10), ни объём вне диапазона
+#: (`WORKLOG/2026-09-20-z31-baseline.md`, замер 9).
+#:
+#: Меньше штрафа за чужую гарнитуру (1.0), и это осознанный порядок: слайд,
+#: прочитанный задом наперёд, читается — просто не по порядку; проза,
+#: набранная как код, выглядит не тем, чем является.
+_PENALTY_DISORDER = 0.80
+
 #: Виды гарнитур, которые штрафуются. `prose` и `None` — нет: первое значит
 #: «смотрели, годится», второе — «судить не по чему» (слоты из макетов,
 #: `ADR-0006`), и наказывать за несостоявшуюся проверку нечестно.
@@ -137,6 +157,10 @@ class Match:
     score: float
     reason: str
     leftover: tuple[str, ...]
+    #: Доля переставленных пар: 0 — тезисы идут в порядке чтения, 1 — задом
+    #: наперёд (`Z-31`). Порядок чтения брать неоткуда не надо: слоты в
+    #: раскладке уже лежат в нём (`_shapes_of`), значит ранг слота — его номер.
+    disorder: float = 0.0
     #: Виды чужих гарнитур слотов, в которые всё-таки лёг текст (`Z-43`).
     #: Непусто — раскладку взяли, зная, что проза там будет выглядеть кодом или
     #: пиктограммами; планировщик обязан сказать об этом вслух, а не промолчать.
@@ -311,63 +335,97 @@ def match(
             continue
         take(slots[0], kind=role, ref=block.ref, text=block.text or None)
 
-    # 4. Списки. Либо один слот-список целиком, либо по слоту на пункт.
-    for block in (b for b in section.blocks if b.kind == "list"):
-        bullet_slots = [s for s in free(_TEXT_ROLES) if s.content_type == "list"]
-        whole = next(
-            (
-                s for s in bullet_slots
-                if len(block.items) <= (_max_items(s) or len(block.items))
-                and all(_fits(s, i) for i in block.items)
-            ),
-            None,
-        )
-        if whole is not None:
-            take(whole, text_for_fit=max(block.items, key=len),
-                 kind="list", items=tuple(block.items))
-            note_slack(whole, block.length)
-            continue
+    # 4. Списки, абзацы и цитаты — **одним проходом в порядке документа**.
+    #
+    #    Раньше проходов было два: сначала все списки, потом все абзацы. Порядок
+    #    документа между видами при этом терялся целиком, и раздел «В чём вообще
+    #    беда» выходил на слайд задом наперёд: абзац, стоявший в тексте первым,
+    #    занимал третью карточку, а список — первую и вторую. Замер: четырнадцать
+    #    слайдов корпуса из сорока испорченных — этот механизм
+    #    (`Z-31`, `PLAN-7.6`, замер 3).
+    #
+    #    Метрики и картинки остаются **раньше** и в общую очередь не идут: они
+    #    занимают свои особые слоты, и пущенная по порядку метрика заняла бы
+    #    обычный текстовый, оставив плашку под число пустой (`PLAN-2.0`).
+    for block in section.blocks:
+        if block.kind == "list":
+            bullet_slots = [s for s in free(_TEXT_ROLES) if s.content_type == "list"]
+            whole = next(
+                (
+                    s for s in bullet_slots
+                    if len(block.items) <= (_max_items(s) or len(block.items))
+                    and all(_fits(s, i) for i in block.items)
+                ),
+                None,
+            )
+            if whole is not None:
+                take(whole, text_for_fit=max(block.items, key=len),
+                     kind="list", items=tuple(block.items))
+                note_slack(whole, block.length)
+                continue
 
-        # По слоту на пункт. Слоты перебираются по порядку, но негодные по
-        # ёмкости пропускаются (`PLAN-2.1`, шаг 1): раньше пункт жёстко ложился
-        # в слот с тем же номером, и раскладка с номерными бейджами впереди
-        # отсеивалась целиком.
-        text_slots = [s for s in free(_TEXT_ROLES) if s.content_type == "text"]
-        chosen: list[Slot] = []
-        rest = list(text_slots)
-        for item in block.items:
-            slot = _pick(rest, item)
-            if slot is None:
-                chosen = []
-                break
-            chosen.append(slot)
-            rest = [s for s in rest if s.id != slot.id]
-        if chosen:
-            for slot, item in zip(chosen, block.items):
-                take(slot, text_for_fit=item, kind="text", text=item)
-                note_slack(slot, len(item))
-        else:
-            leftover.append(block.id)
+            # По слоту на пункт. Слоты перебираются по порядку, но негодные по
+            # ёмкости пропускаются (`PLAN-2.1`, шаг 1): раньше пункт жёстко
+            # ложился в слот с тем же номером, и раскладка с номерными бейджами
+            # впереди отсеивалась целиком.
+            text_slots = [s for s in free(_TEXT_ROLES) if s.content_type == "text"]
+            chosen: list[Slot] = []
+            rest = list(text_slots)
+            for item in block.items:
+                slot = _pick(rest, item)
+                if slot is None:
+                    chosen = []
+                    break
+                chosen.append(slot)
+                rest = [s for s in rest if s.id != slot.id]
+            if chosen:
+                for slot, item in zip(chosen, block.items):
+                    take(slot, text_for_fit=item, kind="text", text=item)
+                    note_slack(slot, len(item))
+            else:
+                leftover.append(block.id)
 
-    # 5. Абзацы и цитаты — в оставшиеся текстовые слоты по порядку. Если
-    #    текстовых не осталось, годится и слот-список: абзац станет одним
-    #    пунктом. На реальных шаблонах слоты-списки самые вместительные.
-    for block in (b for b in section.blocks if b.kind in ("paragraph", "quote")):
-        text_slots = [s for s in free(_TEXT_ROLES) if s.content_type == "text"]
-        list_slots = [s for s in free(_TEXT_ROLES) if s.content_type == "list"]
-        as_text = _pick(text_slots, block.text)
-        as_list = _pick(list_slots, block.text)
-        if as_text is not None:
-            take(as_text, text_for_fit=block.text, kind="text", text=block.text)
-            note_slack(as_text, len(block.text))
-        elif as_list is not None:
-            take(as_list, text_for_fit=block.text, kind="list", items=(block.text,))
-            note_slack(as_list, len(block.text))
-        else:
-            leftover.append(block.id)
+        elif block.kind in ("paragraph", "quote"):
+            # Если текстовых слотов не осталось, годится и слот-список: абзац
+            # станет одним пунктом. На реальных шаблонах слоты-списки самые
+            # вместительные.
+            text_slots = [s for s in free(_TEXT_ROLES) if s.content_type == "text"]
+            list_slots = [s for s in free(_TEXT_ROLES) if s.content_type == "list"]
+            as_text = _pick(text_slots, block.text)
+            as_list = _pick(list_slots, block.text)
+            if as_text is not None:
+                take(as_text, text_for_fit=block.text, kind="text", text=block.text)
+                note_slack(as_text, len(block.text))
+            elif as_list is not None:
+                take(as_list, text_for_fit=block.text, kind="list", items=(block.text,))
+                note_slack(as_list, len(block.text))
+            else:
+                leftover.append(block.id)
 
     if not fills:
         return None
+
+    # Насколько порядок тезисов разошёлся с порядком чтения (`Z-31`,
+    # `PLAN-7.6`). Слоты раскладки уже лежат в порядке чтения, поэтому ранг
+    # слота — просто его номер, и геометрия сюда не тянется: граница слоёв
+    # цела, а порог полосы остаётся один, в `analyze`.
+    rank_of = {s.id: i for i, s in enumerate(pattern.slots)}
+    body_order = [
+        rank_of[f.slot_id]
+        for f in fills
+        if f.kind in ("text", "list", "number")
+        and rank_of.get(f.slot_id) is not None
+        and next((s.role for s in pattern.slots if s.id == f.slot_id), "") not in
+        ("title", "subtitle")
+    ]
+    pairs = len(body_order) * (len(body_order) - 1) // 2
+    inversions = sum(
+        1
+        for i in range(len(body_order))
+        for j in range(i + 1, len(body_order))
+        if body_order[i] > body_order[j]
+    )
+    disorder = inversions / pairs if pairs else 0.0
 
     # --- ранг ---
     total_units = sum(b.units for b in section.blocks) + (1 if section.heading else 0)
@@ -395,6 +453,7 @@ def match(
         - _PENALTY_SLACK * (thin / max(1, len(slack)))
         - tuning.over * over
         - typeface_penalty(tuning) * len(foreign)
+        - _PENALTY_DISORDER * disorder
     )
 
     return Match(
@@ -406,6 +465,7 @@ def match(
                        tuple(foreign)),
         leftover=tuple(leftover),
         foreign=tuple(foreign),
+        disorder=round(disorder, 4),
     )
 
 
