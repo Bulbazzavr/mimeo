@@ -78,9 +78,12 @@ class Measurer:
     Считает вызовы: лишний контрольный сеанс иначе не поймать.
     """
 
-    def __init__(self, heights, font=44.0, fail_at=None, raise_at=None):
+    def __init__(self, heights, font=44.0, fail_at=None, raise_at=None, fonts=None):
         self.heights = list(heights)
         self.font = font
+        #: Кегль по сеансам, если он должен падать от раунда к раунду: без
+        #: этого не построить сцену «раунды кончились ровно на полу» (`Z-45`).
+        self.fonts = list(fonts) if fonts else None
         self.fail_at = fail_at
         self.raise_at = raise_at
         self.calls = 0
@@ -92,11 +95,13 @@ class Measurer:
         if self.fail_at == self.calls:
             return (Measurement(deck=decks[0], status="open_failed", note="E_FAIL"),)
         height = self.heights[min(self.calls, len(self.heights)) - 1]
+        font = (self.fonts[min(self.calls, len(self.fonts)) - 1]
+                if self.fonts else self.font)
         metric = ShapeMetric(
             slide=1, shape_id="11", width=100.0, height=BOX_HEIGHT,
             text_width=10.0, text_height=height,
             margin_left=0.0, margin_right=0.0, margin_top=0.0, margin_bottom=0.0,
-            autofit=0, chars=100, font_size=self.font,
+            autofit=0, chars=100, font_size=font,
         )
         return (Measurement(deck=decks[0], status="ok", shapes=(metric,), slides=1),)
 
@@ -113,7 +118,7 @@ class Builder:
         return self.report
 
 
-def run(heights, rounds=3, font=44.0, **kw):
+def run(heights, rounds=3, font=44.0, **kw):  # noqa: D103
     plan, lib, report, _ = scene()
     m = Measurer(heights, font=font, **kw)
     b = Builder(report)
@@ -316,3 +321,46 @@ def test_cli_and_loop_agree_on_the_default_number_of_rounds():
     from mimeo.verify.loop import DEFAULT_ROUNDS
 
     assert VERIFY_ROUNDS == DEFAULT_ROUNDS
+
+
+# --- Z-45: причина остановки называется та, которая была -----------------
+
+
+def test_rounds_that_ran_out_on_the_floor_say_floor_not_rounds():
+    """Лимит кончился, но следующий раунд ничего бы не изменил (`Z-45`).
+
+    Замер: на VK Tech при лимите 3 отчёт писал «кончились раунды», а при 8 —
+    то же число дефектов и «предел читаемости». Четвёртый раунд находил 2 и
+    чинил 0. Оператор читал «дай раундов» там, где дело в физике.
+
+    Сцена: кегль падает до пола к последнему сеансу, дефект остаётся.
+    """
+    rep, m, b = run([120.0] * 6, rounds=2, fonts=[44.0, 40.0, 10.0, 10.0])
+    assert rep.stopped == STOP_FLOOR
+    assert rep.before == 1 and rep.after == 1
+
+
+def test_rounds_that_ran_out_with_work_left_still_say_rounds():
+    """Обратная сторона, и она проверяется отдельно намеренно.
+
+    При лимите 1 и 2 на том же VK Tech «кончились раунды» — чистая правда:
+    добавка раундов даёт 4 и 3 дефекта против 2. Правило, объявившее бы «пол»
+    и здесь, было бы новой ложью вместо старой.
+    """
+    rep, m, b = run([120.0] * 6, rounds=2)
+    assert rep.stopped == STOP_ROUNDS
+    assert rep.before == 1 and rep.after == 1
+
+
+def test_the_probe_does_not_touch_the_plan():
+    """Проба зовёт ремонт ради одного булева поля и выбрасывает результат.
+
+    Если бы `repair_plan` правил план на месте, петля молча испортила бы
+    артефакт. Проверяется, а не вычитывается."""
+    plan, lib, report, _ = scene()
+    before = plan.to_json()
+    m = Measurer([120.0] * 6, fonts=[44.0, 40.0, 10.0, 10.0])
+    outcome = verify_deck("t.pptx", plan, lib, "out/deck.pptx", report,
+                          rounds=2, measurer=m, builder=Builder(report))
+    assert outcome.report.stopped == STOP_FLOOR
+    assert plan.to_json() == before, "исходный план изменён пробой"
