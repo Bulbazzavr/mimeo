@@ -453,6 +453,11 @@ def test_state_does_not_point_at_a_closed_task() -> None:
     **Стрелка сама по себе не признак:** ею же записаны числа, «9 → 5».
     Цепочкой задач считается стрелка, у которой **с обеих сторон** стоит ссылка
     на задачу.
+
+    Одного этого признака мало: 20 сентября абзац «мерка до `Z-24` … «16 → 1» …
+    мерка до `Z-38`» дал ложную тревогу — числовая стрелка попала между двумя
+    ссылками. Поэтому стрелка между цифрами не считается вовсе: цепочка задач
+    пишется ссылками, а не числами.
     """
     closed = _closed_tasks()
     assert closed, "ни одной закрытой карточки не найдено — проверка бесполезна"
@@ -462,6 +467,8 @@ def test_state_does_not_point_at_a_closed_task() -> None:
     for arrow in re.finditer(r"→", text):
         left = text[max(0, arrow.start() - 40):arrow.start()]
         right = text[arrow.end():arrow.end() + 40]
+        if re.search(r"\d\s*$", left) and re.match(r"\s*\d", right):
+            continue                                   # число, а не цепочка
         lt, rt = re.findall(r"`(Z-\d+)`", left), re.findall(r"`(Z-\d+)`", right)
         if not (lt and rt):
             continue                                   # не цепочка задач
