@@ -45,6 +45,10 @@ _LIMITS = {
     "prose_paragraph": 200,
 }
 
+#: Сочинительные союзы. Встроенный набор остаётся и без конфига: без него
+#: разрез вернулся бы к счёту знаков и снова давал бы обрывки (`Z-42`).
+_CLAUSE_CONJUNCTIONS = ("а", "и", "но", "однако", "зато", "причём", "причем")
+
 #: Сокращения нужны, чтобы «т. е.» не разрывало предложение. Встроенный минимум
 #: остаётся и без конфига: без него разрез пришёлся бы на середину фразы.
 _ABBREVIATIONS = frozenset(
@@ -66,6 +70,15 @@ class ProseConfig:
     prose_paragraph: int = _LIMITS["prose_paragraph"]
     abbreviations: frozenset[str] = _ABBREVIATIONS
     topic_shift: tuple[str, ...] = ()
+    #: Сочинительные союзы: запятая перед таким союзом — граница мысли
+    #: (`Z-42`, `PLAN-7.4`).
+    clause_conjunctions: tuple[str, ...] = _CLAUSE_CONJUNCTIONS
+    #: Наречия и частицы о речи. Снимаются только в **нашем** разрезе заголовка.
+    discourse_adverbs: tuple[str, ...] = ()
+    #: Рамка перед придаточным: «про то, что», «о том, что».
+    clause_frames: tuple[str, ...] = ()
+    #: Первое лицо единственного числа глаголов `address_verbs`.
+    self_verbs: tuple[str, ...] = ()
     lead_in: tuple[str, ...] = ()
     address_verbs: tuple[str, ...] = ()
     address_fillers: tuple[str, ...] = ()
@@ -105,6 +118,13 @@ def load_config(path: str | None = None) -> ProseConfig:
             return fallback
         return frozenset(str(x).lower() for x in value)
 
+    def words_list(key: str) -> tuple[str, ...]:
+        """Список слов как есть, без сортировки по длине: порядок тут не значим."""
+        value = raw.get(key)
+        if not isinstance(value, list):
+            return ()
+        return tuple(str(x).lower() for x in value)
+
     def phrases(key: str) -> tuple[str, ...]:
         value = raw.get(key)
         if not isinstance(value, list):
@@ -117,6 +137,11 @@ def load_config(path: str | None = None) -> ProseConfig:
         abbreviations=words("abbreviations", _ABBREVIATIONS),
         stopwords=words("stopwords"),
         topic_shift=phrases("topic_shift"),
+        clause_conjunctions=(words_list("clause_conjunctions")
+                             or _CLAUSE_CONJUNCTIONS),
+        discourse_adverbs=phrases("discourse_adverbs"),
+        clause_frames=phrases("clause_frames"),
+        self_verbs=words_list("self_verbs"),
         lead_in=phrases("lead_in"),
         address_verbs=phrases("address_verbs"),
         address_fillers=phrases("address_fillers"),
@@ -314,6 +339,19 @@ def _tidy(thesis: str) -> str:
     return _capitalize(thesis)
 
 
+#: Подчинительные слова. Сразу после сочинительного союза они означают, что
+#: дальше идёт придаточное, а не однородная часть: резать там нельзя.
+_SUBORDINATORS = (
+    "если", "когда", "чтобы", "хотя", "пока", "поскольку", "потому",
+    "так как", "раз", "будто", "словно", "который", "которая", "которые",
+)
+
+#: Во сколько раз тезис вправе превысить предел, лишь бы не стать обрывком.
+#: Выше — режем по словам: обрывок плох, но потеря раздела хуже (`Z-42`,
+#: обратный план `PLAN-7.4`). На корпусе эта ступень не срабатывает ни разу.
+_NO_CUT_CEILING = 2
+
+
 def _split_words(text: str, limit: int) -> list[str]:
     out: list[str] = []
     current: list[str] = []
@@ -329,18 +367,60 @@ def _split_words(text: str, limit: int) -> list[str]:
     return out or [text]
 
 
+def _clause_split(sentence: str, cfg: ProseConfig) -> list[str]:
+    """Режет по запятой, за которой стоит сочинительный союз.
+
+    **Запятая сама по себе границей мысли не является** — в русском она
+    размечает придаточные. Замер: разрез по каждой запятой со слиянием коротких
+    кусков дал «Которые сейчас есть», «В зависимости от того» — новые обрывки
+    вместо старых (`WORKLOG/2026-09-20-z42-baseline.md`, замер 4).
+
+    А вот союз `а`, `и`, `но` после запятой — граница однородных частей, и она
+    настоящая: на трёх проблемных предложениях корпуса вышло девять кусков,
+    все короче предела, обрывков ноль (там же, замер 5).
+    """
+    if not cfg.clause_conjunctions:
+        return [sentence]
+    union = "|".join(re.escape(c) for c in cfg.clause_conjunctions)
+    # Союз, за которым сразу стоит подчинительное слово, границей мысли **не**
+    # является: «…, и если текст не поместился — ужимаем» разрезать после
+    # запятой значит оставить условие без главной части. Сторож поставлен на
+    # собственное правило: без него оно само порождало обрывок (`Z-42`).
+    sub = "|".join(re.escape(w) for w in _SUBORDINATORS)
+    pattern = re.compile(
+        rf"(?<=[,;])\s+(?=(?:{union})\s+(?!(?:{sub})\b))", re.IGNORECASE
+    )
+    return [p.strip(" ,;") for p in pattern.split(sentence) if p.strip(" ,;")]
+
+
 def split_theses(sentence: str, cfg: ProseConfig) -> list[str]:
-    """Предложение в тезисы.
+    """Предложение в тезисы. Лестница из пяти ступеней (`Z-42`, `PLAN-7.4`).
 
     **Режется только то, что не влезает.** Первая версия резала по сильным
     разделителям всегда, и на «Основные конкуренты — большие маркетплейсы»
-    выходили два огрызка вместо одной мысли (журнал `PLAN-2.2`). Предложение
-    короче предела — цельный тезис; длиннее — сначала сильные разделители,
-    потом запятые, и лишь в последнюю очередь слова.
+    выходили два огрызка вместо одной мысли (журнал `PLAN-2.2`).
+
+    Дальше — по убыванию надёжности границы:
+
+    1. сильные разделители (тире, точка с запятой);
+    2. **запятая перед сочинительным союзом** — граница однородных частей;
+    3. запятая с воротами «все куски не короче минимума»;
+    4. **не резать вовсе**: длинный тезис ниже по потоку встретит подбор
+       раскладки по ёмкости и петлю VERIFY, которая ужмёт кегль. Обрывок не
+       встретит ничего — его не чинит ни одна стадия;
+    5. по словам — **только выше потолка**. Там выбор уже не «фраза или
+       обрывок», а «обрывок или потеря»: предложение, которое не влезет ни в
+       один слот, уводит весь раздел в `unplaced`.
+
+    Четвёртая ступень — не уступка, а архитектура проекта: «здесь мы стремимся
+    уложиться, а не обязаны» (`matching.py`). Замер: по корпусу без границы по
+    союзу остаются три предложения из 51, самый длинный кусок 197 знаков, и
+    пятая ступень не срабатывает ни разу.
     """
     sentence = sentence.strip()
     if len(sentence) <= cfg.thesis_max:
         return [sentence]
+
     parts = [p.strip(" ,;:") for p in _STRONG.split(sentence)]
     parts = [p for p in parts if p]
     if len(parts) > 1 and all(len(p) >= cfg.thesis_min for p in parts):
@@ -348,12 +428,23 @@ def split_theses(sentence: str, cfg: ProseConfig) -> list[str]:
         for part in parts:
             out.extend(split_theses(part, cfg) if len(part) > cfg.thesis_max else [part])
         return out
+
+    clauses = _clause_split(sentence, cfg)
+    if len(clauses) > 1 and all(len(p) >= cfg.thesis_min for p in clauses):
+        out = []
+        for clause in clauses:
+            out.extend(split_theses(clause, cfg) if len(clause) > cfg.thesis_max else [clause])
+        return out
+
     pieces = [p.strip() for p in _COMMA.split(sentence) if p.strip()]
     if len(pieces) > 1 and all(len(p) >= cfg.thesis_min for p in pieces):
         out = []
         for piece in pieces:
             out.extend(split_theses(piece, cfg) if len(piece) > cfg.thesis_max else [piece])
         return out
+
+    if len(sentence) <= cfg.thesis_max * _NO_CUT_CEILING:
+        return [sentence]
     return _split_words(sentence, cfg.thesis_max)
 
 
@@ -546,6 +637,73 @@ def _our_cut_reads_as_heading(text: str, cfg: ProseConfig) -> bool:
     return significant >= 2
 
 
+def _strip_discourse(head: str, cfg: ProseConfig) -> str:
+    """Снимает с заголовка связку — слово о речи, а не о предмете.
+
+    **Только с нашего разреза.** Метку, которую автор поставил сам перед
+    двоеточием, эта функция не видит и видеть не должна: он назвал тему, а мы
+    лишь угадали границу. Замер 9: из семи заголовков корпуса, начинающихся с
+    маркера смены темы, **пять — метки автора**, и все пять хороши как есть:
+    «Риски», «Насчёт модели», «Заканчиваем планами», «Что показывает
+    юнит-экономика».
+
+    **Снимаются только наречия и частицы** (`discourse_adverbs`) и **рамки
+    перед придаточным** (`clause_frames`). Предлогов в списках нет намеренно:
+    предлог управляет падежом, и «Насчёт модели» без него даёт «Модели» в
+    косвенном падеже, а склонения у нас нет (`ADR-0001`). Названий тем —
+    «риски», «планы», «деньги» — там тоже нет: это и есть заголовок.
+
+    Порядок важен: сначала наречие, потом рамка. «Теперь про то, что проверено
+    на чужом материале» → «про то, что проверено…» → **«Проверено на чужом
+    материале»**. Одним проходом вышло бы только полдела.
+
+    Результат остаётся **подстрокой входа** — снимается префикс и ничего не
+    дописывается (`Z-40`, правило «не выдумывать содержание»).
+    """
+    text = head
+    for _ in range(2):
+        low = text.lower()
+        for phrase in cfg.clause_frames:
+            if low.startswith(phrase):
+                text = text[len(phrase):].lstrip(" ,:—–")
+                break
+        else:
+            for word in cfg.discourse_adverbs:
+                if low.startswith(word) and (
+                    len(low) == len(word) or not low[len(word)].isalpha()
+                ):
+                    text = text[len(word):].lstrip(" ,:—–")
+                    break
+            else:
+                break
+    # Пусто или один знак — снимать было нечего, возвращаем как было.
+    return _capitalize(text) if len(text) >= _CUT_MIN // 2 else head
+
+
+def _significant(text: str, cfg: ProseConfig) -> int:
+    """Сколько в тексте слов длиннее трёх букв и не из стоп-списка."""
+    return sum(
+        1
+        for m in _WORD.finditer(text)
+        if len(m.group(0)) >= 4 and m.group(0).lower() not in cfg.stopwords
+    )
+
+
+def _is_self_remark(text: str, cfg: ProseConfig) -> bool:
+    """Реплика автора о себе: «приложу две», «расскажу подробнее».
+
+    Признак узкий намеренно. Замер: мест с первым лицом по корпусу **24**, и
+    только **одно** из них — реплика; правило «снимать первое лицо» имело бы
+    точность 4% (`WORKLOG/2026-09-20-z42-baseline.md`, замер 2). Поэтому здесь
+    не грамматика, а **закрытый список глаголов о работе с колодой**, взятый из
+    `Z-41` и поставленный в первое лицо единственного числа.
+    """
+    if not cfg.self_verbs:
+        return False
+    words = {m.group(0).lower() for m in _WORD.finditer(text)}
+    return bool(words & set(cfg.self_verbs))
+
+
 def _drop_dangling_tail(text: str, cfg: ProseConfig) -> str:
     """Убирает у метки хвост, в котором нет ни одного значимого слова.
 
@@ -568,6 +726,19 @@ def _drop_dangling_tail(text: str, cfg: ProseConfig) -> str:
         return text
     last = cuts[-1]
     head, tail = text[:last.start()].strip(), text[last.end():].strip()
+
+    # Хвост — реплика автора о том, что он сам сделает с колодой: «Картинки,
+    # **приложу две**». Порог длины здесь не действует намеренно (`Z-42`):
+    # «Картинки» — такое же однословное название темы, как принятые «Риски» и
+    # «Воспроизводимость», и оно лучше, чем название плюс кусок диктовки.
+    #
+    # Список не выдуман под этот пример, а **проспряган** из `address_verbs`
+    # задачи `Z-41`: те же глаголы о работе с колодой, только первое лицо
+    # единственного числа. Множественное сюда не входит — «Мы покажем
+    # результаты» это содержание, а не реплика.
+    if _is_self_remark(tail, cfg) and head and _significant(head, cfg) >= 1:
+        return head
+
     if _our_cut_reads_as_heading(tail, cfg):
         return text
     if len(head) >= _CUT_MIN and _our_cut_reads_as_heading(head, cfg):
@@ -632,9 +803,20 @@ def heading_for(topic: _Topic, cfg: ProseConfig) -> tuple[str | None, list[str]]
             # Дальше границы только удлиняют голову — искать больше нечего.
             break
         if len(head) >= _CUT_MIN and _our_cut_reads_as_heading(head, cfg):
-            return _capitalize(head), [rest, *theses[1:]]
+            # Сторож спрашивают о разрезе **как он есть**, и только потом
+            # снимается связка. Иначе «Теперь деньги» после снятия остаётся с
+            # одним значимым словом, не проходит сторожа — и годный заголовок
+            # «Деньги» теряется (`Z-42`, проверка первая, находка 3).
+            #
+            # Остаток — такой же тезис, как все прочие, и причёсывается так же.
+            # Без `_tidy` он уезжал на слайд со строчной буквы: «как вот эта
+            # самая, никакой разметки заполнять не надо» (`Z-42`, замер 11).
+            return _strip_discourse(head, cfg), [_tidy(rest), *theses[1:]]
     if len(theses) > 1 and len(first) <= cfg.heading_max:
-        return first, theses[1:]
+        # Третий путь — тоже **наша** догадка, а не метка автора, поэтому связка
+        # снимается и здесь. «Теперь деньги.» стоит в тексте отдельным
+        # предложением и приходит именно сюда, а не через разрез (`Z-42`).
+        return _strip_discourse(first, cfg), theses[1:]
     return None, theses
 
 

@@ -49,7 +49,7 @@ python tools/audit_doc.py --write
 | [`tests/test_patterns.py`](tests/test_patterns.py) | 13 | Библиотека паттернов. ADR-0004, ADR-0006, ADR-0007. |
 | [`tests/test_plan.py`](tests/test_plan.py) | 18 | Подбор раскладок и планировщик без модели. ADR-0009. |
 | [`tests/test_prompt_contract.py`](tests/test_prompt_contract.py) | 16 | Промпт-контракт: что уходит в модель и что принимается назад. ADR-0010. |
-| [`tests/test_prose.py`](tests/test_prose.py) | 38 | Сегментация сплошной прозы. Задача `Z-25`, план `PLAN-2.2`. |
+| [`tests/test_prose.py`](tests/test_prose.py) | 48 | Сегментация сплошной прозы. Задача `Z-25`, план `PLAN-2.2`. |
 | [`tests/test_quality.py`](tests/test_quality.py) | 16 | Весы для колоды: дешёвый ярус. `PLAN-2.5`, `ADR-0019`. |
 | [`tests/test_run_config.py`](tests/test_run_config.py) | 10 | Запуск конфиг-файлом: приоритет, опечатки, понятные отказы. |
 | [`tests/test_typeface.py`](tests/test_typeface.py) | 13 | Гарнитура слота, не предназначенная для прозы. `Z-43`, `PLAN-7.3`. |
@@ -61,7 +61,7 @@ python tools/audit_doc.py --write
 | [`tests/test_verify_repair.py`](tests/test_verify_repair.py) | 20 | Ремонт плана шкалой кегля: монотонность, предел читаемости, честность. |
 | [`tests/test_verify_space.py`](tests/test_verify_space.py) | 19 | Доступное место вместо бокса (`PLAN-4.2`, `ADR-0015`). |
 | [`tests/test_volume.py`](tests/test_volume.py) | 15 | Объём колоды: 10–15 слайдов или сколько задали. `Z-35`, план `PLAN-2.3`. |
-| **всего** | **395** | в 26 файлах |
+| **всего** | **405** | в 26 файлах |
 
 <!-- /порождается -->
 

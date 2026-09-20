@@ -15,8 +15,10 @@ from mimeo.plan import load_content
 from mimeo.plan.content import ContentBlock, ContentDoc, ContentSection, parse_markdown
 from mimeo.plan.prose import (
     ProseConfig,
-    _Topic,
+    _strip_discourse,
     _strip_lead_in,
+    _tidy,
+    _Topic,
     _units,
     deck_title,
     group_topics,
@@ -509,7 +511,29 @@ def test_dangling_tail_of_a_label_is_trimmed() -> None:
 
 def test_short_remainder_keeps_the_label_whole() -> None:
     """Порог защищает «То, что нам нужно» от превращения в «То»."""
-    for label in ("То, что нам нужно", "Картинки, приложу две"):
+    heading, _ = heading_for(_Topic(label="То, что нам нужно", theses=["тело"]), CFG)
+    assert heading == "То, что нам нужно"
+
+
+def test_authors_own_remark_is_dropped_even_when_the_rest_is_short() -> None:
+    """«Картинки, приложу две» → «Картинки» (`Z-42`, `PLAN-7.4`).
+
+    **Этот случай раньше защищался порогом длины намеренно**, и решение
+    отменено с доводом, а не по недосмотру: «Картинки» — такое же однословное
+    название темы, как принятые «Риски» и «Воспроизводимость», и оно лучше, чем
+    название плюс кусок диктовки. Порог остаётся для всех прочих хвостов, что и
+    проверяет тест выше.
+    """
+    heading, _ = heading_for(_Topic(label="Картинки, приложу две", theses=["тело"]), CFG)
+    assert heading == "Картинки"
+
+
+def test_first_person_plural_is_content_and_stays() -> None:
+    """Отрицательные контроли правила (а), и два из трёх придуманы нарочно.
+
+    Замер: мест с первым лицом по корпусу 24, реплика одна. Правило обязано
+    выдержать вход, которого у нас нет."""
+    for label in ("Мы покажем результаты", "Я работаю в Москве", "Мы работаем в семи городах"):
         heading, _ = heading_for(_Topic(label=label, theses=["тело"]), CFG)
         assert heading == label, label
 
@@ -523,8 +547,14 @@ def test_cut_is_taken_at_the_first_suitable_boundary_not_the_first() -> None:
     """
     thesis = "Теперь про то, что проверено на чужом материале, это важнее всего"
     heading, body = heading_for(_Topic(label=None, theses=[thesis]), CFG)
-    assert heading == "Теперь про то, что проверено на чужом материале"
-    assert body == ["это важнее всего"], body
+    # Граница выбрана вторая — это предмет теста. А связка «теперь про то, что»
+    # снята сверху (`Z-42`): сторож смотрел на разрез «Теперь про то, что
+    # проверено на чужом материале», и только принятый разрез очищается.
+    assert heading == "Проверено на чужом материале"
+    # Остаток причёсывается как любой тезис — с прописной (`Z-42`). Раньше он
+    # уезжал на слайд со строчной буквы; проверка на регистр здесь была
+    # побочной, предмет этого теста — выбор границы.
+    assert body == ["Это важнее всего"], body
 
 
 def test_stump_is_refused_rather_than_shipped() -> None:
@@ -533,3 +563,102 @@ def test_stump_is_refused_rather_than_shipped() -> None:
     heading, body = heading_for(_Topic(label=None, theses=[thesis]), CFG)
     assert heading is None
     assert body == [thesis], "содержание обязано остаться"
+
+
+# --- Z-42: на слайде фраза доклада, а не кусок диктовки -----------------
+#
+# Три правила и три предела применимости (`PLAN-7.4`). Карточка `Z-42` прямо
+# запрещает сводить их в одно: «смешать их в одно правило значит получить
+# правило, которое нельзя проверить».
+
+
+def test_conjunction_is_a_boundary_and_a_bare_comma_is_not() -> None:
+    """Запятая в русском размечает придаточные, а не мысли.
+
+    Замер: разрез по каждой запятой дал «Которые сейчас есть», «В зависимости
+    от того» — новые обрывки вместо старых. Разрез перед сочинительным союзом
+    обрывков не даёт (`WORKLOG/2026-09-20-z42-baseline.md`, замеры 4 и 5).
+    """
+    sentence = (
+        "Когда нужно собрать презентацию в корпоративном стиле, человек берёт "
+        "шаблон и часами двигает текст по слайдам руками, а генераторы, "
+        "которые сейчас есть, стиль не переносят вовсе"
+    )
+    out = [_tidy(t) for t in split_theses(sentence, CFG)]
+    assert out == [
+        ("Когда нужно собрать презентацию в корпоративном стиле, человек берёт "
+         "шаблон и часами двигает текст по слайдам руками"),
+        "А генераторы, которые сейчас есть, стиль не переносят вовсе",
+    ], out
+
+
+def test_conjunction_before_a_subordinator_is_not_a_boundary() -> None:
+    """Сторож на собственное правило: без него оно само порождало обрывок.
+
+    «…, и если текст не поместился — ужимаем» разрезать после запятой значит
+    оставить условие без главной части."""
+    sentence = (
+        "После сборки мы открываем файл настоящим PowerPoint и спрашиваем у "
+        "него реальные габариты каждой надписи, а не гадаем по числу знаков, "
+        "и если текст не поместился — ужимаем кегль и пересобираем"
+    )
+    out = [_tidy(t) for t in split_theses(sentence, CFG)]
+    assert "И если текст не поместился" not in out, out
+    assert any("и если текст не поместился" in t.lower() for t in out), out
+
+
+def test_long_sentence_without_a_boundary_is_kept_whole() -> None:
+    """Четвёртая ступень: обрывок не чинит ни одна стадия, а переполнение чинит
+    петля VERIFY. Значит длинный тезис лучше обрубленного."""
+    sentence = "Рынок " + "очень длинное описание без единого союза " * 4
+    out = split_theses(sentence.strip(), CFG)
+    assert len(out) == 1, out
+    assert len(out[0]) > CFG.thesis_max
+
+
+def test_monstrous_sentence_is_still_cut_so_nothing_is_lost() -> None:
+    """Пятая ступень: выше потолка выбор уже не «фраза или обрывок», а
+    «обрывок или потеря». Раздел, который не влезет ни в один слот, уходит в
+    `unplaced` целиком."""
+    sentence = "слово " * 200
+    out = split_theses(sentence.strip(), CFG)
+    assert len(out) > 1
+
+
+def test_discourse_connective_is_stripped_from_our_own_cut() -> None:
+    """«Теперь про то, что проверено…» → «Проверено на чужом материале».
+
+    Наречие и рамка перед придаточным снимаются подряд: одним проходом вышло бы
+    только полдела."""
+    topic = _Topic(label=None, theses=[
+        "Теперь про то, что проверено на чужом материале, это важнее всего"])
+    heading, _ = heading_for(topic, CFG)
+    assert heading == "Проверено на чужом материале"
+
+
+def test_authors_own_label_is_never_touched() -> None:
+    """Пять заголовков корпуса из семи — метки самого автора, и все пять хороши.
+
+    Он поставил двоеточие и назвал тему; это разметка, а не наша догадка.
+    Приёмка правила (б): два улучшились, **пять побайтово те же**."""
+    for label in ("Насчёт модели", "Риски", "Заканчиваем планами",
+                  "Что показывает юнит-экономика", "Деньги нужны на три вещи"):
+        heading, _ = heading_for(_Topic(label=label, theses=["тело"]), CFG)
+        assert heading == label, label
+
+
+def test_preposition_is_not_stripped_because_case_would_break() -> None:
+    """«Насчёт модели» без предлога даёт «Модели» в косвенном падеже.
+
+    Предлог управляет падежом, а склонения у нас нет (`ADR-0001`). Поэтому в
+    списке наречия и рамки, но не предлоги — названный предел, а не недосмотр.
+    """
+    assert _strip_discourse("Насчёт модели", CFG) == "Насчёт модели"
+    assert _strip_discourse("Про зависимости", CFG) == "Про зависимости"
+
+
+def test_topic_noun_is_not_mistaken_for_a_connective() -> None:
+    """«Риски», «Деньги», «Планы» стоят в `topic_shift` как признак границы, но
+    это слова **о предмете** — они и есть заголовок."""
+    for head in ("Риски", "Деньги нужны на три вещи", "Планы на квартал"):
+        assert _strip_discourse(head, CFG) == head, head
