@@ -478,3 +478,23 @@ def test_state_does_not_point_at_a_closed_task() -> None:
                 context = " ".join((left[-30:] + "→" + right[:30]).split())
                 bad.append((task, context))
     assert not bad, f"STATE зовёт делать закрытые задачи: {bad}"
+
+
+def test_every_worklog_is_listed_in_its_index() -> None:
+    """`WORKLOG/README.md` обязан перечислять все файлы каталога.
+
+    Найдено сплошной сверкой 20 сентября: в таблице стояло **25** записей при
+    **58** файлах. Дрейф молчаливый — индекс не врёт, он просто умалчивает, и
+    заметить это можно только счётом.
+
+    Правило проекта: правило, которое приходится помнить, надёжнее заменить
+    проверкой, которая падает сама.
+    """
+    worklog = os.path.join(ROOT, "WORKLOG")
+    index = _read(os.path.join(worklog, "README.md"))
+    files = sorted(
+        name for name in os.listdir(worklog)
+        if name.endswith(".md") and name != "README.md"
+    )
+    missing = [name for name in files if f"({name})" not in index]
+    assert not missing, f"нет в WORKLOG/README.md: {missing}"
