@@ -1,4 +1,4 @@
-# Габариты текста всех фигур собранной колоды. Шаг 1 плана `PLAN-4.0`.
+﻿# Габариты текста всех фигур собранной колоды. Шаг 1 плана `PLAN-4.0`.
 #
 # Открывает все файлы списка в ОДНОМ сеансе PowerPoint. Отдельный запуск на файл
 # ловил гонку: предыдущий экземпляр ещё не вышел, зонд отказывался работать, а
@@ -79,18 +79,36 @@ try {
                 $slide = $slides.Item($i)
                 $shapes = $slide.Shapes
                 Write-Output ("onslide=$i count=" + $shapes.Count)
-                foreach ($sh in $shapes) { $stack.Push($sh) }
+                # Порядок отрисовки: ZOrderPosition верхнего уровня. Внутри
+                # группы он считается от группы, поэтому детям кладётся z
+                # родителя — иначе ребёнок группы «оказался бы» ниже фигуры,
+                # которая на самом деле под всей группой (`Z-47`).
+                foreach ($sh in $shapes) {
+                    $z = 0
+                    try { $z = [int]$sh.ZOrderPosition } catch {}
+                    $stack.Push(@($sh, ($z * 1000)))
+                }
                 Release $shapes; Release $slide; Release $slides
                 $shapes = $null; $slide = $null; $slides = $null
                 while ($stack.Count -gt 0) {
-                    $sh = $stack.Pop()
+                    $pair = $stack.Pop()
+                    $sh = $pair[0]
+                    $z = $pair[1]
                     $tf2 = $null
                     $tr = $null
                     try {
                         # msoGroup = 6: без захода внутрь половина фигур не видна
                         if ($sh.Type -eq 6) {
                             $kids = $sh.GroupItems
-                            foreach ($kid in $kids) { $stack.Push($kid) }
+                            # Составной порядок: сотня родителя плюс свой.
+                            # Плоский `z` родителя делал фигуры ВНУТРИ группы
+                            # неразличимыми по высоте, и заслонение внутри
+                            # группы было невидимо (`Z-47`, проверка 1, дыра 5).
+                            foreach ($kid in $kids) {
+                                $kz = 0
+                                try { $kz = [int]$kid.ZOrderPosition } catch {}
+                                $stack.Push(@($kid, ($z * 1000 + $kz)))
+                            }
                             Release $kids
                             $kids = $null
                             continue
@@ -104,10 +122,33 @@ try {
                         # (`WORKLOG/2026-09-13-autofit.md`).
                         $vis = 0
                         try { if ($sh.Visible -eq -1) { $vis = 1 } } catch {}
+                        # Непрозрачность заливки. Без неё «фигура поверх текста»
+                        # ничего не значит: прозрачная рамка накрывает текст на
+                        # 100% и не мешает ему совсем. Замер 20 сентября поймал
+                        # ровно такой ложный случай (`Z-47`).
+                        # 0 — заливки нет или она полностью прозрачна.
+                        # У КАРТИНКИ заливки нет: её изображение — не Fill, и
+                        # `Fill.Visible` там ложь. Первая редакция этого не
+                        # учла и выбросила настоящий дефект — текст под
+                        # декоративной картинкой на VK Tech (`Z-47`).
+                        # msoPicture = 13, msoLinkedPicture = 11.
+                        $stype = 0
+                        try { $stype = [int]$sh.Type } catch {}
+                        $opq = 0
+                        if ($stype -eq 13 -or $stype -eq 11) {
+                            $opq = 1
+                        } else {
+                            try {
+                                if ($sh.Fill.Visible -eq -1) {
+                                    $opq = [math]::Round(1.0 - $sh.Fill.Transparency, 3)
+                                }
+                            } catch {}
+                        }
+                        if ($opq -lt 0) { $opq = 0 }
                         Write-Output ("box slide=$i id=" + $sh.Id +
                                       " x=" + (Num $sh.Left) + " y=" + (Num $sh.Top) +
                                       " w=" + (Num $sh.Width) + " h=" + (Num $sh.Height) +
-                                      " vis=" + $vis)
+                                      " vis=" + $vis + " z=" + $z + " opq=" + $opq + " t=" + $stype)
                         $hasTf = $false
                         try { $hasTf = ($sh.HasTextFrame -eq -1) }
                         catch { Write-Output ("skipped=HasTextFrame " + (Clean $_.Exception.Message)); continue }

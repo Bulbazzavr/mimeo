@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from .detect import (
     DONOR_OVERFLOW,
+    OCCLUDED,
     OVERFLOW_HEIGHT,
     OVERFLOW_WIDTH,
     Defect,
@@ -61,6 +62,7 @@ __all__ = [
     "TARGET_RATIO",
     "repair_plan",
     "DONOR_OVERFLOW",
+    "OCCLUDED",
     "Defect",
     "Inspection",
     "OVERFLOW_HEIGHT",

@@ -28,7 +28,7 @@ from dataclasses import dataclass
 
 from ..model import DeckPlan, PatternLibrary
 from .metrics import TOLERANCE, Measurement, ShapeMetric
-from .space import height_ratio
+from .space import OCCLUSION_SHARE, height_ratio, occluders
 
 #: Текст выше своего места — чиним шкалой шрифта.
 OVERFLOW_HEIGHT = "overflow_height"
@@ -36,6 +36,11 @@ OVERFLOW_HEIGHT = "overflow_height"
 OVERFLOW_WIDTH = "overflow_width"
 #: Переполнена фигура донора, которую мы не трогали. Не наше и не чиним.
 DONOR_OVERFLOW = "donor_overflow"
+#: Текст закрыт непрозрачной фигурой, лежащей **поверх** него (`Z-47`).
+#: Ремонтом не чинится: текст в боксе переносится, и при меньшем кегле строка
+#: всё равно тянется до правого края бокса — то есть по-прежнему уходит под
+#: картинку. Меньше кегль — меньше строк, а не у́же строка.
+OCCLUDED = "occluded"
 
 
 @dataclass(frozen=True)
@@ -47,7 +52,11 @@ class Defect:
     slot_id: str              # пусто для донорских фигур
     shape_id: str
     role: str
-    ratio: float              # во сколько раз содержимое больше места
+    #: У переполнений — во сколько раз содержимое больше места (больше
+    #: единицы плохо). **У заслонения смысл другой:** доля закрытого текста,
+    #: 0..1. Одно поле, два смысла — поэтому словами их различает `describe`,
+    #: а не оставляет читателю догадываться (`Z-47`, проверка 1, находка 3).
+    ratio: float
     repairable: bool
 
     @property
@@ -56,12 +65,17 @@ class Defect:
 
     def describe(self) -> str:
         where = f"слайд {self.slide_index}"
+        who = f"слот {self.slot_id} ({self.role})" if self.slot_id else f"фигура {self.shape_id}"
+        if self.kind == OCCLUDED:
+            # Доля, а не кратность: «в 0.68 раза» здесь читалось бы как
+            # «влезает с запасом», а значит это «две трети текста не видно».
+            return (f"{where}, {who}: {self.ratio:.0%} текста закрыто фигурой "
+                    f"поверх него — ужатие кегля тут не поможет")
         what = {
             OVERFLOW_HEIGHT: "текст выше места",
             OVERFLOW_WIDTH: "текст шире места",
             DONOR_OVERFLOW: "переполнена фигура донора",
         }.get(self.kind, self.kind)
-        who = f"слот {self.slot_id} ({self.role})" if self.slot_id else f"фигура {self.shape_id}"
         return f"{where}, {who}: {what} в {self.ratio:.2f} раза"
 
 
@@ -84,6 +98,14 @@ class Inspection:
         который не открывается (`Z-20`).
         """
         return self.status == "ok"
+
+    @property
+    def occluded(self) -> tuple[Defect, ...]:
+        """Заслонённый текст. Отдельно от всего прочего намеренно: он не
+        чинится ремонтом и не относится к донору, а сводка донорских
+        переполнений считается как `defects - ours` — без этого свойства
+        заслонение уехало бы туда и соврало (`Z-47`)."""
+        return tuple(d for d in self.defects if d.kind == OCCLUDED)
 
     @property
     def repairable(self) -> tuple[Defect, ...]:
@@ -137,6 +159,13 @@ def find_defects(
         )
 
     index = _slot_index(plan, library, slides_written)
+    # Ключ обязан нести номер слайда: `id` фигур повторяются от слайда к
+    # слайду, и словарь по одному `id` молча склеивал бы разные фигуры
+    # (`Z-47`, поймано в самой мерке).
+    texts = frozenset(
+        (s.slide, s.shape_id) for s in measurement.shapes if s.chars
+    )
+    boxes = {(b.slide, b.shape_id): b for b in measurement.boxes}
     defects: list[Defect] = []
     checked = 0
 
@@ -164,6 +193,32 @@ def find_defects(
         plan_index, slot_id, role = known
         checked += 1
         defects.extend(_ours(shape, plan_index, slot_id, role, tolerance, ratio))
+
+        # Заслонение считается отдельно от переполнения: это другой дефект и
+        # другая причина. Слот может влезать идеально и при этом наполовину
+        # прятаться под декоративной картинкой донора (`Z-47`, `PLAN-7.7`).
+        # Бокс берётся **из замера**, а не строится из метрики: `_box_of`
+        # ставит `z = 0`, и тогда «поверх нас» оказывается что угодно. Так и
+        # вышло в первой редакции — 13 заслонений вместо одного. Нет бокса —
+        # нет и суждения: «проверить не смог» это не «чисто».
+        own = boxes.get((shape.slide, shape.shape_id))
+        share = 0.0 if own is None else occluders(
+            (shape.left + shape.margin_left, shape.top + shape.margin_top,
+             shape.text_width, shape.text_height),
+            own, measurement.boxes, texts,
+        )
+        if share > OCCLUSION_SHARE:
+            defects.append(
+                Defect(
+                    kind=OCCLUDED,
+                    slide_index=plan_index,
+                    slot_id=slot_id,
+                    shape_id=shape.shape_id,
+                    role=role,
+                    ratio=round(share, 3),
+                    repairable=False,
+                )
+            )
 
     defects.sort(key=lambda d: (d.slide_index, d.slot_id, d.shape_id, d.kind))
     return Inspection(

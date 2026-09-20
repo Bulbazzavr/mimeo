@@ -71,6 +71,7 @@ class RoundRecord:
     ours: int             # наши слоты, которые можно чинить
     repaired: int         # слотов получили новую шкалу
     rebuilt: bool         # пересобирали ли колоду после этого осмотра
+    occluded: int = 0     # текстов закрыто фигурой поверх них (`Z-47`)
 
     def to_json(self) -> dict:
         return {
@@ -81,6 +82,7 @@ class RoundRecord:
             "ours": self.ours,
             "repaired": self.repaired,
             "rebuilt": self.rebuilt,
+            "occluded": self.occluded,
         }
 
 
@@ -99,6 +101,10 @@ class VerifyReport:
     before: int | None = None
     after: int | None = None
     unresolved: tuple[Defect, ...] = ()
+    #: Заслонённый текст (`Z-47`). Отдельно от `unresolved`, потому что это не
+    #: «ремонт не справился», а «ремонтом не чинится вовсе»: текст переносится,
+    #: и меньший кегль не уводит строку из-под картинки.
+    occluded: tuple[Defect, ...] = ()
     seconds: float = 0.0
     note: str = ""
     version: str = SCHEMA_VERSION
@@ -121,6 +127,16 @@ class VerifyReport:
             "stopped": self.stopped,
             "rounds": [r.to_json() for r in self.rounds],
             "defects": {"before": self.before, "after": self.after},
+            "occluded": [
+                {
+                    "slide": d.slide_index,
+                    "slot": d.slot_id,
+                    "shape": d.shape_id,
+                    "role": d.role,
+                    "share": d.ratio,
+                }
+                for d in self.occluded
+            ],
             "unresolved": [
                 {
                     "kind": d.kind,
@@ -182,7 +198,7 @@ def verify_deck(
 
     started = time.perf_counter()
 
-    def done(status, stopped, log, before, after, unresolved, note=""):
+    def done(status, stopped, log, before, after, unresolved, note="", occluded=()):
         return VerifyOutcome(
             report=VerifyReport(
                 deck=output,
@@ -192,6 +208,7 @@ def verify_deck(
                 before=before,
                 after=after,
                 unresolved=tuple(unresolved),
+                occluded=tuple(occluded),
                 seconds=time.perf_counter() - started,
                 note=note,
             ),
@@ -266,9 +283,11 @@ def verify_deck(
         stale = False
 
     # Сюда можно попасть только со свежим осмотром — см. инвариант в шапке.
+    occluded: tuple[Defect, ...] = ()
     if inspection is not None and not stale:
         after = len(inspection.repairable)
         unresolved = inspection.repairable
+        occluded = inspection.occluded
 
     # Раунды кончились ровно в тот момент, когда всё сошлось, — это «сделал», а
     # не «сдался». Без этой поправки честный успех отчитался бы как отказ.
@@ -295,7 +314,7 @@ def verify_deck(
         if not probe.changed:
             stopped = STOP_FLOOR
 
-    return done("ok", stopped, log, before, after, unresolved)
+    return done("ok", stopped, log, before, after, unresolved, occluded=occluded)
 
 
 def _one(measurer, output: str) -> Measurement | None:
@@ -313,4 +332,5 @@ def _record(index: int, inspection: Inspection, repaired: int, rebuilt: bool) ->
         ours=len(inspection.repairable),
         repaired=repaired,
         rebuilt=rebuilt,
+        occluded=len(inspection.occluded),
     )

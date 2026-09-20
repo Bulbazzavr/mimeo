@@ -21,8 +21,14 @@ from mimeo.model import (
     PlanSource,
     Slot,
 )
-from mimeo.verify import DONOR_OVERFLOW, OVERFLOW_HEIGHT, OVERFLOW_WIDTH, find_defects
-from mimeo.verify.metrics import Measurement, ShapeMetric
+from mimeo.verify import (
+    DONOR_OVERFLOW,
+    OCCLUDED,
+    OVERFLOW_HEIGHT,
+    OVERFLOW_WIDTH,
+    find_defects,
+)
+from mimeo.verify.metrics import Box, Measurement, ShapeMetric
 
 
 def slot(slot_id: str, shape_id: str, role: str = "body") -> Slot:
@@ -169,3 +175,107 @@ def test_defects_are_ordered_deterministically():
     assert [(d.slide_index, d.slot_id) for d in ins.defects] == [
         (0, "s01"), (0, "s02"), (1, "s01"),
     ]
+
+
+# --- Z-47: текст, закрытый фигурой поверх него --------------------------
+#
+# Дефект найден растром, а числа его не видели вовсе. Мерка строилась в пять
+# заходов, и четыре первых были опровергнуты — отсюда три ловушки ниже:
+# карточка под текстом, прозрачная рамка и чужой текст рядом.
+
+
+def occl_metric(shape_id: str, left: float, top: float, tw: float, th: float) -> ShapeMetric:
+    return ShapeMetric(
+        slide=1, shape_id=shape_id, width=tw, height=th,
+        text_width=tw, text_height=th,
+        margin_left=0.0, margin_right=0.0, margin_top=0.0, margin_bottom=0.0,
+        autofit=0, chars=42, left=left, top=top,
+    )
+
+
+def box(shape_id: str, x: float, y: float, w: float, h: float,
+        z: int, opacity: float = 1.0, shape_type: int = 1) -> Box:
+    return Box(slide=1, shape_id=shape_id, x=x, y=y, w=w, h=h,
+               z=z, opacity=opacity, shape_type=shape_type)
+
+
+def occl_measurement(*boxes: Box, shapes=()) -> Measurement:
+    return Measurement(deck="d.pptx", status="ok", shapes=tuple(shapes),
+                       slides=2, boxes=tuple(boxes))
+
+
+def test_picture_over_the_text_is_reported():
+    """Ровно случай VK Tech: декоративная картинка лежит поверх надписи."""
+    text = occl_metric("11", left=0, top=0, tw=100, th=20)
+    m = occl_measurement(
+        box("11", 0, 0, 100, 20, z=8000),
+        box("99", 50, 0, 100, 20, z=9000, shape_type=13),
+        shapes=(text,),
+    )
+    (d,) = [x for x in find_defects(m, PLAN, LIB, (0, 1)).defects if x.kind == OCCLUDED]
+    assert d.slot_id == "s01" and d.repairable is False
+    assert 0.45 < d.ratio < 0.55, d.ratio
+
+
+def test_the_card_under_the_text_is_not_occlusion():
+    """Главная ловушка: карточка накрывает свой текст на 100%, и это норма.
+
+    Без порядка отрисовки мерка давала 86 ложных срабатываний именно на этом.
+    """
+    text = occl_metric("11", left=10, top=10, tw=80, th=20)
+    m = occl_measurement(
+        box("11", 10, 10, 80, 20, z=9000),
+        box("77", 0, 0, 200, 100, z=1000),          # карточка ПОД текстом
+        shapes=(text,),
+    )
+    assert not [x for x in find_defects(m, PLAN, LIB, (0, 1)).defects if x.kind == OCCLUDED]
+
+
+def test_a_transparent_shape_above_hides_nothing():
+    """Вторая ловушка, найденная растром: текст накрыт сверху на 100% и
+    прекрасно читается — накрывающая фигура прозрачна."""
+    text = occl_metric("11", left=0, top=0, tw=100, th=20)
+    m = occl_measurement(
+        box("11", 0, 0, 100, 20, z=8000),
+        box("88", 0, 0, 100, 20, z=9000, opacity=0.0),
+        shapes=(text,),
+    )
+    assert not [x for x in find_defects(m, PLAN, LIB, (0, 1)).defects if x.kind == OCCLUDED]
+
+
+def test_a_neighbouring_text_is_not_occlusion():
+    """Третья ловушка: чужой текст рядом — это соседство, и разбирается оно
+    переполнением, а не заслонением."""
+    mine = occl_metric("11", left=0, top=0, tw=100, th=20)
+    neighbour = occl_metric("12", left=50, top=0, tw=100, th=20)
+    m = occl_measurement(
+        box("11", 0, 0, 100, 20, z=8000),
+        box("12", 50, 0, 100, 20, z=9000),
+        shapes=(mine, neighbour),
+    )
+    assert not [x for x in find_defects(m, PLAN, LIB, (0, 1)).defects if x.kind == OCCLUDED]
+
+
+def test_without_a_box_there_is_no_verdict():
+    """«Проверить не смог» — не «чисто». Нет бокса у самой надписи — нет и
+    суждения: иначе её `z` считался бы нулём и поверх неё оказалось бы всё
+    подряд. Первая редакция так и дала 13 заслонений вместо одного."""
+    text = occl_metric("11", left=0, top=0, tw=100, th=20)
+    m = occl_measurement(
+        box("99", 50, 0, 100, 20, z=9000, shape_type=13),   # бокса «11» нет
+        shapes=(text,),
+    )
+    assert not [x for x in find_defects(m, PLAN, LIB, (0, 1)).defects if x.kind == OCCLUDED]
+
+
+def test_occlusion_does_not_enter_the_repair_count():
+    """Числа переполнений обязаны не шевельнуться: дефект неремонтируемый."""
+    text = occl_metric("11", left=0, top=0, tw=100, th=20)
+    m = occl_measurement(
+        box("11", 0, 0, 100, 20, z=8000),
+        box("99", 0, 0, 100, 20, z=9000, shape_type=13),
+        shapes=(text,),
+    )
+    ins = find_defects(m, PLAN, LIB, (0, 1))
+    assert len(ins.occluded) == 1
+    assert not ins.repairable

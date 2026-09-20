@@ -73,13 +73,26 @@ def describe(report: VerifyReport, show: int = SHOW_UNRESOLVED) -> list[str]:
     ]
     lines.append(f"            встала: {WHY.get(report.stopped, report.stopped)}")
 
-    donor = max((r.defects - r.ours for r in report.rounds), default=0)
+    # Заслонение вычитается: оно «наше», но не чинится и к донору отношения
+    # не имеет. Без этого вычитания оно уехало бы в донорские и соврало
+    # (`Z-47`, найдено при работе, а не тестом).
+    donor = max((r.defects - r.ours - r.occluded for r in report.rounds), default=0)
     if donor:
         word = plural(donor, "переполнение", "переполнения", "переполнений")
         lines.append(
             f"            плюс {donor} {word} в фигурах донора — "
             "мы в них ничего не подставляли, чинить нечем"
         )
+
+    if report.occluded:
+        n = len(report.occluded)
+        word = plural(n, "надпись", "надписи", "надписей")
+        lines.append(
+            f"            закрыто фигурой поверх: {n} {word} — "
+            "ужатие кегля тут не поможет, текст переносится по ширине бокса"
+        )
+        for defect in report.occluded[:show]:
+            lines.append(f"            закрыто: {defect.describe()}")
 
     for defect in report.unresolved[:show]:
         lines.append(f"            осталось: {defect.describe()}")

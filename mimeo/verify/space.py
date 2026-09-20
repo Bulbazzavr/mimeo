@@ -204,3 +204,55 @@ def available_height(metric: ShapeMetric, measurement: Measurement) -> float:
 def height_ratio(metric: ShapeMetric, measurement: Measurement) -> float:
     """Во сколько раз текст выше доступного места. <= 1 — зритель брака не видит."""
     return metric.text_height / max(available_height(metric, measurement), 1.0)
+
+#: Какую долю набранного текста непрозрачная фигура должна накрыть, чтобы это
+#: считалось заслонением (`Z-47`, `PLAN-7.7`).
+#:
+#: Порог выбран **растром, а не кривой**. Число заметно зависит от него — 5%
+#: даёт 11 случаев по корпусу, 10% даёт 8, — и соблазн взять «поустойчивее»
+#: был. Проверено глазами на самом слабом случае, `stilnyj` слайд 2 при **7%**:
+#: бегущая фигурка закрывает «шабло[н]» и «[ч]асами». Дефект настоящий и
+#: виден, а порог 10% выбросил бы три таких **молча**
+#: (`WORKLOG/2026-09-20-z47-baseline.md`).
+OCCLUSION_SHARE = 0.05
+
+#: Ниже этой непрозрачности фигура ничего не заслоняет. Замер поймал ровно
+#: такой ложный случай: текст, накрытый сверху на 100%, читался отлично.
+OPAQUE = 0.5
+
+
+def occluders(text_rect: tuple[float, float, float, float], box: Box,
+              boxes: tuple[Box, ...], texts: frozenset[tuple[int, str]]) -> float:
+    """Какую долю набранного текста накрывает непрозрачная фигура **поверх** него.
+
+    Три условия, и каждое стоило отдельного опровержения замером:
+
+    * **поверх.** Без порядка отрисовки перекрытие не значит ничего: карточка
+      накрывает свой же текст на 100%, и это норма. Она лежит ниже;
+    * **непрозрачная.** Прозрачная рамка накрывает текст целиком и не мешает
+      ему совсем — такой случай нашёлся и был отвергнут;
+    * **не текст.** Чужой текст рядом — это не заслонение, а соседство, и
+      разбирается оно переполнением.
+
+    Меряется по **набранному** тексту, а не по боксу: бокс бывает вчетверо
+    больше своей надписи, и заслонение его пустой части никого не волнует.
+    """
+    tx, ty, tw, th = text_rect
+    if tw <= 0 or th <= 0:
+        return 0.0
+    worst = 0.0
+    for other in boxes:
+        if other.slide != box.slide or other.shape_id == box.shape_id:
+            continue
+        if not other.visible or other.opacity < OPAQUE:
+            continue
+        if (other.slide, other.shape_id) in texts:
+            continue
+        if other.z <= box.z:
+            continue
+        wide = min(tx + tw, other.right) - max(tx, other.x)
+        high = min(ty + th, other.bottom) - max(ty, other.y)
+        if wide <= 0 or high <= 0:
+            continue
+        worst = max(worst, (wide * high) / (tw * th))
+    return worst

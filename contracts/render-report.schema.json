@@ -87,6 +87,11 @@
             "minimum": 0,
             "description": "Слотов получили новую шкалу кегля в этом раунде"
           },
+          "occluded": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Надписей закрыто фигурой ПОВЕРХ них (Z-47). Считается отдельно от ours: заслонение «наше», но ремонтом не чинится, а сводка донорских переполнений выводится как defects - ours - occluded."
+          },
           "rebuilt": {
             "type": "boolean",
             "description": "Пересобирали ли колоду после этого осмотра. От этого зависит, нужен ли контрольный замер."
@@ -119,6 +124,27 @@
         }
       }
     },
+    "occluded": {
+      "type": "array",
+      "description": "Надписи, закрытые непрозрачной фигурой поверх них (Z-47). Отдельно от unresolved: это не «ремонт не справился», а «ремонтом не чинится» — текст переносится по ширине бокса, и меньший кегль не уводит строку из-под картинки.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["slide", "slot", "shape", "role", "share"],
+        "properties": {
+          "slide": {"type": "integer", "minimum": 0},
+          "slot": {"type": "string"},
+          "shape": {"type": "string"},
+          "role": {"type": "string"},
+          "share": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Доля набранного текста, закрытая фигурой поверх него"
+          }
+        }
+      }
+    },
     "unresolved": {
       "type": "array",
       "description": "Что осталось непочиненным, поимённо, а не числом. Пуст, когда всё влезло или когда мерить было нечем — различать эти случаи следует по status и stopped.",
@@ -136,11 +162,12 @@
         "properties": {
           "kind": {
             "type": "string",
-            "description": "Вид дефекта. Список открыт: контраст и осиротевшие строки из ADR-0005 сюда ещё не дошли.",
+            "description": "Вид дефекта. Список открыт: контраст и осиротевшие строки из ADR-0005 сюда ещё не дошли. У occluded поле ratio значит ДРУГОЕ — долю закрытого текста, 0..1, а не кратность превышения (Z-47).",
             "enum": [
               "overflow_height",
               "overflow_width",
-              "donor_overflow"
+              "donor_overflow",
+              "occluded"
             ]
           },
           "slide": {
