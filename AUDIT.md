@@ -43,7 +43,7 @@ python tools/audit_doc.py --write
 | [`tests/test_docs.py`](tests/test_docs.py) | 24 | Целостность документации. |
 | [`tests/test_exclusive_donors.py`](tests/test_exclusive_donors.py) | 9 | Доноры, которые нельзя клонировать дважды. `Z-44`, `DOM-PKG §9`, `PLAN-6.1`. |
 | [`tests/test_fitting.py`](tests/test_fitting.py) | 8 | Оценка вместимости. DOM-TEXT §6, §10, ADR-0008. |
-| [`tests/test_images.py`](tests/test_images.py) | 11 | Встраивание изображений (`Z-28a`, `PLAN-7.10`). |
+| [`tests/test_images.py`](tests/test_images.py) | 16 | Встраивание изображений (`Z-28a`, `PLAN-7.10`). |
 | [`tests/test_mce_prefixes.py`](tests/test_mce_prefixes.py) | 5 | Пространства имён Markup Compatibility переживают пересериализацию. |
 | [`tests/test_model_client.py`](tests/test_model_client.py) | 32 | Клиент к модели: транспорт, кэш, откат. `Z-07`, `PLAN-2.6`, шаги 1, 2, 4. |
 | [`tests/test_occlusion.py`](tests/test_occlusion.py) | 23 | Ёмкость слота знает, что лежит поверх него. `Z-48`, `PLAN-7.8`. |
@@ -64,7 +64,7 @@ python tools/audit_doc.py --write
 | [`tests/test_verify_repair.py`](tests/test_verify_repair.py) | 20 | Ремонт плана шкалой кегля: монотонность, предел читаемости, честность. |
 | [`tests/test_verify_space.py`](tests/test_verify_space.py) | 19 | Доступное место вместо бокса (`PLAN-4.2`, `ADR-0015`). |
 | [`tests/test_volume.py`](tests/test_volume.py) | 15 | Объём колоды: 10–15 слайдов или сколько задали. `Z-35`, план `PLAN-2.3`. |
-| **всего** | **459** | в 29 файлах |
+| **всего** | **464** | в 29 файлах |
 
 <!-- /порождается -->
 

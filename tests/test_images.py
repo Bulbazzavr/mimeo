@@ -14,7 +14,9 @@ import zipfile
 import pytest
 
 from mimeo.analyze import analyze_template
-from mimeo.analyze.picture import BACKDROP, BACKGROUND, ICON, ILLUSTRATION, classify
+from mimeo.analyze.picture import (
+    BACKDROP, BACKGROUND, ICON, ILLUSTRATION, _overlap, classify,
+)
 from mimeo.compose import build
 from mimeo.plan import load_content, plan_deck
 from mimeo.plan.content import parse_markdown, extract_images, resolve_image
@@ -195,3 +197,127 @@ def test_a_homeless_picture_does_not_take_the_section_with_it():
     said = [w for w in plan.warnings if "Картинок не вставлено" in w]
     assert said, "картинке негде встать — об этом обязано быть сказано"
     assert "слайд" in said[0], "остаток обязан называть слайды"
+
+
+# --- слот, который выглядит местом под иллюстрацию, но им не является -----
+#     (`Z-51`, `PLAN-7.11`)
+
+
+def test_a_slot_that_covers_a_caption_is_not_a_place_for_our_picture():
+    """Перекрытие надо считать в обе стороны, и вторую сторону нашёл растр.
+
+    На `p25` выданного VK Tech слот `s03` 5.69×1.73 накрыт подписью `s06`
+    лишь на 22 % своей площади — по старому правилу «не подложка», — а саму
+    подпись накрывает целиком. Наша картинка там прятала её без следа.
+    """
+    slide = (9144000, 5143500)          # 10×5.63 дюйма
+    band = _Rect(0, 0, 4000000, 1200000)
+    caption = _Rect(200000, 400000, 3000000, 300000)   # целиком внутри полосы
+    # Полоса накрыта подписью лишь на малую долю — прежняя проверка молчала.
+    assert _overlap(band, caption) < 0.5
+    assert classify(band, [caption], *slide) == BACKDROP
+
+
+def test_a_slot_beside_a_caption_stays_an_illustration():
+    """Встречная проверка не должна запрещать всё подряд: подпись рядом со
+    слотом, а не внутри него, — обычная и здоровая вёрстка."""
+    slide = (9144000, 5143500)
+    picture = _Rect(0, 0, 3000000, 2000000)
+    caption = _Rect(0, 2100000, 3000000, 300000)       # ниже, не пересекается
+    assert classify(picture, [caption], *slide) == ILLUSTRATION
+
+
+@pytest.mark.skipif(not os.path.exists(VK), reason="материалы ТЗ не коммитятся")
+def test_the_given_template_has_such_slots_and_they_are_excluded():
+    """Замер, из-за которого проверка появилась: по корпусу таких слотов
+    **52 из 179**, из них 40 на выданном VK Tech и 7 на VK Education."""
+    from mimeo.analyze.picture import load_config
+    cfg = load_config()
+    a = analyze_template(VK)
+    hiding = [
+        (p.id, s.id)
+        for p in a.patterns.patterns
+        for s in p.slots
+        if s.content_type == "image" and s.picture_kind == ILLUSTRATION
+        for t in p.slots
+        if t.content_type in ("text", "list", "number")
+        and _overlap(t.rect, s.rect) > cfg.backdrop_overlap
+    ]
+    assert not hiding, f"слот-иллюстрация прячет подпись: {hiding[:5]}"
+
+
+# --- две наши картинки не ложатся одна на другую --------------------------
+
+
+def test_a_slot_overlapping_a_taken_one_is_not_offered():
+    """`Z-28a` развёл две картинки **в пакете** — у каждой своя часть. Но
+    слоты живого шаблона бывают вложены друг в друга (`p20` выданного
+    VK Tech: `s04` 4.60×1.74 целиком внутри `s03` 4.69×1.82), и обе картинки
+    ложились в одно место. Числами это не ловится: заливок столько, сколько
+    задумано."""
+    from mimeo.model import Slot
+    from mimeo.plan.matching import _clear_of_taken
+
+    def slot(sid, x, y, cx, cy):
+        return Slot(id=sid, role="image", content_type="image",
+                    rect=_Rect(x, y, cx, cy), type_role=None, capacity=None,
+                    required=False, picture_kind=ILLUSTRATION)
+
+    outer = slot("s01", 0, 0, 4000000, 2000000)
+    inner = slot("s02", 100000, 100000, 3800000, 1800000)
+    apart = slot("s03", 5000000, 0, 4000000, 2000000)
+
+    class _Pat:
+        slots = (outer, inner, apart)
+
+    kept = _clear_of_taken([inner, apart], _Pat(), {"s01"})
+    assert [s.id for s in kept] == ["s03"], "вложенный слот предложен повторно"
+    assert _clear_of_taken([inner, apart], _Pat(), set()) == [inner, apart]
+
+
+def test_match_does_not_put_two_pictures_into_nested_slots():
+    """То же правило, но через `match`: без него обе картинки раздела ложатся
+    в вложенные друг в друга слоты и на растре наезжают одна на другую."""
+    from mimeo.model import Capacity, Pattern, Slot
+    from mimeo.plan.content import ContentBlock, ContentSection
+    from mimeo.plan.matching import match
+
+    def img(sid, x, y, cx, cy):
+        return Slot(id=sid, role="image", content_type="image",
+                    rect=_Rect(x, y, cx, cy), type_role=None, capacity=None,
+                    required=False, picture_kind=ILLUSTRATION)
+
+    title = Slot(
+        id="s00", role="title", content_type="text",
+        rect=_Rect(0, 0, 8000000, 500000), type_role="h1",
+        capacity=Capacity(max_chars=80, max_lines=2, chars_per_line=40,
+                          target_chars=60, max_items=None, donor_chars=None,
+                          basis="test"),
+        required=True,
+    )
+    # `s02` целиком внутри `s01` — рамка и фотография в ней; `s03` в стороне.
+    #
+    # Пропорции подобраны так, чтобы **без правила** обе картинки выбрали
+    # вложенную пару: полоса 3.69 ближе всего к `s01` (3.70), столбики 1.52 —
+    # к `s02` (1.50), а непересекающийся `s03` (1.00) проигрывает обоим.
+    pattern = Pattern(
+        id="p01", kind="image_text", donor_part="/ppt/slides/slide1.xml",
+        donor_index=1,
+        slots=(title, img("s01", 0, 600000, 3700000, 1000000),
+               img("s02", 100000, 600000, 1500000, 1000000),
+               img("s03", 4500000, 600000, 2000000, 2000000)),
+        members=(1,), cohesion=None, donor_reason="тест", source="test",
+    )
+    section = ContentSection(
+        id="sec", heading="Картинки",
+        blocks=(ContentBlock(id="b1", kind="image", ref=IMG),
+                ContentBlock(id="b2", kind="image", ref=IMG2)),
+    )
+    m = match(section, pattern)
+    assert m is not None
+    used = [f.slot_id for f in m.fills if f.kind == "image"]
+    assert len(used) == 2, f"обе картинки обязаны встать, встало {used}"
+    assert "s03" in used, "второй картинке полагается непересекающийся слот"
+    assert not ({"s01", "s02"} <= set(used)), (
+        f"обе картинки легли во вложенные слоты: {used}"
+    )

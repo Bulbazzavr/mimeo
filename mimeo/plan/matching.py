@@ -17,6 +17,7 @@ from __future__ import annotations
 import functools
 from dataclasses import dataclass
 
+from ..analyze.picture import _overlap as _rect_overlap
 from ..analyze.picture import load_config as load_picture_config
 from ..model import Fill, Pattern, Slot
 from .content import ContentBlock, ContentSection
@@ -379,6 +380,43 @@ def _by_aspect(slots: list[Slot], ref: str | None) -> list[Slot]:
     )
 
 
+def _clear_of_taken(slots: list[Slot], pattern: Pattern, used: set[str]) -> list[Slot]:
+    """Слоты, не налезающие на уже занятый слот картинки или таблицы.
+
+    **Нашёл это растр, а не числа** (`Z-51`, `PLAN-7.11`). У живых шаблонов
+    слоты под картинку бывают **вложены друг в друга**: на `p20` выданного
+    VK Tech `s04` 4.60×1.74 лежит целиком внутри `s03` 4.69×1.82 — рамка и
+    фотография в ней, — а `s07` 0.79×0.60 внутри обоих. Планировщик видел три
+    независимых места и клал в них три картинки; на растре они наезжали друг
+    на друга. По корпусу таких **64 слота из 127** — считано уже после того,
+    как вид слота научился отбрасывать прячущие подпись; до того было 55
+    из 179.
+
+    `Z-28a` чинил однофамильный дефект **в пакете**: две картинки на слайде
+    делили одну часть `/ppt/media/` и вторая затирала первую. Здесь части
+    разные и файл цел — рядом кладутся сами изображения. Числовая проверка
+    этого поймать не может по построению: заливок столько, сколько задумано.
+
+    Спрашивается только про занятые слоты **картинок и таблиц**. Наползание на
+    текст — вопрос другой и решается раньше, видом слота
+    (`analyze/picture.py`): туда наша картинка не попадёт вовсе.
+    """
+    taken = [
+        s.rect for s in pattern.slots
+        if s.id in used and s.content_type in ("image", "table")
+    ]
+    if not taken:
+        return slots
+    limit = load_picture_config().backdrop_overlap
+    return [
+        s for s in slots
+        if not any(
+            _rect_overlap(s.rect, t) > limit or _rect_overlap(t, s.rect) > limit
+            for t in taken
+        )
+    ]
+
+
 def _aspect_gap(slot: Slot, ref: str | None) -> float | None:
     """Во сколько раз пропорция слота расходится с пропорцией картинки.
 
@@ -509,6 +547,7 @@ def match(
             # — картинка не потеряется, она просто не встанет, и об этом
             # скажет предупреждение плана.
             slots = [s for s in slots if s.picture_kind == _ILLUSTRATION]
+            slots = _clear_of_taken(slots, pattern, used)
             slots = _by_aspect(slots, block.ref)
             if not slots:
                 # Не `leftover`: см. `Match.dropped_images`. Дробление раздела
