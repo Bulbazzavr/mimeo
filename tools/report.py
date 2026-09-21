@@ -9,6 +9,9 @@
     python tools/report.py volume      объём колоды: без цели и с целью (`--slides`)
     python tools/report.py llm         цена обращения к модели: сколько вызовов на колоду
                                        и какого размера каждый (`--content путь`)
+    python tools/report.py slots       сужённые и пустые слоты (`Z-48`, `Z-49`); PowerPoint не нужен
+    python tools/report.py verify      переполнения, заслонения и время настоящим PowerPoint
+                                       (`--variants 3` на tz/templates — девять сдаточных колод)
     python tools/report.py prose       что даёт вход: форма, ёмкость слотов, колода
                                        (`--content путь`, по умолчанию прозаический пример;
                                        `--raw` — без сегментации, как было до `Z-25`)
@@ -38,6 +41,7 @@ from mimeo.analyze import analyze_template  # noqa: E402
 from mimeo.compose import build, inspect  # noqa: E402
 from mimeo.oxml.units import emu_to_inch as inch  # noqa: E402
 from mimeo.plan import load_content, load_markdown, plan_deck, rank  # noqa: E402
+from mimeo.cli import parse_slides  # noqa: E402
 from mimeo.plan.prompt import build_request  # noqa: E402
 
 CONTENT = "examples/content-demo.md"
@@ -160,6 +164,126 @@ def report_compose() -> None:
               f"| {report.inherited_shapes} | {problems} | {circular} | {third} "
               f"| {os.path.getsize(target) // 1024} | {time.perf_counter() - started:.2f} |")
     print(f"\n**Итог: {total - bad} шаблонов из {total} собраны и прошли все три проверки.**")
+
+
+def _empty_required(plan, patterns) -> int:
+    """Обязательные слоты, которым не досталось содержимого."""
+    by_id = {p.id: p for p in patterns.patterns}
+    empty = 0
+    for slide in plan.slides:
+        pattern = by_id.get(slide.pattern_id)
+        if pattern is None:
+            continue
+        filled = {f.slot_id for f in slide.fills}
+        empty += sum(1 for s in pattern.slots if s.required and s.id not in filled)
+    return empty
+
+
+def report_slots(content: str) -> None:
+    """Что стало со слотами: сужённые, пустые, сколько знаков разместилось.
+
+    PowerPoint не нужен — всё считается по плану. Это дешёвая половина приёмки
+    `Z-48` и `Z-49`: сужение ёмкости заслонённых слотов (`Slot.occluded`) и его
+    цена — обязательные слоты, которым не досталось содержимого.
+
+    **Считает по одному каталогу за раз**, как и остальные стадии: смешивать
+    наш корпус-прокси с выданными материалами нельзя, у них разный статус
+    (`tz/README.md`). Числа по всем четырнадцати шаблонам — сумма двух прогонов.
+
+    Числа за 21 сентября на `examples/content-mimeo.md`:
+
+    | Прогон | Слотов с ёмкостью | Сужено | Пустых обязательных | Знаков |
+    |---|---:|---:|---:|---:|
+    | `samples` (11) | 658 | 17 | 191 | 25 458 |
+    | `--templates tz/templates` (3) | 999 | 32 | 32 | 7 512 |
+    | **сумма, 14 шаблонов** | **1657** | **49** | **223** | **32 970** |
+
+    До `Z-48` пустых обязательных было **217**; рост — цена того, что
+    заслонённый слот перестал получать запас на переполнение (`Z-49`).
+    """
+    doc = load_content(content)
+    print(f"Вход: `{content}`\n")
+    print("| Шаблон | Слотов с ёмкостью | Сужено | Пустых обязательных | Из них | Знаков |")
+    print("|---|---:|---:|---:|---:|---:|")
+    cap = narrowed = empty = required = chars = 0
+    for f in samples():
+        a = analyze_template(f)
+        plan = plan_deck(doc, a.patterns, a.design_system.source.sha256)
+        c = sum(1 for p in a.patterns.patterns for s in p.slots if s.capacity is not None)
+        # Сужённые считаются **среди слотов с ёмкостью**, а не среди всех:
+        # у слота под картинку или диаграмму ёмкости нет, сужать нечего, и
+        # смешивать эти два счёта — та самая ошибка «два измерителя на разные
+        # вопросы» (`CLAUDE.md`). Без фильтра получается 146 вместо 49.
+        n = sum(1 for p in a.patterns.patterns for s in p.slots
+                if s.capacity is not None and s.occluded)
+        e = _empty_required(plan, a.patterns)
+        r = sum(1 for p in a.patterns.patterns for s in p.slots if s.required)
+        ch = sum(len(fi.text or "") + sum(len(i) for i in (fi.items or ()))
+                 for sl in plan.slides for fi in sl.fills)
+        cap += c; narrowed += n; empty += e; required += r; chars += ch
+        print(f"| `{os.path.basename(f)}` | {c} | {n} | {e} | {r} | {ch} |")
+    print(f"| **всего** | **{cap}** | **{narrowed}** | **{empty}** | **{required}** "
+          f"| **{chars}** |")
+    print("\n«Сужено» — у скольких слотов видимая полоса у́же бокса (`Z-48`). "
+          "«Пустых обязательных» — цена этого сужения, задача `Z-49`.")
+
+
+def report_verify(content: str, slides: str | None, variants: int) -> None:
+    """Переполнения, заслонения и время — настоящим PowerPoint.
+
+    **Поднимает приложение на рабочем столе** (`ADR-0013`). Это та самая
+    таблица, на которой стоят числа `Z-38`, `Z-47` и `Z-48`, и до 21 сентября
+    её приходилось собирать разовым скриптом — то есть числа в документах
+    нечем было перепроверить.
+
+    `--variants 3` на `--templates tz/templates` даёт девять сдаточных колод.
+    """
+    from mimeo.verify import verify_deck                        # noqa: PLC0415
+
+    doc = load_content(content, target=parse_slides(slides))
+    os.makedirs("out/verify", exist_ok=True)
+    print(f"Вход: `{content}`, вариантов {variants}"
+          + (f", объём {slides}" if slides else "") + "\n")
+    print("| Шаблон | Вариант | Слайдов | Переполнений до | после | Заслонений "
+          "| Пустых | Чем встала | Вся команда, с | Петля, с |")
+    print("|---|---:|---:|---:|---:|---:|---:|---|---:|---:|")
+    before = after = occl = 0
+    for f in samples():
+        a = analyze_template(f)
+        plans = _variant_plans(doc, a, variants)
+        for n, plan in enumerate(plans, 1):
+            started = time.perf_counter()
+            target = os.path.join("out/verify",
+                                  f"{os.path.splitext(os.path.basename(f))[0]}-{n}.pptx")
+            built = build(f, plan, a.patterns, target)
+            outcome = verify_deck(f, plan, a.patterns, target, built, rounds=3)
+            rep = outcome.report
+            before += rep.before or 0
+            after += rep.after or 0
+            occl += len(rep.occluded)
+            print(f"| `{os.path.basename(f)}` | {n} | {len(outcome.plan.slides)} "
+                  f"| {rep.before} | {rep.after} | {len(rep.occluded)} "
+                  f"| {_empty_required(outcome.plan, a.patterns)} | {rep.stopped} "
+                  f"| {time.perf_counter() - started:.1f} | {rep.seconds:.1f} |")
+    print(f"\n**Итого: переполнений {before} → {after}, заслонений {occl}.** "
+          "Заслонения ремонтом не берутся и в «до/после» не входят (`Z-47`).")
+
+
+def _variant_plans(doc, analysis, variants: int) -> list:
+    """Один план или тройка вариантов — тем же путём, каким их строит `build`.
+
+    Важно брать именно `generate` + `select`, а не свою выборку: иначе таблица
+    померила бы не то, что уходит в сдачу (`ADR-0020`).
+    """
+    sha = analysis.design_system.source.sha256
+    if variants <= 1:
+        return [plan_deck(doc, analysis.patterns, sha)]
+    from mimeo.plan.variants import generate, load_policies, select   # noqa: PLC0415
+
+    policies, min_distance, _ = load_policies()
+    chosen, _ = select(generate(doc, analysis.patterns, sha, policies, None),
+                       variants, min_distance)
+    return [v.plan for v in chosen]
 
 
 def _quartiles(values: list[int]) -> tuple[int, int, int]:
@@ -341,13 +465,17 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "stage",
-        choices=("analyze", "plan", "compose", "prose", "volume", "quality", "llm"),
+        choices=("analyze", "plan", "compose", "prose", "volume", "quality", "llm",
+                 "slots", "verify"),
     )
     parser.add_argument("--content", default="examples/content-prose.md",
                         help="вход для stage=prose (по умолчанию прозаический пример)")
     parser.add_argument("--slides", help="цель для stage=volume (по умолчанию 10-15)")
     parser.add_argument("--raw", action="store_true",
                         help="stage=prose: без сегментации прозы, состояние до Z-25")
+    parser.add_argument("--variants", type=int, default=1,
+                        help="stage=verify: сколько вариантов вёрстки на шаблон; "
+                             "3 на tz/templates даёт девять сдаточных колод")
     parser.add_argument("--templates", default=TEMPLATES,
                         help="каталог с шаблонами (по умолчанию samples)")
     args = parser.parse_args()
@@ -363,6 +491,12 @@ def main() -> int:
         return 0
     if args.stage == "llm":
         report_llm(args.content)
+        return 0
+    if args.stage == "slots":
+        report_slots(args.content)
+        return 0
+    if args.stage == "verify":
+        report_verify(args.content, args.slides, args.variants)
         return 0
     {"analyze": report_analyze, "plan": report_plan, "compose": report_compose}[args.stage]()
     return 0

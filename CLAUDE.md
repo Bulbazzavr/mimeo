@@ -257,6 +257,7 @@ python -m mimeo analyze <шаблон.pptx> -o out --validate
 python -m mimeo plan   <шаблон.pptx> <контент.md> -o out --validate
 python -m pytest
 python tools/report.py compose        # таблица замеров для WORKLOG
+python tools/report.py slots          # сужённые и пустые слоты (Z-48, Z-49), PowerPoint не нужен
 python tools/config_version.py        # сверить версии конфигов с замком
 python tools/audit_doc.py --write     # перегенерировать таблицу тестов в AUDIT.md
 ```
@@ -289,7 +290,14 @@ python -m mimeo build <шаблон.pptx> <контент.md> -o out --output ou
 python tools/build_verified.py <шаблон.pptx> <контент.md> -o out/deck.pptx  # то же, ради --rounds
 python tools/render_probe.py   <файл.pptx> -o out/render   # открыть и выгрузить PNG
 python tools/rank_dump.py      <шаблон.pptx> <контент.md>  # из чего был выбор раскладки
+python tools/report.py verify --content examples/content-mimeo.md   # переполнения, заслонения, время
+python tools/report.py verify --templates tz/templates --variants 3 --slides 10-15   # девять колод
 ```
+
+**Числа в документах берутся этими двумя стадиями, а не разовыми скриптами.**
+До 21 сентября их не было, и всё, на чём стоят `Z-38`, `Z-47` и `Z-48`, нечем
+было перепроверить. `slots` считает по одному каталогу за раз — числа по всем
+четырнадцати шаблонам это **сумма двух прогонов**, `samples` и `tz/templates`.
 
 Без PowerPoint и без сети: `python tools/typeface_dump.py` — где движок кладёт
 прозу в слот с чужой гарнитурой (`Z-43`).
