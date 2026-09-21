@@ -12,12 +12,15 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from ..model import OpaqueRegion, Pattern, PatternLibrary, PatternSource, Slot
 from ..oxml.ns import qn
 from .deck import Deck, Rect
 from .fitting import estimate
+from .picture import classify_slots
+from .picture import config_path as picture_config_path
+from .picture import load_config as load_picture_config
 from .occlusion import occluding_rects, visible_rect
 from .shapes import CHROME_PH, ShapeObs, SlideObs
 from .tokens import is_numeric_text
@@ -561,6 +564,34 @@ def _donor_parts(deck: Deck, part: str) -> tuple[bool, tuple[str, ...]]:
     return exclusive, unknown
 
 
+def _mark_pictures(patterns, cx: int, cy: int, notes: list[str]) -> tuple:
+    """Проставляет `Slot.picture_kind` по геометрии (`Z-28a`, `PLAN-7.10`).
+
+    Отдельным проходом по готовым раскладкам, а не внутри `_slots`, по двум
+    причинам. Первая: вид слота зависит от **других слотов той же раскладки**
+    — подложку видно только по тому, что на ней лежит текст. Вторая: так
+    признак ставится и раскладкам из макетов (`_from_layouts`), а они идут
+    другим путём.
+    """
+    cfg = load_picture_config()
+    if not cfg.loaded:
+        notes.append(
+            f"Конфиг видов картинки не прочитан, работают встроенные значения: "
+            f"{picture_config_path()}"
+        )
+    out = []
+    for pattern in patterns:
+        kinds = classify_slots(pattern.slots, cx, cy, cfg)
+        if not kinds:
+            out.append(pattern)
+            continue
+        out.append(replace(pattern, slots=tuple(
+            replace(s, picture_kind=kinds[s.id]) if s.id in kinds else s
+            for s in pattern.slots
+        )))
+    return tuple(out)
+
+
 def build_pattern_library(
     deck: Deck, slides: list[SlideObs], design_system, filename: str
 ) -> PatternLibrary:
@@ -589,13 +620,16 @@ def build_pattern_library(
     usable = [s.index for s in slides if per_slide[s.index]]
 
     if len(usable) < _MIN_SLIDES:
+        layout_notes = [
+            f"Слайдов с содержимым {len(usable)}, это меньше {_MIN_SLIDES}: "
+            f"паттерны выведены из макетов (ADR-0006).",
+        ]
         return PatternLibrary(
             source=source,
-            patterns=_from_layouts(deck, design_system, body),
-            notes=(
-                f"Слайдов с содержимым {len(usable)}, это меньше {_MIN_SLIDES}: "
-                f"паттерны выведены из макетов (ADR-0006).",
+            patterns=_mark_pictures(
+                _from_layouts(deck, design_system, body), cx, cy, layout_notes
             ),
+            notes=tuple(layout_notes),
         )
 
     signatures = [_signature(per_slide[i], cx, cy) for i in usable]
@@ -674,4 +708,5 @@ def build_pattern_library(
             "Ни один слайд не слился с другим: в шаблоне все раскладки разные. "
             "Это допустимый исход, а не ошибка."
         )
-    return PatternLibrary(source=source, patterns=tuple(patterns), notes=tuple(notes))
+    marked = _mark_pictures(tuple(patterns), cx, cy, notes)
+    return PatternLibrary(source=source, patterns=marked, notes=tuple(notes))

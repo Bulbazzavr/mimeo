@@ -28,7 +28,7 @@ import re
 from dataclasses import dataclass
 
 from .content import ContentBlock, ContentDoc, ContentSection
-from .content import load as load_raw
+from .content import extract_images, load as load_raw
 
 # --- конфигурация ------------------------------------------------------
 
@@ -1187,5 +1187,20 @@ def load_content(
     cfg: ProseConfig | None = None,
     target: tuple[int, int] | None = None,
 ) -> ContentDoc:
-    """Вход стадии PLAN: разбор разметки плюс сегментация прозы, если она нужна."""
-    return restructure(load_raw(path, name), cfg, target)
+    """Вход стадии PLAN: разбор разметки, сегментация прозы и картинки,
+    названные прозой.
+
+    **Картинки выдираются после сегментации, и это решил замер, а не
+    рассуждение.** Черновик `PLAN-7.10` утверждал обратное: «иначе путь уедет
+    в тезис, сегментатор порежет его по словам». Проверил — не режет: путь
+    переживает сегментацию целиком и попадает в тему «Картинки», то есть ровно
+    туда, где о нём и сказано. А при выдирании **до** сегментации обе картинки
+    уезжали в конец колоды: у сплошной прозы весь вход — один абзац, и блоки
+    картинок приписывались после него, то есть к последней теме
+    (`Z-28a`, `PLAN-7.10`, журнал).
+    """
+    doc = restructure(load_raw(path, name), cfg, target)
+    doc, notes = extract_images(doc, os.path.dirname(os.path.abspath(path)), os.getcwd())
+    if notes:
+        doc.notes = tuple(doc.notes) + tuple(notes)
+    return doc

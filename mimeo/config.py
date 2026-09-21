@@ -19,8 +19,8 @@
 какой шаблон разложили, но и **чем**.
 
 Здесь нет чтения самих настроек — только их паспорт. Значения читают
-`plan/prose.py`, `plan/variants.py`, `plan/client.py`, `plan/prompt.py` и
-`analyze/typeface.py`, каждый по-своему и каждый со своими встроенными
+`plan/prose.py`, `plan/variants.py`, `plan/client.py`, `plan/prompt.py`,
+`analyze/typeface.py` и `analyze/picture.py`, каждый по-своему и каждый со своими встроенными
 запасными.
 """
 
@@ -39,6 +39,7 @@ from .model import ConfigStamp
 #: который движок не читает, не должен попадать в паспорт прогона и создавать
 #: впечатление, будто он на что-то влиял.
 KNOWN = (
+    "images.json",
     "model.json",
     "prompt.json",
     "prose.json",

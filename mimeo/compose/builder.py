@@ -119,6 +119,10 @@ def build(
     inherited = 0
     cleared = 0
     scaled = 0
+    #: Сквозной номер картинки по всей колоде. Именно сквозной: имя части
+    #: раньше бралось от номера слайда, и две картинки одного слайда делили
+    #: одну часть (`Z-28a`, `PLAN-7.10`, шаг 4).
+    pictures = 0
     slide_parts: list[str] = []
     written: list[int] = []
 
@@ -161,7 +165,8 @@ def build(
             if fill.kind == "list":
                 ok = set_items(shape, fill.items or ())
             elif fill.kind == "image":
-                problem = replace_picture(writer, part, shape, fill.ref or "", n)
+                pictures += 1
+                problem = replace_picture(writer, part, shape, fill.ref or "", pictures)
                 if problem:
                     warnings.append(f"слайд {planned.index}: {problem}")
                 ok = problem is None

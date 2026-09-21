@@ -11,8 +11,9 @@
 
 from __future__ import annotations
 
+import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 #: Строка, состоящая из числа с обрамлением. Та же логика, что в DOM-TEXT §8,
 #: но здесь применяется к строке входного текста, а не к тексту фигуры.
@@ -268,3 +269,165 @@ def parse_markdown(source: str, name: str = "content") -> ContentDoc:
 def load(path: str, name: str | None = None) -> ContentDoc:
     with open(path, encoding="utf-8") as fh:
         return parse_markdown(fh.read(), name or path)
+
+
+# --- картинка, названная прозой (`Z-28a`, `PLAN-7.10`) -----------------
+
+#: Расширения, по которым токен в тексте считается ссылкой на картинку.
+#: Список тот же, что у `compose.substitute._IMAGE_TYPES`, минус `svg` и
+#: `tiff`: их `replace_picture` принимает, но в прозе такой токен почти
+#: наверняка не картинка доклада.
+_IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp")
+
+#: Токен, похожий на путь к файлу изображения, внутри обычного текста.
+#: Ограничители — пробел и типографские знаки, потому что в живой речи путь
+#: стоит в скобках, кавычках или перед запятой: «приложу схему
+#: (examples/img/pipeline-stages.png), а ещё…».
+_PATH_IN_PROSE = re.compile(
+    r"""[^\s,;:()«»"'\[\]]+\.(?:png|jpe?g|gif|bmp|webp)""",
+    re.IGNORECASE | re.VERBOSE,
+)
+
+#: Осколки, остающиеся в тексте после выдирания пути: «приложу  — и столбики».
+#: Порядок правил важен, и он проверен растром, а не рассуждением. Первая же
+#: сборка дала на слайде «Схему четырёх стадий— и столбики про переполнения,»:
+#: путь стоял между двух тире, одиночное правило сняло первое и прилепило
+#: второе к слову, а висячая запятая осталась от второго пути в конце фразы
+#: (`Z-28a`, журнал `PLAN-7.10`). Поэтому **пара тире снимается раньше
+#: одиночного**, а хвостовая пунктуация — последней.
+_LEFTOVER_GAPS = (
+    # Путь стоял между тире: «стадий — путь — и столбики» → «стадий и столбики».
+    (re.compile(r"\s*[—–]\s*[—–]\s*"), " "),
+    # Путь был в скобках или кавычках — осталась пустая пара.
+    (re.compile(r"[(\[«]\s*[)\]»]"), ""),
+    (re.compile(r"\s+([,.;:!?])"), r"\1"),
+    (re.compile(r",\s*,"), ","),
+    (re.compile(r"\s{2,}"), " "),
+    # Путь был в конце фразы, после двоеточия, тире или запятой.
+    (re.compile(r"\s*[—–:,]\s*$"), ""),
+)
+
+
+def _tidy(text: str) -> str:
+    """Убирает следы вырезанного пути, не трогая сам текст."""
+    for pattern, repl in _LEFTOVER_GAPS:
+        text = pattern.sub(repl, text)
+    return text.strip(" \t—–-").strip()
+
+
+def resolve_image(ref: str, *bases: str) -> str | None:
+    """Где на диске лежит `ref`. `None` — нигде, и это факт, а не догадка.
+
+    Порядок баз фиксирован, потому что от него зависит результат сборки, а
+    сборка обязана быть побайтово одинаковой (`ADR-0003`). Проверка именно
+    здесь, а не в COMPOSE: иначе PLAN говорит «картинка есть», а COMPOSE
+    молча оставляет донорскую — это разные ответы на один вопрос
+    (`PLAN-7.10`, проверка 1, находка 2).
+    """
+    if os.path.isabs(ref):
+        return _portable(ref) if os.path.isfile(ref) else None
+    for base in bases:
+        if not base:
+            continue
+        candidate = os.path.normpath(os.path.join(base, ref))
+        if os.path.isfile(candidate):
+            return _portable(candidate)
+    return None
+
+
+def _portable(path: str) -> str:
+    """Путь в том виде, в каком его не стыдно положить в `deck-plan.json`.
+
+    Найденный путь абсолютен, а `ref` уезжает в артефакт плана — значит на
+    другой машине артефакт вышел бы другим, и побайтовая воспроизводимость
+    (`ADR-0003`, критерий 2 ТЗ) сломалась бы на ровном месте. Поэтому путь
+    приводится к относительному от текущего каталога и к прямым слэшам:
+    `examples/img/pipeline-stages.png` на любой машине.
+
+    Ушёл выше текущего каталога — оставляем абсолютным: соврать про
+    расположение хуже, чем признать машинный путь.
+    """
+    try:
+        relative = os.path.relpath(path, os.getcwd())
+    except ValueError:                      # другой диск на Windows
+        return path.replace(os.sep, "/")
+    if relative.startswith(".."):
+        return path.replace(os.sep, "/")
+    return relative.replace(os.sep, "/")
+
+
+def extract_images(doc: ContentDoc, *bases: str) -> tuple[ContentDoc, list[str]]:
+    """Путь к картинке, названный внутри прозы, становится блоком `image`.
+
+    Зачем это вообще нужно: ТЗ говорит, что вход — **сплошная
+    неструктурированная проза**, а разметку `![](…)` понимал только
+    размеченный вход. Замер: по корпусу ноль блоков `image` на шести входах и
+    ноль заливок на 84 парах вход × шаблон — то есть на том входе, который
+    заявлен в ТЗ, встраивания изображений у нас не было вовсе
+    (`WORKLOG/2026-09-21-z28a-baseline.md`).
+
+    **Признак — расширение плюс файл на диске.** Одного расширения мало:
+    «смотри в `config/prose.json`» тоже похоже на путь. Существование файла —
+    это факт, а не правдоподобие, и оно же не даёт выдумать содержание
+    (`CTX-NARRATIVE`).
+
+    **Упомянутый, но не найденный путь остаётся текстом** и попадает в
+    предупреждения: вырезать его значит потерять содержание ради красоты.
+    """
+    notes: list[str] = []
+    sections: list[ContentSection] = []
+    counter = 0
+    for section in doc.sections:
+        blocks: list[ContentBlock] = []
+        for block in section.blocks:
+            if block.kind != "paragraph" or not block.text:
+                blocks.append(block)
+                continue
+            found: list[tuple[str, str]] = []
+            missing: list[str] = []
+            for match in _PATH_IN_PROSE.finditer(block.text):
+                ref = match.group(0)
+                where = resolve_image(ref, *bases)
+                if where:
+                    found.append((ref, where))
+                else:
+                    missing.append(ref)
+            for ref in missing:
+                notes.append(
+                    f"Упомянут файл «{ref}», но его нет на диске — "
+                    f"оставлен текстом, картинка не вставлена."
+                )
+            if not found:
+                blocks.append(block)
+                continue
+            text = block.text
+            for ref, _where in found:
+                text = text.replace(ref, " ")
+            text = _tidy(text)
+            if text:
+                blocks.append(replace(block, text=text))
+            for _ref, where in found:
+                counter += 1
+                blocks.append(
+                    ContentBlock(
+                        id=f"{block.id}i{counter:02d}",
+                        kind="image",
+                        ref=where,
+                        text="",
+                    )
+                )
+            notes.append(
+                f"Картинок, названных прозой: {len(found)} "
+                f"({', '.join(os.path.basename(w) for _r, w in found)})."
+                if len(found) > 1
+                else f"Картинка, названная прозой: {os.path.basename(found[0][1])}."
+            )
+        sections.append(ContentSection(id=section.id, heading=section.heading,
+                                       blocks=tuple(blocks)))
+    if counter == 0 and not notes:
+        return doc, []
+    return (
+        ContentDoc(name=doc.name, title=doc.title, sections=sections,
+                   origin=doc.origin, notes=doc.notes),
+        notes,
+    )

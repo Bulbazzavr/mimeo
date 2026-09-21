@@ -12,6 +12,8 @@
 
 from __future__ import annotations
 
+import os
+
 from dataclasses import replace
 
 from .. import config as cfg
@@ -381,6 +383,10 @@ def plan_deck(
     exclusive = frozenset(p.id for p in patterns if getattr(p, "exclusive", False))
     #: Слайды, где текст всё-таки лёг в слот с чужой гарнитурой (`Z-43`).
     foreign_used: list[tuple[int, str, str]] = []
+    #: Картинки, которым не нашлось слота-иллюстрации (`Z-28a`).
+    dropped_images: list[tuple[int, str, str]] = []
+    #: Картинки, вставшие в слот с заметно другой пропорцией (`Z-28a`).
+    squeezed_images: list[tuple[int, str, float]] = []
     #: Слайды, где у раскладки остались слоты без содержимого (`Z-49`).
     #: Считаются **все** слоты, а не только текстовые: на растре пустая
     #: карточка под картинку читается как брак ровно так же, а ранг её не
@@ -420,6 +426,10 @@ def plan_deck(
             # сказать вслух, какой слайд и почему (`Z-43`, `PLAN-7.3`).
             for kind in sorted(set(getattr(m, "foreign", ()))):
                 foreign_used.append((len(slides), m.pattern_id, kind))
+            for ref in getattr(m, "dropped_images", ()):
+                dropped_images.append((len(slides), m.pattern_id, ref))
+            for ref, off in getattr(m, "squeezed_images", ()):
+                squeezed_images.append((len(slides), m.pattern_id, off))
             pattern = next((p for p in patterns if p.id == m.pattern_id), None)
             if pattern is not None:
                 filled = {f.slot_id for f in m.fills}
@@ -480,6 +490,43 @@ def plan_deck(
                 f" но на слайде так выглядит {_FOREIGN_LOOKS[kind]}. Раскладка "
                 f"взята потому, что лучшей пригодной не нашлось (Z-43)."
             )
+
+    # Картинка, которой не нашлось места, исчезает бесследно: `Match.leftover`
+    # до `Z-28a` не читал никто. А исчезает она часто и по понятной причине —
+    # слот под картинку у раскладки может быть, но быть иконкой, подложкой
+    # карточки или фоном: по корпусу таких четыре из пяти (`PLAN-7.10`, шаг 3).
+    # Молчать об этом нельзя: встраивание изображений — пункт критерия 3, и
+    # «картинка не вставилась» обязано быть видно в отчёте, а не на растре.
+    if dropped_images:
+        where = ", ".join(
+            f"слайд {n} ({pid}): {os.path.basename(ref)}"
+            for n, pid, ref in dropped_images
+        )
+        warnings.append(
+            f"Картинок не вставлено: {len(dropped_images)} — {where}. "
+            f"У раскладки не нашлось слота под иллюстрацию: слоты под картинку "
+            f"в ней есть, но это пиктограммы, подложки карточек или фон, и наша "
+            f"картинка в них испортила бы слайд (Z-28a)."
+        )
+
+    # Габариты фигуры донора мы не трогаем (`ADR-0004`), поэтому картинка в
+    # слоте с чужой пропорцией растягивается. Обычно расхождение мало — слот
+    # выбирается по пропорции, — но бывает, что выбирать не из чего: на
+    # выданном VK Education единственный слот, куда ложится этот раздел, —
+    # круглый узел блок-схемы, а картинка баннерная. Отказ там означал бы «нет
+    # встраивания» на трети сдачи, поэтому ставим и **называем**, а не выдаём
+    # сплющенное за задуманное (`Z-28a`, `PLAN-7.10`, шаг 5).
+    if squeezed_images:
+        where = ", ".join(
+            f"слайд {n} ({pid}): на {off:.0%}"
+            for n, pid, off in squeezed_images
+        )
+        warnings.append(
+            f"Картинок растянуто: {len(squeezed_images)} — {where}. Пропорция "
+            f"слота расходится с пропорцией файла, а габариты фигуры донора мы "
+            f"не меняем: вёрстка шаблона его. Слот выбран самый близкий по "
+            f"пропорции из тех, что раскладка предлагает (Z-28a)."
+        )
 
     # Слот без содержимого COMPOSE очищает от текста донора (`PLAN-3.1`), и
     # на слайде остаётся оформление без подписи: карточка с иконкой и пустым

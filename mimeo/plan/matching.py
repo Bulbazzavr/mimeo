@@ -14,10 +14,13 @@
 
 from __future__ import annotations
 
+import functools
 from dataclasses import dataclass
 
+from ..analyze.picture import load_config as load_picture_config
 from ..model import Fill, Pattern, Slot
 from .content import ContentBlock, ContentSection
+from .imagesize import image_size
 
 #: Роли слотов по назначению.
 _TITLE_ROLES = ("title",)
@@ -115,6 +118,42 @@ def typeface_penalty(tuning: Tuning) -> float:
     return _PENALTY_TYPEFACE + tuning.repeat * _REPEAT_CAP
 
 
+#: Штраф за картинку, которой в этой раскладке негде встать (`Z-28a`,
+#: `PLAN-7.10`). Привязан к штрафу за повтор по той же причине, что и штраф за
+#: гарнитуру: `config/variants.json` гоняет `repeat` до 0.8, и назначенное
+#: голым числом утонуло бы в трети политик — как раз в тех, из которых
+#: собираются варианты 2 и 3 сдаточных колод.
+#:
+#: **Величина взята перебором эффективного значения, и она минимальная
+#: работающая.** По всем четырнадцати шаблонам корпуса: при 0.0 картинок
+#: вставляется 6, при 0.25 — семь, и дальше до 3.0 **ничего не меняется**.
+#: Решает он ровно один случай — выданный VK Education, где без него картинка
+#: не встаёт вовсе, а это треть сдачи. Размещённых знаков 32 186 при любом
+#: значении: рычаг переставляет картинку, а не текст.
+#:
+#: Первая развёртка этого штрафа была **неверной** и чуть не привела к его
+#: удалению: она подменяла базу, забыв про слагаемое от повтора, и «ноль» в
+#: ней означал 0.75 — то есть всю измеренную полку разом. Отсюда правило:
+#: перебирать **эффективное** значение, а не то, что написано в константе.
+#:
+#: **Почему штраф, а не пригодность.** Пока невставленная картинка попадала в
+#: `leftover`, `Match.fits` объявлял раскладку непригодной — и на шаблоне без
+#: слотов-иллюстраций непригодными становились **все**, а раздел пропадал
+#: целиком вместе с текстом: минус 484 и 468 знаков на `60042` и
+#: `prostoj-shablon`. Штраф этого не делает: где слота нет ни у кого, он
+#: одинаков у всех и ранга не меняет.
+#:
+#: **Радиус действия — один раздел.** У разделов без картинок `dropped_images`
+#: пуст, и штраф равен нулю: в отличие от правок, которые мерил `Z-49`, эта не
+#: может сдвинуть колоду там, где картинок нет.
+_PENALTY_DROPPED_IMAGE = 0.25
+
+
+def dropped_image_penalty(tuning: Tuning) -> float:
+    return _PENALTY_DROPPED_IMAGE + tuning.repeat * _REPEAT_CAP
+
+
+
 #: Штраф за то, что тезисы легли не в порядке чтения (`Z-31`, `PLAN-7.6`).
 #: Умножается на долю переставленных пар: слайд, прочитанный задом наперёд,
 #: платит полную величину, слайд с одной перестановкой из шести — шестую часть.
@@ -181,6 +220,30 @@ class Match:
     #: Непусто — раскладку взяли, зная, что проза там будет выглядеть кодом или
     #: пиктограммами; планировщик обязан сказать об этом вслух, а не промолчать.
     foreign: tuple[str, ...] = ()
+    #: Картинки, которым в этой раскладке не нашлось слота-иллюстрации
+    #: (`Z-28a`, `PLAN-7.10`). Держатся **отдельно от `leftover`**, и это не
+    #: косметика, а исправление потери содержания.
+    #:
+    #: `leftover` означает «контент не влез, попробуй раздробить раздел», и
+    #: `fits` по нему судит о пригодности раскладки. Для картинки это неверно:
+    #: дробление не создаст слот под иллюстрацию там, где его нет во всём
+    #: шаблоне. Замер: стоило картинке попасть в `leftover`, как на `60042` и
+    #: `prostoj-shablon` **ни одна раскладка не признавалась пригодной**, и
+    #: раздел «Картинки» пропадал целиком вместе со своим текстом — минус 484 и
+    #: 468 знаков (`WORKLOG/2026-09-21-z28a-result.md`).
+    #:
+    #: Разница по смыслу: текст, который некуда положить, — потеря содержания;
+    #: иллюстрация, которой негде стоять, — несостоявшееся украшение. Второе
+    #: называется вслух в предупреждениях плана, но раскладку не отвергает.
+    dropped_images: tuple[str, ...] = ()
+    #: Картинки, поставленные в слот с заметно другой пропорцией: (путь, во
+    #: сколько раз разошлось). Порог — `aspect_tolerance` в
+    #: `config/images.json`. Не отказ, а именование: на выданном VK Education
+    #: единственный слот-иллюстрация, куда ложится этот раздел, — круглый узел
+    #: блок-схемы 1.00, а баннер 3.69, и других мест шаблон не предлагает.
+    #: Отказаться значило бы не выполнить «встраивание изображений» на трети
+    #: сдачи; промолчать — выдать сплющенную схему за задуманную.
+    squeezed_images: tuple[tuple[str, float], ...] = ()
 
     @property
     def fits(self) -> bool:
@@ -280,6 +343,65 @@ def _max_items(slot: Slot) -> int | None:
     return slot.capacity.max_items if slot.capacity else None
 
 
+#: Вид слота под картинку, в который мы кладём своё (`Z-28a`).
+_ILLUSTRATION = "illustration"
+
+
+def _by_aspect(slots: list[Slot], ref: str | None) -> list[Slot]:
+    """Слоты-иллюстрации в порядке близости их пропорции к пропорции картинки.
+
+    **Выбираем место под картинку, а не картинку под место** — обрезать и
+    вписывать оказалось нельзя, и это показал замер (`PLAN-7.10`, правка после
+    замера пропорций). Обрезка баннера 3.69 под слот 2.68 срезает 27% ширины,
+    и у схемы из четырёх стадий исчезает одна: потеря содержания хуже лёгкого
+    растяжения, ровно как в `Z-42`. Вписывание требует менять габариты фигуры
+    донора, а вёрстка шаблона — его (`ADR-0004`).
+
+    Подходящие слоты есть: на выданных шаблонах лучшее расхождение 1%, 10%,
+    17%, 21% и 27%. Габариты фигуры при этом не трогаются вовсе.
+
+    Размеры картинки не прочитались — порядок оставляем прежний: «проверить не
+    смог» не повод переставлять слоты наугад. Сортировка **устойчивая**, так
+    что при равных пропорциях порядок слотов остаётся порядком чтения (`Z-31`).
+    """
+    if not slots or not ref:
+        return slots
+    size = image_size(ref)
+    if size is None:
+        return slots
+    width, height = size
+    if not height:
+        return slots
+    want = width / height
+    return sorted(
+        slots,
+        key=lambda s: abs((s.rect.cx / s.rect.cy if s.rect.cy else want) - want),
+    )
+
+
+def _aspect_gap(slot: Slot, ref: str | None) -> float | None:
+    """Во сколько раз пропорция слота расходится с пропорцией картинки.
+
+    `None` — размеры прочесть не удалось, и это ответ «не смог», а не «сошлось».
+    """
+    if not ref or not slot.rect.cy:
+        return None
+    size = image_size(ref)
+    if size is None or not size[1]:
+        return None
+    want = size[0] / size[1]
+    got = slot.rect.cx / slot.rect.cy
+    if not want:
+        return None
+    return abs(got - want) / want
+
+
+@functools.lru_cache(maxsize=1)
+def _aspect_tolerance() -> float:
+    """Порог из `config/images.json`. Читается один раз на прогон."""
+    return load_picture_config().aspect_tolerance
+
+
 def _pick(slots: list[Slot], text: str) -> Slot | None:
     """Первый по порядку слот, в который текст действительно влезает.
 
@@ -306,6 +428,8 @@ def match(
     used: set[str] = set()
     fills: list[Fill] = []
     leftover: list[str] = []
+    dropped_images: list[str] = []
+    squeezed_images: list[tuple[str, float]] = []
     slack: list[float] = []
     overflows: list[float] = []
     foreign: list[str] = []
@@ -373,9 +497,32 @@ def match(
     for block in (b for b in section.blocks if b.kind in ("image", "table")):
         role = "image" if block.kind == "image" else "table"
         slots = free((role,))
+        if role == "image":
+            # Не всякий слот под картинку — место под иллюстрацию. Иконка,
+            # подложка карточки и фон во весь слайд имеют тот же
+            # `content_type`, и наша схема в них портит слайд: замер дал 688
+            # слотов по корпусу и 135 годных (`Z-28a`, `PLAN-7.10`, шаг 3).
+            #
+            # Здесь **запрет, а не штраф**, и это отличает случай от `Z-43`:
+            # там раскладку со слотом под код бывает не на что заменить, и
+            # текст всё равно надо куда-то положить. Здесь класть необязательно
+            # — картинка не потеряется, она просто не встанет, и об этом
+            # скажет предупреждение плана.
+            slots = [s for s in slots if s.picture_kind == _ILLUSTRATION]
+            slots = _by_aspect(slots, block.ref)
+            if not slots:
+                # Не `leftover`: см. `Match.dropped_images`. Дробление раздела
+                # слота под иллюстрацию не создаст, а отвергнутая раскладка
+                # унесла бы с собой весь текст раздела.
+                dropped_images.append(block.ref or block.id)
+                continue
         if not slots:
             leftover.append(block.id)
             continue
+        if role == "image":
+            off = _aspect_gap(slots[0], block.ref)
+            if off is not None and off > _aspect_tolerance():
+                squeezed_images.append((block.ref or block.id, off))
         take(slots[0], kind=role, ref=block.ref, text=block.text or None)
 
     # 4. Списки, абзацы и цитаты — **одним проходом в порядке документа**.
@@ -496,6 +643,7 @@ def match(
         - _PENALTY_SLACK * (thin / max(1, len(slack)))
         - tuning.over * over
         - typeface_penalty(tuning) * len(foreign)
+        - dropped_image_penalty(tuning) * len(dropped_images)
         - _PENALTY_DISORDER * disorder
     )
 
@@ -507,6 +655,8 @@ def match(
         reason=_reason(section, pattern, placed_units, empty_required, wanted, over,
                        tuple(foreign)),
         leftover=tuple(leftover),
+        dropped_images=tuple(dropped_images),
+        squeezed_images=tuple(squeezed_images),
         foreign=tuple(foreign),
         disorder=round(disorder, 4),
     )
