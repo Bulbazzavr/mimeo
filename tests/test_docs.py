@@ -498,3 +498,34 @@ def test_every_worklog_is_listed_in_its_index() -> None:
     )
     missing = [name for name in files if f"({name})" not in index]
     assert not missing, f"нет в WORKLOG/README.md: {missing}"
+
+
+def test_docs_agree_with_code() -> None:
+    """Документы не обещают того, чего в коде нет (`tools/doc_check.py`).
+
+    Заведена 21 сентября, после того как три чтения документации подряд дали
+    находки каждое, а последняя была не в тексте, а в расхождении текста с
+    кодом: карта модулей в `ARCHITECTURE.md` не знала о двух модулях,
+    добавленных в тот же день.
+
+    Проверяются шесть вещей: инструменты из `tools/`, модули в карте
+    пайплайна, ссылки `Z`/`OQ`/`ADR`/`PLAN`, конфиги и замо́к, команды и флаги
+    движка, числа-константы. Сам инструмент проверен мутацией — каждая из
+    шести падает, когда ломаешь ровно её.
+
+    Чего проверка не делает: числа замеров. Их даёт только прогон `report.py`
+    с настоящим PowerPoint, и инструмент говорит об этом в выводе.
+    """
+    done = subprocess.run(
+        [sys.executable, os.path.join(ROOT, "tools", "doc_check.py")],
+        cwd=ROOT,
+        capture_output=True,
+        check=False,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    assert done.returncode == 0, (
+        "документы разошлись с кодом; что именно — "
+        f"`python tools/doc_check.py`:\n{done.stdout}{done.stderr}"
+    )
