@@ -179,3 +179,57 @@ def test_plan_is_deterministic(doc, analysis):
     a = json.dumps(plan_deck(doc, analysis.patterns, "0" * 64).to_json(), ensure_ascii=False)
     b = json.dumps(plan_deck(doc, analysis.patterns, "0" * 64).to_json(), ensure_ascii=False)
     assert a == b
+
+
+# --- пустые слоты названы вслух (`Z-49`, `PLAN-7.9`) --------------------
+
+
+def test_blank_slots_are_named_not_silent(doc, analysis):
+    """Слот без содержимого COMPOSE чистит, и на слайде остаётся оформление
+    без подписи (`PLAN-3.1`). До `Z-49` остаток не назывался ничем — ни
+    числом, ни списком, — и нашёлся только растром. Молчаливый дефект хуже
+    названного, это то же правило, по которому говорит `Z-43`.
+    """
+    plan = plan_deck(doc, analysis.patterns, "0" * 64)
+    by_id = {p.id: p for p in analysis.patterns.patterns}
+    blank = sum(
+        1
+        for slide in plan.slides
+        for slot in by_id[slide.pattern_id].slots
+        if slot.id not in {f.slot_id for f in slide.fills}
+    )
+    said = [w for w in plan.warnings if "Слотов без содержимого" in w]
+    if not blank:
+        assert not said, "пустых слотов нет — говорить не о чем"
+        return
+    assert said, "пустые слоты есть, а предупреждения нет"
+    assert f"Слотов без содержимого {blank} " in said[0]
+    assert "слайд" in said[0], "остаток обязан называть слайды, а не только число"
+
+
+def test_blank_count_includes_slots_that_hold_no_text(doc, analysis):
+    """Считаются **все** слоты, а не только текстовые.
+
+    Ранг платит лишь за текстовые (`_PENALTY_EMPTY_SLOT` исключает `image`), и
+    на растре `Z-49` поймал обмен: два пустых текстовых слота уходят, вместо
+    них встаёт одна крупная пустая плашка под картинку, а число улучшается.
+    Мерка, которая этого не видит, показывает намерение вместо результата.
+    """
+    plan = plan_deck(doc, analysis.patterns, "0" * 64)
+    by_id = {p.id: p for p in analysis.patterns.patterns}
+    non_text = [
+        (slide.index, slot.id)
+        for slide in plan.slides
+        for slot in by_id[slide.pattern_id].slots
+        if slot.id not in {f.slot_id for f in slide.fills}
+        and slot.content_type not in ("text", "list", "number")
+    ]
+    if not non_text:
+        pytest.skip("на этой фикстуре пустых нетекстовых слотов не осталось")
+    said = [w for w in plan.warnings if "Слотов без содержимого" in w]
+    assert said, "пустые нетекстовые слоты есть, а предупреждения нет"
+    where = said[0]
+    for index, _slot in non_text:
+        assert f"слайд {index} (" in where, (
+            f"слайд {index} несёт пустой нетекстовый слот и обязан быть назван"
+        )

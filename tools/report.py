@@ -179,6 +179,28 @@ def _empty_required(plan, patterns) -> int:
     return empty
 
 
+def _blank_slots(plan, patterns) -> int:
+    """Слоты без содержимого — **все**, а не только текстовые.
+
+    Отдельное число, а не замена предыдущему: они отвечают на разные вопросы
+    (`CLAUDE.md`, «два измерителя»). `_empty_required` спрашивает «сколько
+    текста недодали раскладке», этот — «сколько пустых мест увидит зритель».
+
+    Считать пришлось после `Z-49`: сравнение растров показало, что ранг умеет
+    обменять два пустых **текстовых** слота на одну крупную пустую плашку под
+    картинку, и по первому числу такой обмен выглядит улучшением.
+    """
+    by_id = {p.id: p for p in patterns.patterns}
+    blank = 0
+    for slide in plan.slides:
+        pattern = by_id.get(slide.pattern_id)
+        if pattern is None:
+            continue
+        filled = {f.slot_id for f in slide.fills}
+        blank += sum(1 for s in pattern.slots if s.id not in filled)
+    return blank
+
+
 def report_slots(content: str) -> None:
     """Что стало со слотами: сужённые, пустые, сколько знаков разместилось.
 
@@ -203,9 +225,10 @@ def report_slots(content: str) -> None:
     """
     doc = load_content(content)
     print(f"Вход: `{content}`\n")
-    print("| Шаблон | Слотов с ёмкостью | Сужено | Пустых обязательных | Из них | Знаков |")
-    print("|---|---:|---:|---:|---:|---:|")
-    cap = narrowed = empty = required = chars = 0
+    print("| Шаблон | Слотов с ёмкостью | Сужено | Пустых обязательных | Из них "
+          "| Пустых всяких | Знаков |")
+    print("|---|---:|---:|---:|---:|---:|---:|")
+    cap = narrowed = empty = required = chars = blank = 0
     for f in samples():
         a = analyze_template(f)
         plan = plan_deck(doc, a.patterns, a.design_system.source.sha256)
@@ -217,15 +240,19 @@ def report_slots(content: str) -> None:
         n = sum(1 for p in a.patterns.patterns for s in p.slots
                 if s.capacity is not None and s.occluded)
         e = _empty_required(plan, a.patterns)
+        b = _blank_slots(plan, a.patterns)
         r = sum(1 for p in a.patterns.patterns for s in p.slots if s.required)
         ch = sum(len(fi.text or "") + sum(len(i) for i in (fi.items or ()))
                  for sl in plan.slides for fi in sl.fills)
-        cap += c; narrowed += n; empty += e; required += r; chars += ch
-        print(f"| `{os.path.basename(f)}` | {c} | {n} | {e} | {r} | {ch} |")
+        cap += c; narrowed += n; empty += e; required += r; chars += ch; blank += b
+        print(f"| `{os.path.basename(f)}` | {c} | {n} | {e} | {r} | {b} | {ch} |")
     print(f"| **всего** | **{cap}** | **{narrowed}** | **{empty}** | **{required}** "
-          f"| **{chars}** |")
+          f"| **{blank}** | **{chars}** |")
     print("\n«Сужено» — у скольких слотов видимая полоса у́же бокса (`Z-48`). "
-          "«Пустых обязательных» — цена этого сужения, задача `Z-49`.")
+          "«Пустых обязательных» — текстовые слоты без содержимого; «пустых "
+          "всяких» — они же плюс слоты под картинку и таблицу. Второе число "
+          "заведено `Z-49`: ранг умеет обменять два первых на одно второе, и "
+          "по одному только первому такой обмен выглядит улучшением.")
 
 
 def report_verify(content: str, slides: str | None, variants: int) -> None:

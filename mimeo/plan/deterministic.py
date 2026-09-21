@@ -381,6 +381,11 @@ def plan_deck(
     exclusive = frozenset(p.id for p in patterns if getattr(p, "exclusive", False))
     #: Слайды, где текст всё-таки лёг в слот с чужой гарнитурой (`Z-43`).
     foreign_used: list[tuple[int, str, str]] = []
+    #: Слайды, где у раскладки остались слоты без содержимого (`Z-49`).
+    #: Считаются **все** слоты, а не только текстовые: на растре пустая
+    #: карточка под картинку читается как брак ровно так же, а ранг её не
+    #: видит — `empty_required` в `matching.py` исключает `image`.
+    blank_used: list[tuple[int, str, int, int]] = []
     fired: set[str] = set()
     forced = _forced_parts(sections, patterns, target, tuning=tuning, exclusive=exclusive)
     used: dict[str, int] = {}
@@ -415,6 +420,14 @@ def plan_deck(
             # сказать вслух, какой слайд и почему (`Z-43`, `PLAN-7.3`).
             for kind in sorted(set(getattr(m, "foreign", ()))):
                 foreign_used.append((len(slides), m.pattern_id, kind))
+            pattern = next((p for p in patterns if p.id == m.pattern_id), None)
+            if pattern is not None:
+                filled = {f.slot_id for f in m.fills}
+                blank = sum(1 for s in pattern.slots if s.id not in filled)
+                if blank:
+                    blank_used.append(
+                        (len(slides), m.pattern_id, blank, len(pattern.slots))
+                    )
             slides.append(
                 PlannedSlide(
                     index=len(slides),
@@ -467,6 +480,30 @@ def plan_deck(
                 f" но на слайде так выглядит {_FOREIGN_LOOKS[kind]}. Раскладка "
                 f"взята потому, что лучшей пригодной не нашлось (Z-43)."
             )
+
+    # Слот без содержимого COMPOSE очищает от текста донора (`PLAN-3.1`), и
+    # на слайде остаётся оформление без подписи: карточка с иконкой и пустым
+    # телом, пустая плашка под картинку. Ранг за это платит
+    # (`_PENALTY_EMPTY_SLOT`), но платы **не всегда хватает**, и до `Z-49`
+    # остаток не назывался вообще ничем: ни числом, ни списком.
+    #
+    # Молчать нельзя по той же причине, по которой не молчит `Z-43`: раскладку
+    # взяли потому, что лучшей пригодной не нашлось, и человек должен узнать
+    # об этом из отчёта, а не с растра. Это же половина того, чего требует
+    # критерий 3 — «аудит показывает проблемы» (`Z-34`).
+    if blank_used:
+        where = ", ".join(
+            f"слайд {n} ({pid}): {blank} из {total}"
+            for n, pid, blank, total in blank_used
+        )
+        total_blank = sum(b for _, _, b, _ in blank_used)
+        warnings.append(
+            f"Слотов без содержимого {total_blank} на {len(blank_used)} слайдах — "
+            f"{where}. Текст донора из них убран, оформление осталось: на слайде "
+            f"это карточка или плашка без подписи. Содержание не потеряно, оно "
+            f"легло в другие слоты; раскладка взята потому, что лучшей пригодной "
+            f"не нашлось (Z-49)."
+        )
 
     if target:
         warnings.append(_volume_note(len(slides), target, forced, len(patterns)))
