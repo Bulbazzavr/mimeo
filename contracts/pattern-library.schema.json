@@ -268,6 +268,33 @@
                 },
                 "required": {
                   "type": "boolean"
+                },
+                "visible_rect_emu": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "x",
+                    "y",
+                    "cx",
+                    "cy"
+                  ],
+                  "properties": {
+                    "x": {
+                      "type": "integer"
+                    },
+                    "y": {
+                      "type": "integer"
+                    },
+                    "cx": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    },
+                    "cy": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    }
+                  },
+                  "description": "Полоса слота, свободная от непрозрачных фигур ПОВЕРХ него (Z-48). Печатается, только когда она у́же бокса: ёмкость слота считается по ней, и по ней же VERIFY судит о заслонении. Отсутствие поля значит «сверху ничего нет или судить не по чему» — это не «заслонено»."
                 }
               }
             }
@@ -306,6 +333,50 @@
           "exclusive": {
             "type": "boolean",
             "description": "Донор несёт части, которые два клона разделить не могут: chart, oleObject, vmlDrawing. Такой паттерн допустимо использовать в колоде только один раз — иначе PowerPoint отказывается открывать файл целиком. Замер 19 сентября: chart x2 и x3, oleObject x2 и x3 — open_failed; картинки x3 — цел. См. Z-44, DOM-PKG §9, PLAN-6.1."
+          },
+          "opaque": {
+            "type": "array",
+            "description": "Непрозрачные куски фигур донора, накрывающих его текстовые слоты (Z-48). Разобраны по пикселям на стадии ANALYZE: у декоративного PNG непрозрачна бывает четверть площади, а PowerPoint отдаёт стадии VERIFY только габаритный бокс. Пусто, когда таких фигур нет или судить не по чему.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "shape_id",
+                "rect_emu"
+              ],
+              "properties": {
+                "shape_id": {
+                  "type": "string",
+                  "description": "p:cNvPr/@id накрывающей фигуры донора."
+                },
+                "rect_emu": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "x",
+                    "y",
+                    "cx",
+                    "cy"
+                  ],
+                  "properties": {
+                    "x": {
+                      "type": "integer"
+                    },
+                    "y": {
+                      "type": "integer"
+                    },
+                    "cx": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    },
+                    "cy": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }

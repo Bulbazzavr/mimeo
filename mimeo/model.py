@@ -307,9 +307,19 @@ class Slot:
     #: моноширинным шрифтом жёлтым по чёрному, соблюдает правила шаблона и
     #: выглядит фрагментом кода. Найдено растром, `DOM-TEXT §11`, `§12`.
     typeface_kind: str | None = None
+    #: Полоса слота, свободная от непрозрачных фигур **поверх** него (`Z-48`,
+    #: `PLAN-7.8`). Равна `rect`, когда сверху ничего нет или судить не по чему:
+    #: «проверить не смог» — не «заслонено». По ней считается ёмкость, и по ней
+    #: же VERIFY судит о заслонении, иначе приёмку не пройти по построению.
+    visible: object | None = None
+
+    @property
+    def occluded(self) -> bool:
+        """Лежит ли поверх слота непрозрачное, отнимая у него ширину."""
+        return self.visible is not None and self.visible.cx < self.rect.cx
 
     def to_json(self) -> dict:
-        return {
+        out = {
             "id": self.id,
             "shape_id": self.shape_id,
             "role": self.role,
@@ -322,6 +332,35 @@ class Slot:
             "typeface_kind": self.typeface_kind,
             "capacity": self.capacity.to_json() if self.capacity else None,
             "required": self.required,
+        }
+        if self.occluded:
+            out["visible_rect_emu"] = {
+                "x": self.visible.x, "y": self.visible.y,
+                "cx": self.visible.cx, "cy": self.visible.cy,
+            }
+        return out
+
+
+@dataclass(frozen=True)
+class OpaqueRegion:
+    """Непрозрачный кусок фигуры донора, лежащей поверх текста (`Z-48`).
+
+    Нужен стадии VERIFY. От PowerPoint её детектор получает только габаритный
+    бокс, а у декоративного PNG непрозрачна бывает четверть площади: рамка
+    карточки VK Tech непрозрачна на 1%, а шестиугольник — на 85% в правой
+    трети. Без этого детектор объявлял заслонённым текст, который читается.
+    """
+
+    shape_id: str
+    rect: object          # analyze.deck.Rect — структурно x/y/cx/cy
+
+    def to_json(self) -> dict:
+        return {
+            "shape_id": self.shape_id,
+            "rect_emu": {
+                "x": self.rect.x, "y": self.rect.y,
+                "cx": self.rect.cx, "cy": self.rect.cy,
+            },
         }
 
 
@@ -350,6 +389,9 @@ class Pattern:
     #: файлов и **неполон по построению**, поэтому повтор донора с незнакомой
     #: частью не запрещается, а сопровождается предупреждением.
     unknown_parts: tuple[str, ...] = ()
+    #: Непрозрачные куски фигур донора, накрывающих его текстовые слоты
+    #: (`Z-48`). Пусто, когда таких нет или судить не по чему.
+    opaque: tuple[OpaqueRegion, ...] = ()
 
     def to_json(self) -> dict:
         return {
@@ -362,6 +404,7 @@ class Pattern:
                 "index": self.donor_index if self.donor_index >= 0 else None,
             },
             "slots": [s.to_json() for s in self.slots],
+            "opaque": [o.to_json() for o in self.opaque],
             "evidence": {
                 "members": list(self.members),
                 "cohesion": self.cohesion,

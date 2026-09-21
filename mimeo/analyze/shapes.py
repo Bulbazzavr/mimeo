@@ -123,6 +123,10 @@ class ShapeObs:
     para_count: int = 0
     has_chart: bool = False
     has_table: bool = False
+    #: Часть пакета с картинкой, если фигура её несёт: `p:pic` или заливка
+    #: картинкой. Нужна, чтобы узнать, где картинка непрозрачна, — по типу
+    #: фигуры это не выводится (`Z-48`, `analyze/raster.py`).
+    image_part: str | None = None
 
     @property
     def has_text(self) -> bool:
@@ -414,6 +418,25 @@ class SlideAnalyzer:
 
     # -- фигуры --
 
+    def _image_part(self, el: ET.Element) -> str | None:
+        """Часть с картинкой этой фигуры. `Z-48`.
+
+        Берётся первый `a:blip` фигуры: и у `p:pic`, и у заливки картинкой он
+        один. Связь ищется в `.rels` слайда — картинка может стоять и внутри
+        группы, но связи у всего слайда общие.
+        """
+        blip = el.find(f".//{qn('a:blip')}")
+        if blip is None:
+            return None
+        rid = blip.get(qn("r:embed"))
+        if not rid:
+            return None
+        try:
+            rel = self.deck.pkg.rels(self.slide.part).get(rid)
+        except Exception:                                    # noqa: BLE001
+            return None
+        return rel.target_part if rel is not None else None
+
     def _shape(self, el: ET.Element, xf: Affine) -> ShapeObs | None:
         tag = local_name(el.tag)
         kind = {"sp": "sp", "pic": "pic", "graphicFrame": "graphicFrame", "cxnSp": "cxnSp"}.get(tag)
@@ -467,6 +490,7 @@ class SlideAnalyzer:
             rect = xf.rect(rect)
 
         fill_kind, fill = _parse_fill(sp_pr, self.ctx, self.unhandled)
+        image_part = self._image_part(el)
         line, line_w = _parse_line(sp_pr, self.ctx, self.unhandled)
         geom, radius = _geom(sp_pr)
 
@@ -505,6 +529,7 @@ class SlideAnalyzer:
             para_count=para_count,
             has_chart=has_chart,
             has_table=has_table,
+            image_part=image_part,
         )
 
     def _walk(self, container: ET.Element, xf: Affine, out: list[ShapeObs], depth: int = 0) -> None:

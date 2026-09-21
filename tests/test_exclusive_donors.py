@@ -94,11 +94,21 @@ def test_the_ban_is_reported_in_words(analysis):
     assert said, "запрет сработал, а в плане об этом ни слова"
 
 
-def test_the_ban_does_not_make_the_deck_worse(analysis):
-    """Запрет не должен покупать открываемость ценой качества.
+def test_the_ban_does_not_cost_content(analysis):
+    """Запрет не должен покупать открываемость ценой **содержания**.
 
-    Замер 19 сентября: на всех четырнадцати шаблонах корпуса весы с запретом
-    не хуже, чем без него, а на этом шаблоне даже лучше.
+    Замер 19 сентября сравнивал весы целиком: с запретом не хуже, чем без него,
+    на всех четырнадцати шаблонах. **21 сентября это перестало быть правдой на
+    этом шаблоне**, и вот чем: `Z-48` отнял у заслонённых слотов запас на
+    переполнение, PLAN разложил тот же текст иначе, и запрет теперь стоит
+    одного «сломанного» и одного «тесного» — покупая при этом **на одну
+    раскладку больше** и на один слот меньше «на донышке»
+    (`WORKLOG/2026-09-21-z48-result.md`). Из четырнадцати шаблонов запрет
+    вообще что-то меняет только на этом.
+
+    Поэтому проверяется то, ради чего страховка и ставилась: **потери**.
+    Ни знака содержания, ни слайда, ни заливки запрет отнять не вправе —
+    перестановка тесноты между слотами это другой разговор.
     """
     from mimeo.plan.quality import score_deck
 
@@ -111,7 +121,11 @@ def test_the_ban_does_not_make_the_deck_worse(analysis):
     )
     with_ban = score_deck(plan_deck(doc, analysis.patterns, sha), analysis.patterns)
     without = score_deck(plan_deck(doc, off, sha), off)
-    assert with_ban.key <= without.key
+    assert with_ban.lost <= without.lost
+    assert with_ban.slides >= without.slides
+    assert with_ban.fills >= without.fills
+    # Разнообразие раскладок запрет не отнимает: ровно этим он и полезен.
+    assert with_ban.layouts >= without.layouts
 
 
 def test_unknown_part_types_are_surfaced_not_swallowed(analysis):

@@ -11,12 +11,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
-from ..model import Pattern, PatternLibrary, PatternSource, Slot
+from ..model import OpaqueRegion, Pattern, PatternLibrary, PatternSource, Slot
 from ..oxml.ns import qn
 from .deck import Deck, Rect
 from .fitting import estimate
+from .occlusion import occluding_rects, visible_rect
 from .shapes import CHROME_PH, ShapeObs, SlideObs
 from .tokens import is_numeric_text
 from .typeface import TypefaceConfig
@@ -373,6 +375,10 @@ def _slots(
     design_system,
     body_size: float,
     typo: TypefaceConfig | None = None,
+    slide: SlideObs | None = None,
+    image_bytes: Callable[[str | None], bytes | None] | None = None,
+    unhandled: list[tuple[str, str]] | None = None,
+    opaque: dict[tuple, OpaqueRegion] | None = None,
 ) -> tuple[Slot, ...]:
     """Слоты — это то, что стадия PLAN наполняет.
 
@@ -383,6 +389,15 @@ def _slots(
     """
     index = _type_index(design_system)
     typo = typo or load_typeface_config()
+    # Порядок отрисовки — это порядок фигур в `p:spTree`, а `shapes` здесь уже
+    # пересортированы в порядок чтения (`Z-31`) и прорежены от мелкого декора.
+    # Значит «что лежит поверх» спрашивается у слайда целиком: как раз мелкий
+    # декор чаще всего и закрывает текст (`Z-48`).
+    #
+    # Ключ — сам объект, а не `shape_id`: у фигуры без `p:cNvPr` идентификатор
+    # вырождается в «?», и такие молча склеились бы. Списки здесь — виды на
+    # один и тот же `slide.shapes`, копий никто не делает.
+    order = {id(s): n for n, s in enumerate(slide.shapes)} if slide else {}
     out: list[Slot] = []
     seen_text = False
     n = 0
@@ -395,6 +410,22 @@ def _slots(
         n += 1
         if content_type in ("text", "list", "number"):
             seen_text = True
+
+        # Видимая полоса: что от бокса остаётся, когда сверху лежит
+        # непрозрачное. Ёмкость считается по ней, а не по боксу (`Z-48`).
+        visible = shape.rect
+        if slide is not None and image_bytes is not None and id(shape) in order:
+            mine = order[id(shape)]
+            above = [s for s in slide.shapes if order.get(id(s), -1) > mine]
+            blockers = occluding_rects(shape, above, image_bytes, unhandled)
+            visible = visible_rect(shape.rect, blockers)
+            if opaque is not None:
+                # Ключ — фигура и её кусок: одна картинка накрывает несколько
+                # слотов, и запоминать её надо один раз.
+                for shape_id, rect in blockers:
+                    opaque[(shape_id, rect.x, rect.cx)] = OpaqueRegion(
+                        shape_id=shape_id, rect=rect
+                    )
 
         run = _dominant_run(shape)
         # Вид гарнитуры считается по фигуре, а не по прогону (`DOM-TEXT §8`):
@@ -409,7 +440,7 @@ def _slots(
                    run.bold, run.italic, run.caps or "none")
             type_role = index.get(key)
             capacity = estimate(
-                cx_emu=shape.rect.cx,
+                cx_emu=visible.cx,
                 cy_emu=shape.rect.cy,
                 size_pt=run.size_pt or body_size,
                 insets=shape.insets,
@@ -431,6 +462,7 @@ def _slots(
                 typeface_kind=typeface_kind,
                 capacity=capacity,
                 required=content_type in ("text", "list", "number"),
+                visible=visible,
             )
         )
     return tuple(out)
@@ -538,6 +570,21 @@ def build_pattern_library(
     # Один раз на шаблон, а не на каждую раскладку: файл один и тот же.
     typo = load_typeface_config()
 
+    # Байты картинки по имени части, с кэшем: одна и та же картинка стоит на
+    # разных слайдах и разбирать её дважды незачем (`PLAN-7.8`, дыра 4).
+    cache: dict[str, bytes | None] = {}
+
+    def image_bytes(part: str | None) -> bytes | None:
+        if not part:
+            return None
+        if part not in cache:
+            try:
+                cache[part] = deck.pkg.read(part)
+            except (KeyError, OSError):
+                cache[part] = None
+        return cache[part]
+
+    opacity_unhandled: list[tuple[str, str]] = []
     per_slide = {s.index: _shapes_of(s, cx, cy) for s in slides}
     usable = [s.index for s in slides if per_slide[s.index]]
 
@@ -570,6 +617,7 @@ def build_pattern_library(
         donor_index = usable[donor_local]
         donor_shapes = per_slide[donor_index]
 
+        opaque: dict[tuple, OpaqueRegion] = {}
         cohesion = None
         if len(group) > 1:
             pairs = [
@@ -585,17 +633,29 @@ def build_pattern_library(
                 kind=_classify(donor_shapes, cx, cy, donor_index, len(slides)),
                 donor_part=slides[donor_index].part,
                 donor_index=donor_index,
-                slots=_slots(donor_shapes, design_system, body, typo),
+                slots=_slots(donor_shapes, design_system, body, typo,
+                             slide=slides[donor_index], image_bytes=image_bytes,
+                             unhandled=opacity_unhandled, opaque=opaque),
                 members=tuple(members),
                 cohesion=cohesion,
                 donor_reason=reason,
                 source="slides",
+                opaque=tuple(opaque[k] for k in sorted(opaque)),
                 **dict(zip(("exclusive", "unknown_parts"),
                            _donor_parts(deck, slides[donor_index].part))),
             )
         )
 
     notes: list[str] = []
+    if opacity_unhandled:
+        # Молчаливый пропуск неотличим от «проверено и чисто», поэтому факт
+        # называется вслух: слот не сужен, потому что судить было не по чему.
+        files = sorted({m.split()[2] for _, m in opacity_unhandled})
+        notes.append(
+            f"Непрозрачность {len(files)} картинок не разобрана "
+            f"({', '.join(files[:3])}{', …' if len(files) > 3 else ''}): "
+            "слоты под ними не сужены."
+        )
     singles = sum(1 for p in patterns if len(p.members) == 1)
     if singles == len(patterns) and len(patterns) > 2:
         notes.append(

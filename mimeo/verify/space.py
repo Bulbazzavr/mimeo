@@ -222,17 +222,26 @@ OPAQUE = 0.5
 
 
 def occluders(text_rect: tuple[float, float, float, float], box: Box,
-              boxes: tuple[Box, ...], texts: frozenset[tuple[int, str]]) -> float:
+              boxes: tuple[Box, ...], texts: frozenset[tuple[int, str]],
+              opaque: dict[tuple[int, str], tuple[tuple[float, float, float, float], ...]]
+              | None = None) -> float:
     """Какую долю набранного текста накрывает непрозрачная фигура **поверх** него.
 
-    Три условия, и каждое стоило отдельного опровержения замером:
+    `opaque` — непрозрачные куски фигуры, добытые разбором картинки на стадии
+    ANALYZE (`Z-48`). От PowerPoint приходит только габаритный бокс, а у
+    декоративного PNG непрозрачна бывает четверть площади. Где кусков нет,
+    меряется по боксу — ровно прежнее поведение.
+
+    Четыре условия, и каждое стоило отдельного опровержения замером:
 
     * **поверх.** Без порядка отрисовки перекрытие не значит ничего: карточка
       накрывает свой же текст на 100%, и это норма. Она лежит ниже;
     * **непрозрачная.** Прозрачная рамка накрывает текст целиком и не мешает
       ему совсем — такой случай нашёлся и был отвергнут;
     * **не текст.** Чужой текст рядом — это не заслонение, а соседство, и
-      разбирается оно переполнением.
+      разбирается оно переполнением;
+    * **непрозрачная **там, где лежит текст**.** Рамка карточки VK Tech
+      накрывает подпись целиком и непрозрачна на 1%: подпись видна.
 
     Меряется по **набранному** тексту, а не по боксу: бокс бывает вчетверо
     больше своей надписи, и заслонение его пустой части никого не волнует.
@@ -250,9 +259,13 @@ def occluders(text_rect: tuple[float, float, float, float], box: Box,
             continue
         if other.z <= box.z:
             continue
-        wide = min(tx + tw, other.right) - max(tx, other.x)
-        high = min(ty + th, other.bottom) - max(ty, other.y)
-        if wide <= 0 or high <= 0:
-            continue
-        worst = max(worst, (wide * high) / (tw * th))
+        pieces = (opaque or {}).get((other.slide, other.shape_id))
+        if pieces is None:
+            pieces = ((other.x, other.y, other.w, other.h),)
+        for px, py, pw, ph in pieces:
+            wide = min(tx + tw, px + pw) - max(tx, px)
+            high = min(ty + th, py + ph) - max(ty, py)
+            if wide <= 0 or high <= 0:
+                continue
+            worst = max(worst, (wide * high) / (tw * th))
     return worst

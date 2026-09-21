@@ -27,6 +27,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..model import DeckPlan, PatternLibrary
+from ..oxml.units import EMU_PER_POINT
 from .metrics import TOLERANCE, Measurement, ShapeMetric
 from .space import OCCLUSION_SHARE, height_ratio, occluders
 
@@ -139,6 +140,31 @@ def _slot_index(
     return out
 
 
+def _opaque_index(
+    plan: DeckPlan, library: PatternLibrary, slides_written: tuple[int, ...]
+) -> dict[tuple[int, str], tuple[tuple[float, float, float, float], ...]]:
+    """Непрозрачные куски декора донора, в пунктах и по номеру слайда в файле.
+
+    Стадия ANALYZE разобрала картинки по пикселям и знает, где они на самом
+    деле что-то закрывают (`Z-48`). Детектор без этого судил по габаритному
+    боксу и называл заслонённым текст, который читается.
+    """
+    patterns = {p.id: p for p in library.patterns}
+    by_index = {s.index: s for s in plan.slides}
+    out: dict[tuple[int, str], list[tuple[float, float, float, float]]] = {}
+    for position, plan_index in enumerate(slides_written, 1):
+        planned = by_index.get(plan_index)
+        pattern = patterns.get(planned.pattern_id) if planned else None
+        if pattern is None:
+            continue
+        for region in pattern.opaque:
+            out.setdefault((position, region.shape_id), []).append((
+                region.rect.x / EMU_PER_POINT, region.rect.y / EMU_PER_POINT,
+                region.rect.cx / EMU_PER_POINT, region.rect.cy / EMU_PER_POINT,
+            ))
+    return {k: tuple(v) for k, v in out.items()}
+
+
 def _slide_of_position(slides_written: tuple[int, ...], position: int) -> int:
     return slides_written[position - 1] if 1 <= position <= len(slides_written) else -1
 
@@ -159,6 +185,7 @@ def find_defects(
         )
 
     index = _slot_index(plan, library, slides_written)
+    opaque = _opaque_index(plan, library, slides_written)
     # Ключ обязан нести номер слайда: `id` фигур повторяются от слайда к
     # слайду, и словарь по одному `id` молча склеивал бы разные фигуры
     # (`Z-47`, поймано в самой мерке).
@@ -205,7 +232,7 @@ def find_defects(
         share = 0.0 if own is None else occluders(
             (shape.left + shape.margin_left, shape.top + shape.margin_top,
              shape.text_width, shape.text_height),
-            own, measurement.boxes, texts,
+            own, measurement.boxes, texts, opaque,
         )
         if share > OCCLUSION_SHARE:
             defects.append(
