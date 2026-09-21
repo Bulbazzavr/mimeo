@@ -117,6 +117,21 @@ def occluding_rects(shape, above, image_bytes, unhandled=None) -> list[tuple[str
         if rect.bottom <= box.y or rect.y >= box.bottom:
             continue
 
+        if other.has_chart or other.has_table:
+            # Диаграмма и таблица приезжают в `p:graphicFrame`, у которого нет
+            # `p:spPr`, а значит и заливки: по общему правилу они вышли бы
+            # «прозрачными» и слот не сузили бы **молча**. Молчаливый пропуск
+            # неотличим от «проверено и чисто», поэтому он назван вслух.
+            # По корпусу таких перекрытий четыре, на двух шаблонах, один из
+            # них выданный (`Z-50`).
+            if unhandled is not None:
+                unhandled.append(
+                    ("frame_opacity",
+                     f"непрозрачность {'диаграммы' if other.has_chart else 'таблицы'} "
+                     f"{other.shape_id} не разобрана: слот не сужен")
+                )
+            continue
+
         if other.kind != "pic" and other.fill_kind != "picture":
             if _fill_is_opaque(other):
                 out.append((other.shape_id, rect))

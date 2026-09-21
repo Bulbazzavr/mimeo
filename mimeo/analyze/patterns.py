@@ -650,12 +650,24 @@ def build_pattern_library(
     if opacity_unhandled:
         # Молчаливый пропуск неотличим от «проверено и чисто», поэтому факт
         # называется вслух: слот не сужен, потому что судить было не по чему.
-        files = sorted({m.split()[2] for _, m in opacity_unhandled})
-        notes.append(
-            f"Непрозрачность {len(files)} картинок не разобрана "
-            f"({', '.join(files[:3])}{', …' if len(files) > 3 else ''}): "
-            "слоты под ними не сужены."
-        )
+        # Два вида считаются **порознь**: у картинки не разобран формат, у
+        # диаграммы и таблицы заливки нет вовсе. Смешивать их в одну строку
+        # значит назвать диаграмму картинкой (`Z-50`).
+        files = sorted({m.split()[2] for kind, m in opacity_unhandled
+                        if kind == "image_opacity"})
+        frames = sum(1 for kind, _ in opacity_unhandled if kind == "frame_opacity")
+        if files:
+            notes.append(
+                f"Непрозрачность {len(files)} картинок не разобрана "
+                f"({', '.join(files[:3])}{', …' if len(files) > 3 else ''}): "
+                "слоты под ними не сужены."
+            )
+        if frames:
+            notes.append(
+                f"Диаграмм и таблиц поверх текстовых слотов: {frames}. "
+                "Заливки у них нет, судить о непрозрачности не по чему — "
+                "слоты под ними не сужены."
+            )
     singles = sum(1 for p in patterns if len(p.members) == 1)
     if singles == len(patterns) and len(patterns) > 2:
         notes.append(
