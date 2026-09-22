@@ -65,12 +65,108 @@ $('template').addEventListener('change', async (event) => {
     const mb = (data.bytes / 1048576).toFixed(1);
     $('template-name').textContent = data.name + ' — ' + mb + ' МБ, загружен';
     setStatus('');
+    loadDesign();
   } catch (error) {
     $('template-name').textContent = 'Не загрузился: ' + error.message;
   }
 });
 
 $('fill-example').addEventListener('click', () => { $('text').value = EXAMPLE; });
+
+/* --- что вынули из шаблона (PLAN-8.1, часть A) -------------------------- */
+
+/* Запрашивается сразу после загрузки файла и НЕ задерживает форму: человек в
+   это время печатает текст. Разбор стоит 0.4 с на лёгком шаблоне и 4.6 с на
+   выданном VK Tech с его 54 слайдами — к нажатию «Собрать» он уже готов. */
+async function loadDesign() {
+  const panel = $('design');
+  const body = $('design-body');
+  panel.hidden = false;
+  body.innerHTML = '<p class="hint">Разбираем шаблон…</p>';
+  try {
+    const response = await fetch('/api/design?token=' + encodeURIComponent(token));
+    const data = await response.json();
+    if (!data.ok) throw new Error(data.error || 'не разобрался');
+    body.innerHTML = designHtml(data);
+  } catch (error) {
+    /* Пустая панель читалась бы как «в шаблоне ничего нет». Это разные вещи. */
+    body.innerHTML = '<p class="hint">Разобрать шаблон не вышло: '
+      + escape(error.message) + '. На сборку это не влияет — попробуйте собрать.</p>';
+  }
+}
+
+function swatch(hex, title) {
+  return '<span class="sw" style="background:' + escape(hex || '#fff') + '"'
+    + ' title="' + escape(title || hex || '') + '"></span>';
+}
+
+function designHtml(d) {
+  const facts = [
+    [d.source.slides, 'слайдов в шаблоне'],
+    [d.source.layouts, 'макетов'],
+    [d.patterns, 'раскладок извлекли'],
+    [d.type_scale.length, 'типо-ролей'],
+    [d.palette.observed_total, 'цветов найдено'],
+    [d.slide.aspect, 'пропорция']
+  ].filter((f) => f[0] !== null && f[0] !== undefined);
+
+  let html = '<div class="facts">' + facts.map((f) =>
+    '<div class="fact"><div class="n">' + escape(String(f[0])) + '</div>'
+    + '<div class="k">' + escape(f[1]) + '</div></div>').join('') + '</div>';
+
+  if (d.palette.core.length) {
+    html += '<h3 class="sub">Ядро палитры — ' + d.palette.core.length + '</h3>'
+      + '<div class="swatches">'
+      + d.palette.core.map((hex) => swatch(hex, hex)).join('') + '</div>';
+  }
+  if (d.palette.theme.length) {
+    html += '<h3 class="sub">Роли темы</h3><div class="swatches">'
+      + d.palette.theme.map((t) => swatch(t.hex, t.role + ' ' + t.hex)).join('')
+      + '</div><p class="hint">Наведите на квадрат — покажет роль и код цвета.</p>';
+  }
+  if (d.type_scale.length) {
+    html += '<h3 class="sub">Типографическая шкала</h3>'
+      + '<table class="scale"><tr><th>Роль</th><th>Гарнитура</th><th class="num">Кегль</th>'
+      + '<th class="num">Мест</th><th>Пример из вашего шаблона</th></tr>'
+      + d.type_scale.map((t) => {
+        let example;
+        if (t.example) {
+          example = '<span class="ex">' + escape(t.example) + '</span>';
+        } else if (t.pictogram) {
+          example = '<span class="none">пиктограммы, не текст</span>';
+        } else {
+          example = '<span class="none">нет текста</span>';
+        }
+        return '<tr>'
+          + '<td>' + escape(t.role || '—') + '</td>'
+          + '<td>' + (t.font
+              ? escape(t.font)
+              : '<span class="none">от темы</span>') + '</td>'
+          + '<td class="num">' + (t.size_pt !== null ? escape(String(t.size_pt)) : '—') + '</td>'
+          + '<td class="num">' + (t.count !== null ? escape(String(t.count)) : '—') + '</td>'
+          + '<td>' + (t.color_hex ? '<span class="dot" style="background:'
+              + escape(t.color_hex) + '"></span>' : '') + example + '</td>'
+          + '</tr>';
+      }).join('') + '</table>';
+  }
+
+  const g = d.grid;
+  if (g.samples) {
+    const m = [g.margin_top_in, g.margin_right_in, g.margin_bottom_in, g.margin_left_in]
+      .map((v) => (v === null ? '?' : v)).join(' / ');
+    html += '<h3 class="sub">Сетка</h3><p class="hint">Поля сверху/справа/снизу/слева: '
+      + escape(m) + ' дюйма. Средник: '
+      + escape(g.gutter_in === null ? 'не выведен' : g.gutter_in + ' дюйма')
+      + '. Выведено по ' + g.samples + ' замерам фигур шаблона.</p>';
+  }
+
+  if (!d.patterns) {
+    html += '<p class="hint"><strong>Раскладок не извлечено.</strong> У шаблона нет '
+      + 'слайдов-доноров — так бывает у .potx. Движок возьмёт макеты, и колода '
+      + 'соберётся, но выбор будет беднее.</p>';
+  }
+  return html;
+}
 
 /* --- сборка ------------------------------------------------------------ */
 

@@ -126,6 +126,122 @@ def _load_max_variants() -> int:
         return MAX_VARIANTS
 
 
+#: EMU в дюйм. Число из спецификации OOXML, а не из движка: тянуть ради него
+#: `mimeo.oxml.units` значило бы сломать границу слоя ради одной константы
+#: (`SPEC-WEB`, раздел 2).
+_EMU_PER_INCH = 914400
+
+def _inch(emu):
+    """EMU в дюймы, округлённо. `None` остаётся `None` — «не задано»."""
+    return round(emu / _EMU_PER_INCH, 2) if isinstance(emu, (int, float)) else None
+
+
+def _is_pictogram(text: str) -> bool:
+    """Текст набран пиктограммным шрифтом, а не буквами.
+
+    Знаки **области частного использования** Unicode (U+E000–U+F8FF) сами по
+    себе ничего не значат: их рисует конкретная гарнитура, и в браузере на
+    месте «примера» будут квадратики. У `business_plan` роль `subtitle` — это
+    шрифт `linecons`, и её пример состоит из них целиком.
+
+    Тот же признак, которым движок опознаёт пиктограммный слот (`Z-43`,
+    `Slot.typeface_kind`), только здесь он нужен не для выбора раскладки, а
+    чтобы не показать человеку мусор вместо текста. Диапазон — из стандарта
+    Unicode, а не из движка: границу слоя ради него не ломаем.
+    """
+    letters = [ch for ch in text if not ch.isspace()]
+    if not letters:
+        return False
+    private = sum(1 for ch in letters if "" <= ch <= "")
+    return private * 2 > len(letters)
+
+
+def _font_of(entry: dict) -> str | None:
+    """Имя гарнитуры типо-роли.
+
+    В OOXML их две — латинская и кириллическая, и в шаблонах сплошь и рядом
+    заполнена одна. Обе пусты — гарнитура наследуется от темы, и это
+    **«не задано»**, а не «нет шрифта»: подставлять сюда что-то от себя значит
+    выдумывать за шаблон.
+    """
+    return entry.get("latin") or entry.get("cyrl") or None
+
+
+def _summarise(system: dict, patterns: dict | None, filename: str) -> dict:
+    """Сворачивает дизайн-систему до показываемого.
+
+    **Ничего не вычисляет — только выбирает и переводит единицы.** Всё, что
+    здесь есть, движок уже посчитал; задача веба — не соврать при сокращении.
+    """
+    palette = system.get("palette") or {}
+    observed = palette.get("observed") or []
+    slide = system.get("slide") or {}
+    grid = system.get("grid") or {}
+    source = system.get("source") or {}
+
+    scale = []
+    for entry in system.get("type_scale") or []:
+        examples = [
+            e for e in (entry.get("examples") or [])
+            if e and e.strip() and not _is_pictogram(e)
+        ]
+        scale.append({
+            "role": entry.get("role"),
+            "font": _font_of(entry),
+            "size_pt": entry.get("size_pt"),
+            "color_hex": entry.get("color_hex"),
+            "bold": bool(entry.get("bold")),
+            "count": entry.get("count"),
+            # Пример — настоящий текст шаблона, и он тут главный: им видно, что
+            # размеры сняты с живого файла, а не придуманы. `None` значит
+            # «показать нечего» — либо примеров нет, либо они пиктограммные.
+            "example": (examples[0][:60] if examples else None),
+            "pictogram": bool(
+                (entry.get("examples") or []) and not examples
+            ),
+        })
+
+    return {
+        "ok": True,
+        "template": filename,
+        "slide": {
+            "aspect": slide.get("aspect"),
+            "width_in": _inch(slide.get("cx_emu")),
+            "height_in": _inch(slide.get("cy_emu")),
+        },
+        "source": {
+            "slides": source.get("slides"),
+            "layouts": source.get("layouts"),
+            "masters": source.get("masters"),
+        },
+        # Раскладок может не быть вовсе: у `.potx` без слайдов доноров нет, и
+        # движок уходит на макеты (`ADR-0006`). Ноль здесь — законный ответ.
+        "patterns": len((patterns or {}).get("patterns") or []),
+        "palette": {
+            "core": palette.get("core") or [],
+            "theme": [
+                {"role": t.get("role"), "hex": t.get("hex")}
+                for t in (palette.get("theme") or [])
+            ],
+            # Список наблюдаемых цветов не отдаём: страница его не рисует, а
+            # отданное и непоказанное рано или поздно порождает подпись
+            # «показаны 12 из 24» под пустым местом. Так и вышло при первой
+            # проверке глазами 22 сентября. Нужно число — оно ниже.
+            "observed_total": len(observed),
+        },
+        "type_scale": scale,
+        "grid": {
+            "margin_left_in": _inch(grid.get("margin_left_emu")),
+            "margin_right_in": _inch(grid.get("margin_right_emu")),
+            "margin_top_in": _inch(grid.get("margin_top_emu")),
+            "margin_bottom_in": _inch(grid.get("margin_bottom_emu")),
+            "gutter_in": _inch(grid.get("gutter_emu")),
+            "columns": grid.get("columns"),
+            "samples": grid.get("samples"),
+        },
+    }
+
+
 def _read_json(path: str):
     try:
         with open(path, encoding="utf-8") as fh:
@@ -175,6 +291,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._static("index.html")
         if url.path == "/api/deck":
             return self._deck(urllib.parse.parse_qs(url.query))
+        if url.path == "/api/design":
+            return self._design(urllib.parse.parse_qs(url.query))
         if url.path.startswith("/static/"):
             return self._static(url.path[len("/static/"):])
         self._fail(404, "нет такого адреса")
@@ -325,6 +443,48 @@ class Handler(BaseHTTPRequestHandler):
             "seconds": round(elapsed, 2),
             "stderr": (proc.stderr or "")[-4000:],
         })
+
+    # --- что вынули из шаблона -----------------------------------------
+
+    def _design(self, query: dict) -> None:
+        """Дизайн-система шаблона: то, что движок из него достал.
+
+        **Данные не считаются здесь, а читаются.** `analyze` уже кладёт
+        `design-system.json` и `patterns.json`; веб их сворачивает до
+        показываемого и ничего не выводит сам. Замер 22 сентября: разбор стоит
+        0.4 с на нашем `stilnyj` и **4.6 с** на выданном VK Tech с его 54
+        слайдами, поэтому страница запрашивает это отдельно и не держит форму.
+
+        Результат кладётся в прогон: второй раз тот же шаблон не разбираем.
+        """
+        run = _run((query.get("token") or [""])[0])
+        if not run:
+            return self._fail(404, "прогон не найден")
+        if run.get("design"):
+            return self._json(run["design"])
+
+        started = time.perf_counter()
+        try:
+            proc = _engine(["analyze", run["template"], "-o", run["dir"], "-q"])
+        except subprocess.TimeoutExpired:
+            return self._fail(504, "разбор шаблона не уложился во время")
+
+        system = _read_json(os.path.join(run["dir"], "design-system.json"))
+        patterns = _read_json(os.path.join(run["dir"], "patterns.json"))
+        if system is None:
+            # Судим по наличию артефакта, а не по коду возврата: у движка код
+            # осмысленный и «не ноль» не равно «не сработало» (`cli.py`).
+            return self._json({
+                "ok": False,
+                "error": "шаблон не разобрался",
+                "stderr": (proc.stderr or "")[-2000:],
+            }, 500)
+
+        payload = _summarise(system, patterns, os.path.basename(run["template"]))
+        payload["seconds"] = round(time.perf_counter() - started, 1)
+        with _LOCK:
+            run["design"] = payload
+        self._json(payload)
 
     # --- скачивание ----------------------------------------------------
 

@@ -129,3 +129,31 @@ summary { cursor: pointer; font-size: 0.9rem; color: var(--muted); }
 #diagnostics .unplaced { color: var(--bad); font-weight: 600; }
 
 footer { margin-top: 2rem; color: var(--muted); font-size: 0.82rem; }
+
+/* --- что вынули из шаблона (PLAN-8.1, часть A) ------------------------- */
+
+.facts { display: flex; gap: 2.5rem; flex-wrap: wrap; margin-bottom: 1.4rem; }
+.fact .n { font-size: 1.8rem; font-weight: 700; line-height: 1.1;
+           font-variant-numeric: tabular-nums; }
+.fact .k { font-size: 0.8rem; color: var(--muted); text-transform: uppercase;
+           letter-spacing: 0.05em; }
+
+.swatches { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.5rem 0 0.3rem; }
+.sw { width: 2.4rem; height: 2.4rem; border-radius: 5px; border: 1px solid var(--line); }
+.sw.named { position: relative; }
+
+h3.sub { font-size: 0.82rem; margin: 1.3rem 0 0.2rem; color: var(--muted);
+         text-transform: uppercase; letter-spacing: 0.06em; }
+
+table.scale { width: 100%; border-collapse: collapse; margin-top: 0.4rem; font-size: 0.88rem; }
+table.scale th { text-align: left; font-weight: 600; color: var(--muted);
+                 font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em;
+                 padding-bottom: 0.3rem; }
+table.scale td { border-top: 1px solid var(--line); padding: 0.4rem 0.6rem 0.4rem 0; }
+table.scale td.num { text-align: right; font-variant-numeric: tabular-nums;
+                     white-space: nowrap; }
+table.scale .dot { display: inline-block; width: 0.8rem; height: 0.8rem;
+                   border-radius: 3px; border: 1px solid var(--line);
+                   vertical-align: -1px; margin-right: 0.35rem; }
+table.scale .ex { color: var(--ink); }
+table.scale .none { color: var(--muted); font-style: italic; }
