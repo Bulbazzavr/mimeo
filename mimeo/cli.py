@@ -272,17 +272,25 @@ def _deck_entry(path, slides, variant, problems, render_report):
     }
 
 
-def write_build_report(target, decks, seconds, plan_or_plans):
+def write_build_report(target, decks, seconds, plan_or_plans, extra_warnings=()):
     """Кладёт итог сборки в файл. `target` пуст — не делает ничего.
 
     `plan_or_plans` — план колоды или список планов: предупреждения и
     неразмещённые разделы собираются со всех вариантов, потому что у каждого
     они свои.
+
+    `extra_warnings` — то, что движок говорит **не о плане, а о прогоне**, и
+    чего в планах поэтому нет. Сегодня это одно: **отобрано вариантов меньше,
+    чем просили**. Причина печатается человеку с 19 сентября (`Z-26`), но в
+    отчёт не попадала, и потребитель отчёта — веб — показывал бы пять колод
+    вместо девяти **молча**. Это ровно «молчаливый ноль» из `Z-20`: формально
+    правдиво и вводит в заблуждение. Найдено замером 22 сентября, когда у веба
+    появилось поле «сколько вариантов».
     """
     if not target:
         return
     plans = plan_or_plans if isinstance(plan_or_plans, (list, tuple)) else [plan_or_plans]
-    warnings, unplaced = [], []
+    warnings, unplaced = [w for w in extra_warnings if w], []
     for plan in plans:
         for w in getattr(plan, "warnings", ()) or ():
             if w not in warnings:
@@ -447,6 +455,7 @@ def _build_variants(args, analysis, doc, target, started):
         ],
         elapsed,
         [v.plan for _n, v, _p, _b, _pr, _vd in written],
+        extra_warnings=(reason,),
     )
 
     if not args.quiet:

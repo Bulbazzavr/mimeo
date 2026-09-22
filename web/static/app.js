@@ -95,7 +95,7 @@ $('go').addEventListener('click', async () => {
         token: token,
         text: text,
         slides: $('slides').value.trim(),
-        variants: parseInt($('variants').value, 10),
+        variants: parseInt($('variants').value, 10) || 1,
         verify: verify
       })
     });
@@ -128,9 +128,22 @@ function render(data) {
       + '</div>';
   }).join('');
 
-  $('verify-block').innerHTML = decks
-    .map((deck, n) => verdict(data, deck, n, decks.length))
-    .join('');
+  /* Просили больше, чем вышло, — это надо видеть НЕ раскрывая «подробности».
+     Движок объясняет причину словами; молча показать пять колод вместо девяти
+     значит соврать отчётом, который формально правдив. */
+  const asked = parseInt($('variants').value, 10) || 1;
+  const short = decks.length < asked
+    ? '<div class="verdict unknown"><h3>Вариантов вышло меньше, чем просили: '
+      + decks.length + ' из ' + asked + '</h3><p>' + escape(shortfallReason(data))
+      + '</p></div>'
+    : '';
+
+  /* Проверку не просили — говорим это ОДИН раз на всю сборку, а не по разу на
+     каждый вариант: пять одинаковых абзацев подряд перестают читать, и тогда
+     предупреждение не работает вовсе. Найдено глазами на девяти вариантах. */
+  $('verify-block').innerHTML = short + (data.verify_requested
+    ? decks.map((deck, n) => verdict(data, deck, n, decks.length)).join('')
+    : notChecked());
 
   const warnings = (data.report.diagnostics && data.report.diagnostics.warnings) || [];
   const unplaced = (data.report.diagnostics && data.report.diagnostics.unplaced) || [];
@@ -147,21 +160,30 @@ function render(data) {
   $('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+/* Причина недобора приходит от движка первым предупреждением. Своими словами
+   её не пересказываем: там названы и число разных колод, и порог расхождения. */
+function shortfallReason(data) {
+  const warnings = (data.report.diagnostics && data.report.diagnostics.warnings) || [];
+  const found = warnings.find((w) => w.indexOf('Запрошено вариантов') === 0);
+  return found || 'Движок не назвал причину — это само по себе странно.';
+}
+
 /* Три исхода проверки вёрстки, и они РАЗНЫЕ.
  *
  * Это главное правило проекта, и в вебе оно ломается легче всего: достаточно
  * показать ноль дефектов там, где никто ничего не мерил. Поэтому здесь ни один
  * путь не возвращает пустоту — каждый говорит словами, что именно произошло.
  */
+function notChecked() {
+  return '<div class="verdict skipped"><h3>Вёрстку не проверяли</h3>'
+    + '<p>Галочка была снята. Это <strong>не</strong> значит, что дефектов нет: '
+    + 'их никто не искал.</p></div>';
+}
+
 function verdict(data, deck, n, total) {
   const head = total > 1 ? 'Вариант ' + deck.variant + ': ' : '';
   const report = (data.verify || [])[n];
 
-  if (!data.verify_requested) {
-    return '<div class="verdict skipped"><h3>' + head + 'Вёрстку не проверяли</h3>'
-      + '<p>Галочка была снята. Это <strong>не</strong> значит, что дефектов нет: '
-      + 'их никто не искал.</p></div>';
-  }
   if (!report) {
     return '<div class="verdict unknown"><h3>' + head + 'Проверить не смогли</h3>'
       + '<p>Проверку просили, но отчёта движок не отдал. Чаще всего это значит, '

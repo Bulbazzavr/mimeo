@@ -54,6 +54,15 @@ MAX_TEMPLATE_BYTES = 100 * 1024 * 1024
 #: Потолок на текст. Основной вход корпуса — 1651 знак; миллион это заведомо
 #: больше всего разумного и заведомо меньше того, чем можно навредить.
 MAX_TEXT_CHARS = 1_000_000
+#: Сколько вариантов вёрстки можно попросить. Потолок — **число политик ранга**
+#: в `config/variants.json`: больше колод движку просто не из чего породить.
+#: Замер 22 сентября: при 27 запрошенных реально отбирается 9 на VK Tech, 5 на
+#: WorkSpace, 6 на VK Education — попарное расхождение в 30% выдерживают не все.
+#: Движок называет причину словами, и она доезжает до отчёта.
+#:
+#: Читаем из конфига, а не пишем числом: конфиг правят, и разойтись им нельзя.
+MAX_VARIANTS = 27
+
 #: Потолок ТЗ — пять минут на колоду. Берём вдвое: три варианта с проверкой
 #: вёрстки идут дольше одной, а висеть вечно нельзя.
 BUILD_TIMEOUT_SECONDS = 600
@@ -99,6 +108,22 @@ def _engine(args: list[str]) -> subprocess.CompletedProcess:
         errors="replace",
         timeout=BUILD_TIMEOUT_SECONDS,
     )
+
+
+def _load_max_variants() -> int:
+    """Потолок из `config/variants.json`, а не из головы.
+
+    Единственное место, где веб заглядывает в файл движка, и заглядывает он в
+    **настройку**, а не в код: `ADR-0022` для того настройки и вынес наружу.
+    Файла нет или он сломан — остаётся встроенное число, и это «не смогли
+    прочесть», а не «столько и есть».
+    """
+    try:
+        with open(os.path.join(ROOT, "config", "variants.json"), encoding="utf-8") as fh:
+            policies = json.load(fh).get("policies")
+        return len(policies) if policies else MAX_VARIANTS
+    except (OSError, ValueError, TypeError):
+        return MAX_VARIANTS
 
 
 def _read_json(path: str):
@@ -227,9 +252,19 @@ class Handler(BaseHTTPRequestHandler):
             fh.write(text)
 
         report_path = os.path.join(run["dir"], "report.json")
-        variants = request.get("variants")
-        variants = int(variants) if str(variants).isdigit() else 1
-        variants = max(1, min(variants, 9))
+        raw = request.get("variants")
+        variants = int(raw) if str(raw).isdigit() else 1
+        ceiling = _load_max_variants()
+        if not 1 <= variants <= ceiling:
+            # **Не урезаем молча.** Попросили 40, отдали 27 без слова — и
+            # пользователь считает, что получил всё, что просил. Это тот же
+            # «молчаливый ноль», что и показанный ноль дефектов у
+            # непроверенной вёрстки (`Z-20`).
+            return self._fail(
+                400,
+                f"вариантов можно просить от 1 до {ceiling} — "
+                f"столько политик ранга в config/variants.json",
+            )
         verify_requested = bool(request.get("verify"))
 
         argv = [

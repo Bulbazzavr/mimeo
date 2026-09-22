@@ -133,3 +133,34 @@ def test_without_the_flag_nothing_is_written(tmp_path):
     out = tmp_path / "out"
     _run(["build", SAMPLE, CONTENT, "-o", str(out), "--output", str(out / "deck.pptx"), "-q"])
     assert not list(out.glob("*.json")), "без --report отчёт писаться не должен"
+
+
+@needs_sample
+def test_a_shortfall_of_variants_reaches_the_report(tmp_path):
+    """Попросили больше вариантов, чем вышло, — причина обязана быть в отчёте.
+
+    Движок называет её человеку с 19 сентября (`Z-26`), но в отчёт она не
+    попадала, и потребитель — веб — показал бы пять колод вместо девяти
+    **молча**. Это «молчаливый ноль» из `Z-20`: формально правдиво и вводит в
+    заблуждение. Найдено 22 сентября, когда у веба появилось поле «сколько
+    вариантов»: до того никто не просил больше трёх.
+    """
+    out = tmp_path / "out"
+    target = out / "report.json"
+    asked = 27          # столько политик ранга в config/variants.json
+    _run(["build", SAMPLE, CONTENT, "-o", str(out), "--output", str(out / "deck.pptx"),
+          "--variants", str(asked), "--slides", "10-15", "--report", str(target), "-q"])
+    payload = _report(str(target))
+    _validate(payload)
+
+    decks = payload["decks"]
+    assert len(decks) < asked, (
+        "на этом шаблоне столько заметно разных колод не выходит — "
+        "без недобора проверять нечего"
+    )
+    said = [w for w in payload["diagnostics"]["warnings"]
+            if w.startswith("Запрошено вариантов")]
+    assert said, "недобор вариантов промолчал в отчёте"
+    assert str(asked) in said[0] and str(len(decks)) in said[0], (
+        f"причина не называет оба числа: {said[0]}"
+    )
