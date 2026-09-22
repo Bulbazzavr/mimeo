@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mimeo — перенос стиля презентаций</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+
+<header>
+  <h1>mimeo</h1>
+  <p class="lead">Шаблон и текст прозой на входе — готовая презентация в стиле этого шаблона на выходе.
+     Слайды не рисуются с нуля: движок клонирует слайды самого шаблона вместе с их вёрсткой.</p>
+</header>
+
+<main>
+  <section class="panel" id="form-panel">
+    <h2>1. Шаблон</h2>
+    <label class="file">
+      <input type="file" id="template" accept=".pptx,.potx">
+      <span id="template-name">Файл не выбран — нужен .pptx или .potx</span>
+    </label>
+
+    <h2>2. Текст</h2>
+    <p class="hint">Сплошная проза, как её пишет заказчик: без разметки, абзацами, с числами.
+       Движок сам режет её на темы.</p>
+    <textarea id="text" rows="12" placeholder="Сделай презентацию про наш проект, минут на десять…"></textarea>
+    <p class="hint"><button type="button" class="link" id="fill-example">Подставить пример из корпуса</button></p>
+
+    <h2>3. Как собирать</h2>
+    <div class="row">
+      <label>Объём
+        <input type="text" id="slides" placeholder="10-15" size="8">
+        <span class="hint">пусто — объём определит текст</span>
+      </label>
+      <label>Вариантов вёрстки
+        <select id="variants">
+          <option value="1">1</option>
+          <option value="3">3 — как требует ТЗ</option>
+        </select>
+      </label>
+    </div>
+    <label class="check">
+      <input type="checkbox" id="verify">
+      Проверить вёрстку в настоящем PowerPoint и ужать непоместившееся
+      <span class="hint">нужен Windows с Office; занимает десятки секунд вместо долей</span>
+    </label>
+
+    <button type="button" id="go" class="primary">Собрать</button>
+    <p class="status" id="status"></p>
+  </section>
+
+  <section class="panel" id="result" hidden>
+    <h2>Результат</h2>
+    <div id="decks"></div>
+    <div id="verify-block"></div>
+    <details id="diagnostics-block">
+      <summary>Что движок сказал о вашем тексте <span id="warn-count"></span></summary>
+      <div id="diagnostics"></div>
+    </details>
+  </section>
+</main>
+
+<footer>
+  <p>Локальный интерфейс, слушает только 127.0.0.1. Зависимостей ноль —
+     движок вызывается командной строкой, как это сделал бы любой сторонний
+     пользователь.</p>
+</footer>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

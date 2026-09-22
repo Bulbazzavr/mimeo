@@ -1,0 +1,131 @@
+/* Локальный интерфейс mimeo. Ни одной внешней загрузки: ни шрифтов, ни
+   иконок, ни CDN. Эксперт может запустить это без сети, и так оно и задумано. */
+
+:root {
+  --ink: #16181d;
+  --muted: #5f6672;
+  --line: #dfe3ea;
+  --bg: #f6f7f9;
+  --card: #ffffff;
+  --accent: #1c64f2;
+  --ok: #157347;
+  --warn: #9a6700;
+  --bad: #b42318;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 0 1rem 3rem;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.55 -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+}
+
+header, main, footer { max-width: 60rem; margin: 0 auto; }
+
+header { padding: 2rem 0 1rem; }
+h1 { margin: 0; font-size: 2rem; letter-spacing: -0.02em; }
+.lead { margin: 0.4rem 0 0; color: var(--muted); max-width: 44rem; }
+
+h2 { font-size: 0.95rem; margin: 1.6rem 0 0.5rem; text-transform: uppercase;
+     letter-spacing: 0.06em; color: var(--muted); }
+h2:first-of-type { margin-top: 0; }
+
+.panel {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 1.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.hint { color: var(--muted); font-size: 0.86rem; margin: 0.35rem 0; }
+
+textarea {
+  width: 100%;
+  font: inherit;
+  padding: 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  resize: vertical;
+}
+
+input[type="text"], select {
+  font: inherit;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.file { display: block; }
+.file input { display: block; margin-bottom: 0.3rem; }
+#template-name { color: var(--muted); font-size: 0.86rem; }
+
+.row { display: flex; gap: 2rem; flex-wrap: wrap; align-items: flex-start; }
+.row label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; }
+.row .hint { margin: 0; }
+
+.check { display: block; margin-top: 1rem; font-size: 0.95rem; }
+.check .hint { display: block; margin-left: 1.6rem; }
+
+button.primary {
+  margin-top: 1.5rem;
+  font: inherit;
+  font-weight: 600;
+  padding: 0.6rem 1.4rem;
+  color: #fff;
+  background: var(--accent);
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+button.primary:disabled { background: #9aa5b5; cursor: default; }
+
+button.link {
+  font: inherit;
+  font-size: 0.86rem;
+  color: var(--accent);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.status { margin: 0.8rem 0 0; min-height: 1.4em; font-size: 0.9rem; }
+.status.error { color: var(--bad); }
+.status.working { color: var(--muted); }
+
+.deck {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid var(--line);
+}
+.deck:last-child { border-bottom: 0; }
+.deck .title { font-weight: 600; }
+.deck .meta { color: var(--muted); font-size: 0.88rem; }
+.deck a { margin-left: auto; color: var(--accent); }
+
+/* Три исхода проверки вёрстки различаются цветом И словами. Одного цвета мало:
+   «не проверяли» и «дефектов нет» — разные утверждения, и путать их нельзя. */
+.verdict { margin-top: 1.2rem; padding: 0.8rem 1rem; border-radius: 6px;
+           border-left: 4px solid var(--line); background: #fafbfc; }
+.verdict.ok { border-left-color: var(--ok); }
+.verdict.unknown { border-left-color: var(--warn); }
+.verdict.skipped { border-left-color: var(--line); }
+.verdict h3 { margin: 0 0 0.3rem; font-size: 0.95rem; }
+.verdict p { margin: 0.25rem 0; font-size: 0.9rem; }
+.verdict .numbers { font-variant-numeric: tabular-nums; }
+
+details { margin-top: 1.4rem; }
+summary { cursor: pointer; font-size: 0.9rem; color: var(--muted); }
+#diagnostics ul { margin: 0.6rem 0 0; padding-left: 1.2rem; }
+#diagnostics li { font-size: 0.88rem; margin-bottom: 0.4rem; }
+#diagnostics .unplaced { color: var(--bad); font-weight: 600; }
+
+footer { margin-top: 2rem; color: var(--muted); font-size: 0.82rem; }

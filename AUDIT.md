@@ -36,6 +36,7 @@ python tools/audit_doc.py --write
 | Файл | Тест-функций | Что покрывает |
 |---|---:|---|
 | [`tests/test_analyze_smoke.py`](tests/test_analyze_smoke.py) | 17 | Сквозной прогон стадии ANALYZE на синтетическом шаблоне. |
+| [`tests/test_build_report.py`](tests/test_build_report.py) | 6 | Машинночитаемый итог сборки (`Z-46`, `PLAN-8.0`). |
 | [`tests/test_color.py`](tests/test_color.py) | 11 | Разрешение цвета. DOM-COLOR. |
 | [`tests/test_compose.py`](tests/test_compose.py) | 18 | Сборка колоды. ADR-0011, ADR-0012. |
 | [`tests/test_config_version.py`](tests/test_config_version.py) | 8 | Замок версий конфигов: он обязан уметь падать. |
@@ -64,7 +65,8 @@ python tools/audit_doc.py --write
 | [`tests/test_verify_repair.py`](tests/test_verify_repair.py) | 20 | Ремонт плана шкалой кегля: монотонность, предел читаемости, честность. |
 | [`tests/test_verify_space.py`](tests/test_verify_space.py) | 19 | Доступное место вместо бокса (`PLAN-4.2`, `ADR-0015`). |
 | [`tests/test_volume.py`](tests/test_volume.py) | 15 | Объём колоды: 10–15 слайдов или сколько задали. `Z-35`, план `PLAN-2.3`. |
-| **всего** | **464** | в 29 файлах |
+| [`tests/test_web_boundary.py`](tests/test_web_boundary.py) | 5 | Граница веб-слоя (`Z-29`, `PLAN-8.0`, `SPEC-WEB` раздел 2). |
+| **всего** | **475** | в 31 файлах |
 
 <!-- /порождается -->
 

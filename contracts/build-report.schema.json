@@ -1,0 +1,73 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/Bulbazzavr/mimeo/contracts/build-report.schema.json",
+  "title": "Итог сборки, машинночитаемый",
+  "description": "Что команда `build` положила на диск и что при этом сказала. Пишется флагом --report. Заведён задачей Z-46 по контракту, объявленному в docs/SPEC-WEB.md, раздел 4, ещё до реализации — форма оттуда и менять её нельзя. Нужен веб-слою (Z-29): разбирать русскую прозу, которую build печатает человеку, запрещено — формулировки меняются, и разбор ломается на первой же правке.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "decks", "seconds", "diagnostics"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Версия контракта. Объявлена неизменной в SPEC-WEB."
+    },
+    "decks": {
+      "type": "array",
+      "description": "Собранные колоды, по одной на вариант. Без --variants длиной ровно один.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "slides", "variant", "structural_problems", "render_report"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Путь к собранному .pptx, как его видит запустивший команду."
+          },
+          "slides": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Сколько слайдов вышло."
+          },
+          "variant": {
+            "type": ["integer", "null"],
+            "minimum": 1,
+            "description": "Номер варианта вёрстки, 1-based. null означает, что вариантов не просили и колода одна. Это не то же, что 1: «вариант 1 из трёх» и «единственная колода» — разные вещи, и веб показывает их по-разному."
+          },
+          "structural_problems": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Сколько нашла структурная проверка пакета (compose.inspect). Ноль здесь означает «структура непротиворечива», а НЕ «файл рабочий»: это разные утверждения, и проверено это дорого — два файла из одиннадцати PowerPoint не открывал при нулях по всем нашим проверкам."
+          },
+          "render_report": {
+            "type": ["string", "null"],
+            "description": "Путь к отчёту проверки вёрстки (contracts/render-report.schema.json) или null, если стадия VERIFY не запускалась. null значит «не проверяли», а не «дефектов нет» — главное правило проекта, и потребитель обязан их различать."
+          }
+        }
+      }
+    },
+    "seconds": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Сколько заняла вся команда, включая разбор шаблона и проверку вёрстки. Потолок ТЗ — 300 с на колоду."
+    },
+    "diagnostics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unplaced", "warnings"],
+      "description": "То же, что движок говорит человеку словами, только машинно.",
+      "properties": {
+        "unplaced": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Идентификаторы разделов контента, которым не нашлось раскладки даже после дробления. Непустой список — потеря содержания, и показывать его надо заметно."
+        },
+        "warnings": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Предупреждения плана: растянутые картинки, невставленные иллюстрации, чужие гарнитуры слотов, пустые слоты, объём вне заданного. Текст для человека, по-русски."
+        }
+      }
+    }
+  }
+}

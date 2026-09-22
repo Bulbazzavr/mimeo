@@ -234,6 +234,75 @@ def cmd_plan(args):
     return 0
 
 
+#: Форма машинночитаемого итога сборки (`Z-46`). **Объявлена в `SPEC-WEB`,
+#: разделе 4, ещё до реализации** — как обещание второму участнику, чтобы он мог
+#: писать против контракта, не дожидаясь кода. Исполнитель с тех пор сменился,
+#: обещание нет: форма не меняется, схема лежит в
+#: `contracts/build-report.schema.json` и проверяется тестом.
+#:
+#: **Зачем вообще:** `build` печатает сводку русской прозой, и разбирать её
+#: нельзя — формулировки меняются, разбор ломается на первой же правке
+#: (`SPEC-WEB`, раздел 4, прямым текстом).
+_REPORT_VERSION = "1.0"
+
+
+def _slash(path):
+    """Путь в отчёте — всегда через `/`, даже на Windows.
+
+    Отчёт читает машина, и `os.path.join` на Windows даёт
+    `out/run\render-report.json` — разделители в одной строке разные. Прямой
+    слэш понимают обе системы, и потребителю не приходится гадать.
+    """
+    return path.replace("\\", "/") if isinstance(path, str) else path
+
+
+def _deck_entry(path, slides, variant, problems, render_report):
+    """Одна колода в отчёте.
+
+    `render_report` — путь или **`None`**, и `None` значит «стадия VERIFY не
+    запускалась», а не «дефектов нет». Это главное правило проекта, и здесь оно
+    держится типом: пустой строкой такое не выразить, а нулём тем более.
+    """
+    return {
+        "path": _slash(path),
+        "slides": slides,
+        "variant": variant,
+        "structural_problems": len(problems),
+        "render_report": _slash(render_report),
+    }
+
+
+def write_build_report(target, decks, seconds, plan_or_plans):
+    """Кладёт итог сборки в файл. `target` пуст — не делает ничего.
+
+    `plan_or_plans` — план колоды или список планов: предупреждения и
+    неразмещённые разделы собираются со всех вариантов, потому что у каждого
+    они свои.
+    """
+    if not target:
+        return
+    plans = plan_or_plans if isinstance(plan_or_plans, (list, tuple)) else [plan_or_plans]
+    warnings, unplaced = [], []
+    for plan in plans:
+        for w in getattr(plan, "warnings", ()) or ():
+            if w not in warnings:
+                warnings.append(w)
+        for u in getattr(plan, "unplaced", ()) or ():
+            if u not in unplaced:
+                unplaced.append(u)
+    payload = {
+        "version": _REPORT_VERSION,
+        "decks": list(decks),
+        "seconds": round(seconds, 3),
+        "diagnostics": {"unplaced": unplaced, "warnings": warnings},
+    }
+    directory = os.path.dirname(os.path.abspath(target))
+    os.makedirs(directory, exist_ok=True)
+    with open(target, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh, ensure_ascii=False, indent=2, sort_keys=True)
+        fh.write(chr(10))
+
+
 def cmd_build(args):
     """Шаблон плюс контент — готовый файл. Без обращения к модели (ADR-0009)."""
     started = time.perf_counter()
@@ -278,6 +347,16 @@ def cmd_build(args):
         elapsed = time.perf_counter() - started
         problems = inspect_package(target)      # файл пересобран — проверить заново
         write_json(verify, os.path.join(args.out, "render-report.json"))
+
+    write_build_report(
+        getattr(args, "report", None),
+        [_deck_entry(
+            target, report.slides, None, problems,
+            os.path.join(args.out, "render-report.json") if verify is not None else None,
+        )],
+        elapsed,
+        plan,
+    )
 
     if not args.quiet:
         kinds = {p.id: p.kind for p in analysis.patterns.patterns}
@@ -356,6 +435,19 @@ def _build_variants(args, analysis, doc, target, started):
         worst = max(worst, len(problems))
         written.append((n, variant, path, built, problems, verdict))
     elapsed = time.perf_counter() - started
+
+    write_build_report(
+        getattr(args, "report", None),
+        [
+            _deck_entry(
+                path, built.slides, n, problems,
+                os.path.join(args.out, f"render-report-{n}.json") if verdict is not None else None,
+            )
+            for n, _v, path, built, problems, verdict in written
+        ],
+        elapsed,
+        [v.plan for _n, v, _p, _b, _pr, _vd in written],
+    )
 
     if not args.quiet:
         print(f"шаблон      {os.path.basename(args.template)}")
@@ -438,6 +530,15 @@ def build_parser() -> argparse.ArgumentParser:
              "суффикс -1, -2, -3. Если шаблон беден раскладками и N заметно "
              "различных колод из него не выходит, будет собрано меньше и "
              "названа причина",
+    )
+    build.add_argument(
+        "--report",
+        metavar="ФАЙЛ",
+        help="куда положить машинночитаемый ИТОГ сборки (JSON): пути колод, число "
+             "слайдов, структурные проблемы, предупреждения. Не путать с "
+             "--output, который задаёт путь самой колоды. Нужен веб-слою: "
+             "разбирать печатаемую сводку нельзя, её формулировки меняются "
+             "(contracts/build-report.schema.json)",
     )
     build.add_argument("-q", "--quiet", action="store_true", help="без сводки")
     build.add_argument(
