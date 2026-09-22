@@ -246,7 +246,7 @@ function render(data) {
      каждый вариант: пять одинаковых абзацев подряд перестают читать, и тогда
      предупреждение не работает вовсе. Найдено глазами на девяти вариантах. */
   $('verify-block').innerHTML = short + (data.verify_requested
-    ? decks.map((deck, n) => verdict(data, deck, n, decks.length)).join('')
+    ? verifyBlock(data, decks)
     : notChecked());
 
   const warnings = (data.report.diagnostics && data.report.diagnostics.warnings) || [];
@@ -317,12 +317,76 @@ function notChecked() {
     + 'их никто не искал.</p></div>';
 }
 
-function verdict(data, deck, n, total) {
-  const head = total > 1 ? 'Вариант ' + deck.variant + ': ' : '';
-  const report = (data.verify || [])[n];
+/* --- главное число (PLAN-8.3, часть C) ---------------------------------- */
+
+/* Причина остановки словами. У «fits» было «всё поместилось», и это неправда:
+   ремонт берёт только высоту, и петля встаёт с fits при тексте шире места.
+   На корпусе так на семи шаблонах из одиннадцати (Z-52). */
+const STOPPED = {
+  fits: 'ремонту больше нечего чинить',
+  floor: 'упёрлись в предел читаемости',
+  rounds: 'кончились раунды ремонта'
+};
+
+/* Сколько в списке отчёта. Веб здесь ничего не считает — длина списка, и всё:
+   ни вычитания по раундам, ни максимума. Списка нет — «?», а не ноль: ноль был
+   бы утверждением, которого движок не делал. */
+function count(list) {
+  return Array.isArray(list) ? String(list.length) : '?';
+}
+
+/* Что ремонт не берёт: наша ширина, заслонение, фигуры донора. */
+function unrepairable(report) {
+  return [report.overflow_width, report.occluded, report.donor_overflow];
+}
+
+function verifyBlock(data, decks) {
+  const reports = decks.map((deck, n) => (data.verify || [])[n] || null);
+  const measured = reports.filter((r) => r && r.status === 'ok');
+  const title = measured.length === decks.length
+    ? 'Вёрстка проверена настоящим PowerPoint'
+    : 'Проверка вёрстки настоящим PowerPoint';
+
+  /* Объяснения — ОДИН раз на сборку и только те, что к делу. Три одинаковых
+     абзаца подряд — стена, и её перестают читать: так было до части C, по
+     три повтора на три варианта (PLAN-8.3, замер 8). */
+  const notes = [];
+  if (measured.some((r) => r.stopped === 'floor')) {
+    notes.push('«Упёрлись в предел читаемости» — ужимать кегль дальше значит '
+      + 'сделать текст нечитаемым. Оставшееся не спрятано, а названо.');
+  }
+  if (measured.some((r) => unrepairable(r).some((list) => !Array.isArray(list) || list.length))) {
+    notes.push('Ремонт ужимает кегль по высоте, и три вида он не берёт: надпись '
+      + 'шире своего места; надпись под чужой фигурой — меньший кегль укорачивает '
+      + 'текст, но не сужает строку; переполненные фигуры самого шаблона, куда мы '
+      + 'ничего не подставляли.');
+  }
+  if (measured.length) {
+    /* Слепое пятно проверки, Z-53. Снять эту строку ТЕМ ЖЕ коммитом, что
+       научит детектор видеть наложение, — иначе страница начнёт преуменьшать
+       проверку. Найдено растром сдаточной колоды: WorkSpace, вариант 3. */
+    notes.push('Чего проверка пока не видит: текст, налезающий на соседний '
+      + 'текст, когда их места в шаблоне перекрываются. Поэтому ноль здесь — '
+      + 'итог замера, а не гарантия.');
+  }
+
+  return '<div class="verify"><h3>' + escape(title) + '</h3>'
+    + '<div class="verdicts">'
+    + decks.map((deck, n) => verdict(deck, reports[n], decks.length)).join('')
+    + '</div>'
+    + (notes.length
+        ? '<div class="notes">' + notes.map((t) => '<p>' + escape(t) + '</p>').join('') + '</div>'
+        : '')
+    + '</div>';
+}
+
+function verdict(deck, report, total) {
+  const who = total > 1
+    ? '<div class="who">Вариант ' + escape(String(deck.variant)) + '</div>'
+    : '';
 
   if (!report) {
-    return '<div class="verdict unknown"><h3>' + head + 'Проверить не смогли</h3>'
+    return '<div class="verdict unknown">' + who + '<h4>Проверить не смогли</h4>'
       + '<p>Проверку просили, но отчёта движок не отдал. Чаще всего это значит, '
       + 'что PowerPoint недоступен: стадия требует Windows с установленным Office.</p></div>';
   }
@@ -339,27 +403,39 @@ function verdict(data, deck, n, total) {
       : (report.status === 'unavailable'
           ? 'PowerPoint недоступен: стадия требует Windows с установленным Office.'
           : 'Движок не смог снять габариты надписей.');
-    return '<div class="verdict unknown"><h3>' + head + 'Проверить не смогли</h3>'
+    return '<div class="verdict unknown">' + who + '<h4>Проверить не смогли</h4>'
       + '<p>' + escape(why) + '</p>'
       + (report.note ? '<p class="hint">' + escape(report.note) + '</p>' : '')
       + '<p>Сколько здесь дефектов — <strong>неизвестно</strong>.</p></div>';
   }
 
+  /* Главное число — крупной парой, а не словом в абзаце: это кадр, ради
+     которого снимается видео (PLAN-8.1, часть C). Но одно оно — неполная
+     правда: «после» считает только высоту, ту, что чинит ремонт. Поэтому в той
+     же карточке — три числа того, что ремонт не берёт, и все из отчёта. */
+  const shown = (v) => (v === null || v === undefined ? '?' : String(v));
   const before = report.defects ? report.defects.before : null;
   const after = report.defects ? report.defects.after : null;
-  const stopped = {
-    fits: 'всё поместилось',
-    floor: 'дальше ужимать нельзя — упёрлись в предел читаемости',
-    rounds: 'кончились раунды ремонта'
-  }[report.stopped] || report.stopped;
-  const occluded = (report.occluded || []).length;
+  /* Ноль НЕ зелёный. У проверки есть слепое пятно (Z-53), и зелёный ноль
+     утверждал бы больше, чем она видит. Не ноль — янтарный; красный остаётся
+     за потерей содержания. */
+  const tone = after ? ' warn' : '';
+  const rest = unrepairable(report).map(count);
+  /* То же правило для всего, что осталось: не ноль — янтарный. Иначе «1 → 0»
+     крупно перевешивает «13» мелко рядом — так и вышло на prostoj-shablon при
+     проверке глазами. Неизвестное («?») не окрашиваем: это не «осталось». */
+  const row = (label, n) => '<span>' + label + '</span><b'
+    + (n !== '0' && n !== '?' ? ' class="warn"' : '') + '>' + n + '</b>';
 
-  return '<div class="verdict ok"><h3>' + head + 'Вёрстка проверена настоящим PowerPoint</h3>'
-    + '<p class="numbers">Переполнений было <strong>' + before + '</strong>, '
-    + 'после ремонта <strong>' + after + '</strong>. Остановились: ' + escape(stopped) + '.</p>'
-    + (occluded
-        ? '<p>Надписей, закрытых чужой фигурой: <strong>' + occluded + '</strong>. '
-          + 'Ремонтом это не чинится — меньший кегль укорачивает текст, но не сужает строку.</p>'
-        : '<p>Закрытых чужой фигурой надписей нет.</p>')
-    + '</div>';
+  return '<div class="verdict ok">' + who
+    + '<div class="pair"><span>' + shown(before) + '</span>'
+    + '<span class="arrow">→</span>'
+    + '<span class="after' + tone + '">' + shown(after) + '</span></div>'
+    + '<div class="cap">переполнений по высоте<br>было → после ремонта</div>'
+    + '<p class="why">' + escape(STOPPED[report.stopped] || report.stopped) + '</p>'
+    + '<div class="rest"><span class="head">Ремонтом не чинится</span>'
+    + row('шире своего места', rest[0])
+    + row('закрыто фигурой', rest[1])
+    + row('в фигурах шаблона', rest[2])
+    + '</div></div>';
 }

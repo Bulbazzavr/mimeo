@@ -172,3 +172,35 @@ table.scale .none { color: var(--muted); font-style: italic; }
 .strip .verdict { margin-top: 0; }
 .deck button.show-slides { margin-left: auto; }
 .deck a { margin-left: 1rem; }
+
+/* --- главное число (PLAN-8.3, часть C) --------------------------------- */
+
+.verify { margin-top: 1.2rem; }
+.verify > h3 { margin: 0 0 0.6rem; font-size: 0.95rem; }
+.verdicts { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+/* Основа фиксирована и без роста: три карточки в ряд на 1366, одна на
+   телефоне, а одиночная колода не растянута на всю ширину с числом в углу
+   (PLAN-8.3, логическая проверка 1, пункт 4). */
+.verdicts .verdict { flex: 0 1 17.5rem; min-width: 14rem; margin-top: 0; }
+.verdicts .verdict h4 { margin: 0.1rem 0 0.3rem; font-size: 0.95rem; }
+.verdict .who { font-size: 0.75rem; color: var(--muted); text-transform: uppercase;
+                letter-spacing: 0.06em; }
+/* Приёмка части C: пара читается с расстояния, на котором абзац уже не
+   читается. 3.2rem против 0.9rem текста — втрое с лишним. */
+.pair { font-size: 3.2rem; font-weight: 700; line-height: 1.05; white-space: nowrap;
+        font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.pair .arrow { color: var(--muted); font-weight: 400; margin: 0 0.25em; }
+.pair .warn { color: var(--warn); }
+.verdict .cap { font-size: 0.78rem; color: var(--muted); margin: 0.15rem 0 0.5rem;
+                line-height: 1.35; }
+.verdict .why { font-weight: 600; }
+/* Три числа того, что ремонт не берёт, — столбиком, число под числом: в строку
+   они рвались посреди подписи. */
+.verdict .rest { display: grid; grid-template-columns: 1fr auto; column-gap: 1rem;
+                 font-size: 0.86rem; color: var(--muted); margin-top: 0.4rem; }
+.verdict .rest .head { grid-column: 1 / -1; font-size: 0.75rem; text-transform: uppercase;
+                       letter-spacing: 0.05em; margin-bottom: 0.1rem; }
+.verdict .rest b { color: var(--ink); text-align: right; font-variant-numeric: tabular-nums; }
+.verdict .rest b.warn { color: var(--warn); }
+.verify .notes { margin-top: 0.7rem; }
+.verify .notes p { margin: 0.25rem 0; font-size: 0.82rem; color: var(--muted); max-width: 52rem; }
