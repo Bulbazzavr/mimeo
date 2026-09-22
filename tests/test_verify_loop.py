@@ -415,10 +415,15 @@ def test_width_is_ours_and_the_donor_is_the_donor():
 
 
 def test_failed_measurement_names_nothing():
-    """Замер не состоялся — списки пусты, как `occluded` и `unresolved`.
-    Различать это с «чисто» велено по `status`, и он здесь не `ok`."""
-    rep, _, _ = run([40.0], fail_at=1, widths=[300.0], extra=(donor_shape(),))
+    """Замер сорвался после пересборки — списки пусты, а не взяты из осмотра,
+    сделанного до неё: тот осмотр устарел, как устарел бы `after`. Различать
+    «не смогли» и «чисто» велено по `status`, и он здесь не `ok`.
+
+    Сцена с отказом на **втором** сеансе, а не на первом: при отказе на первом
+    осмотра нет вовсе, и тест не мог бы упасть ни от какой поломки."""
+    rep, _, _ = run([120.0], fail_at=2, widths=[300.0], extra=(donor_shape(),))
     assert rep.status == "not_measured"
+    assert rep.before == 1, "первый раунд состоялся — сцена та, что задумана"
     assert rep.overflow_width == () and rep.donor_overflow == ()
 
 
