@@ -136,3 +136,54 @@ def test_summary_matches_what_analyze_actually_wrote(tmp_path) -> None:
     marked = [t for t in summary["type_scale"] if t["pictogram"]]
     assert marked, "у business_plan роли на linecons есть, признак обязан сработать"
     assert all(t["example"] is None for t in marked)
+
+
+# --- превью слайдов (`PLAN-8.2`, часть B) -------------------------------
+
+
+def test_powerpoint_is_guarded_as_an_exclusive_resource() -> None:
+    """Приложение одноэкземплярное, и это не наше ограничение.
+
+    `New-Object` подключается к уже открытому у пользователя экземпляру, а
+    `Quit()` закрыл бы его документы. Поэтому оба зонда сторожат вход и
+    выходят с кодом 3. Замер столкновением 22 сентября: два растровых прогона
+    с разницей 1.2 с дают первый 4.5 с и код 0, второй **0.3 с и код 3**.
+
+    Здесь проверяется, что сервер об этом знает: есть замок и он один.
+    """
+    import threading
+    assert isinstance(serve._POWERPOINT, type(threading.Lock())), (
+        "растровые операции обязаны быть под замком: превью и проверка вёрстки "
+        "делят один PowerPoint"
+    )
+
+
+def test_preview_addresses_carry_numbers_and_never_paths() -> None:
+    """Путь от страницы не принимается — ни целиком, ни частью. Снаружи ходят
+    токен и два номера, путь живёт на сервере (как и у скачивания колоды)."""
+    run = {"token": "abc/def", "dir": "/tmp/x", "decks": ["a.pptx"], "previews": {}}
+    urls = serve.Handler._image_urls(None, run, 0, 3)
+    assert len(urls) == 3
+    for i, url in enumerate(urls):
+        assert url == f"/api/preview-image?token=abc%2Fdef&n=0&i={i}"
+        assert ".." not in url and "/tmp" not in url
+
+
+def test_a_deck_number_from_outside_is_checked_against_what_exists() -> None:
+    """Номер колоды приходит снаружи. Всё, что не цифра или за пределом
+    списка, — `None`, и дальше по этому пути ничего не отдаётся."""
+    run = {"decks": ["a.pptx", "b.pptx"]}
+    take = serve.Handler._deck_index
+    assert take(None, {"n": ["0"]}, run) == 0
+    assert take(None, {"n": ["1"]}, run) == 1
+    assert take(None, {"n": ["2"]}, run) is None          # за пределом
+    assert take(None, {"n": ["-1"]}, run) is None         # не цифра
+    assert take(None, {"n": ["../../etc"]}, run) is None  # путь
+    assert take(None, {}, run) == 0                       # умолчание
+
+
+def test_preview_width_is_generous_because_time_does_not_depend_on_it() -> None:
+    """Замер: 13 слайдов дают 4.3 с при ширине 400, 3.5 с при 800 и 5.1 с при
+    1280 — разброс это шум запуска приложения, а не разрешение. Значит мельчить
+    незачем: экономия была бы только на памяти, а картинку открывают целиком."""
+    assert serve.PREVIEW_WIDTH >= 800

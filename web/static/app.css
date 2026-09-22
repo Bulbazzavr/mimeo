@@ -157,3 +157,18 @@ table.scale .dot { display: inline-block; width: 0.8rem; height: 0.8rem;
                    vertical-align: -1px; margin-right: 0.35rem; }
 table.scale .ex { color: var(--ink); }
 table.scale .none { color: var(--muted); font-style: italic; }
+
+/* --- лента слайдов (PLAN-8.2, часть B) --------------------------------- */
+
+.strip { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.strip:not(:empty) { padding: 0.7rem 0 0.9rem; }
+.strip a { position: relative; display: block; line-height: 0;
+           border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.strip img { width: 220px; height: auto; display: block; background: #fff; }
+.strip span { position: absolute; left: 0; bottom: 0;
+              background: rgba(22, 24, 29, 0.72); color: #fff;
+              font-size: 0.7rem; line-height: 1.4; padding: 0 0.35rem;
+              border-top-right-radius: 4px; }
+.strip .verdict { margin-top: 0; }
+.deck button.show-slides { margin-left: auto; }
+.deck a { margin-left: 1rem; }

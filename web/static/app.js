@@ -220,14 +220,22 @@ function render(data) {
     return '<div class="deck">'
       + '<span class="title">' + escape(name) + '</span>'
       + '<span class="meta">' + deck.slides + ' слайдов, ' + escape(problems) + '</span>'
+      + '<button type="button" class="link show-slides" data-n="' + n + '">Показать слайды</button>'
       + '<a href="/api/deck?token=' + encodeURIComponent(token) + '&n=' + n + '">Скачать .pptx</a>'
-      + '</div>';
+      + '</div>'
+      + '<div class="strip" id="strip-' + n + '"></div>';
   }).join('');
+
+  $('decks').querySelectorAll('.show-slides').forEach((b) => {
+    b.addEventListener('click', () => showSlides(parseInt(b.dataset.n, 10), b));
+  });
 
   /* Просили больше, чем вышло, — это надо видеть НЕ раскрывая «подробности».
      Движок объясняет причину словами; молча показать пять колод вместо девяти
      значит соврать отчётом, который формально правдив. */
-  const asked = parseInt($('variants').value, 10) || 1;
+  /* Сколько просили — берём из ответа сервера, а не из поля формы: поле можно
+     тронуть после сборки, и подпись начнёт врать о том, чего не просили. */
+  const asked = data.variants_asked || 1;
   const short = decks.length < asked
     ? '<div class="verdict unknown"><h3>Вариантов вышло меньше, чем просили: '
       + decks.length + ' из ' + asked + '</h3><p>' + escape(shortfallReason(data))
@@ -254,6 +262,39 @@ function render(data) {
 
   $('result').hidden = false;
   $('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/* --- превью слайдов (PLAN-8.2, часть B) --------------------------------- */
+
+/* Рисует тот же PowerPoint, которым стадия VERIFY меряет вёрстку. Значит это
+   не картинка рядом с отчётом, а та самая вёрстка, о которой отчёт говорит
+   числами: видно «переполнений было 10, стало 7» — и видно, где именно. */
+async function showSlides(n, button) {
+  const strip = $('strip-' + n);
+  button.disabled = true;
+  strip.innerHTML = '<p class="hint">Открываем колоду в PowerPoint и снимаем слайды…</p>';
+  try {
+    const response = await fetch('/api/preview?token=' + encodeURIComponent(token) + '&n=' + n);
+    const data = await response.json();
+    if (!data.ok) {
+      /* «Занят» — это не отказ, а состояние, и у человека есть что с ним
+         сделать. Сводить его к общему «не смогли» значит отнять действие. */
+      strip.innerHTML = '<div class="verdict ' + (data.busy ? 'unknown' : 'skipped') + '">'
+        + '<h3>' + (data.busy ? 'PowerPoint занят' : 'Показать слайды не вышло') + '</h3>'
+        + '<p>' + escape(data.error || '') + '</p></div>';
+      return;
+    }
+    strip.innerHTML = data.slides.map((src, i) =>
+      '<a href="' + src + '" target="_blank" rel="noopener" title="Слайд ' + (i + 1)
+      + ' — открыть целиком"><img src="' + src + '" alt="Слайд ' + (i + 1) + '" loading="lazy">'
+      + '<span>' + (i + 1) + '</span></a>').join('');
+    button.textContent = 'Слайды показаны';
+    return;
+  } catch (error) {
+    strip.innerHTML = '<p class="hint">Показать слайды не вышло: ' + escape(error.message) + '</p>';
+  } finally {
+    button.disabled = false;
+  }
 }
 
 /* Причина недобора приходит от движка первым предупреждением. Своими словами
@@ -286,9 +327,18 @@ function verdict(data, deck, n, total) {
       + 'что PowerPoint недоступен: стадия требует Windows с установленным Office.</p></div>';
   }
   if (report.status !== 'ok') {
-    const why = report.status === 'unavailable'
-      ? 'PowerPoint недоступен: стадия требует Windows с установленным Office.'
-      : 'Движок не смог снять габариты надписей.';
+    /* «PowerPoint открыт» и «PowerPoint не установлен» — разные беды, и первая
+       у этого пользователя куда вероятнее: он прямо сейчас правит в нём
+       сдаточную презентацию. Прежняя формулировка утверждала, что Office не
+       установлен, там где он установлен и работает. Замер 22 сентября:
+       при занятом приложении приходит status=not_measured, note='not_measured: BUSY'. */
+    const busy = (report.note || '').indexOf('BUSY') !== -1;
+    const why = busy
+      ? 'PowerPoint уже открыт — закройте его и повторите сборку. Приложение '
+        + 'одноэкземплярное, и мы не вправе закрывать ваши документы.'
+      : (report.status === 'unavailable'
+          ? 'PowerPoint недоступен: стадия требует Windows с установленным Office.'
+          : 'Движок не смог снять габариты надписей.');
     return '<div class="verdict unknown"><h3>' + head + 'Проверить не смогли</h3>'
       + '<p>' + escape(why) + '</p>'
       + (report.note ? '<p class="hint">' + escape(report.note) + '</p>' : '')

@@ -25,6 +25,7 @@ CLI.
 from __future__ import annotations
 
 import argparse
+import glob
 import json
 import mimetypes
 import os
@@ -67,6 +68,28 @@ MAX_VARIANTS = 27
 #: вёрстки идут дольше одной, а висеть вечно нельзя.
 BUILD_TIMEOUT_SECONDS = 600
 
+#: **PowerPoint — исключительный ресурс на весь продукт, и это не наше
+#: ограничение.** Приложение одноэкземплярное: `New-Object` подключается к уже
+#: открытому экземпляру, а `Quit()` закрыл бы документы пользователя. Поэтому
+#: оба зонда сторожат вход и выходят с кодом 3, увидев чужой `POWERPNT`:
+#: `tools/com_probe.ps1` — `ABORTED_USER_INSTANCE_RUNNING`,
+#: `mimeo/verify/powerpoint_probe.ps1` — `result=BUSY`.
+#:
+#: Замер столкновением 22 сентября: два растровых прогона с разницей 1.2 с дают
+#: первый 4.5 с и код 0, второй **0.3 с и код 3**.
+#:
+#: Замок упорядочивает **наши** обращения. От открытого руками PowerPoint он не
+#: спасает — от этого спасает только внятное сообщение (`PLAN-8.2`, логическая
+#: проверка 1, дыра 1).
+_POWERPOINT = threading.Lock()
+
+#: Ширина растра превью. Замер: время от неё почти не зависит — 13 слайдов дают
+#: 4.3 с при 400, 3.5 с при 800 и 5.1 с при 1280, и разброс это шум запуска
+#: приложения. Значит мельчить незачем: платим только памятью браузера, около
+#: 2.8 МБ на колоду из тринадцати слайдов. В ленте миниатюры уменьшаются
+#: стилями, а клик открывает картинку целиком.
+PREVIEW_WIDTH = 900
+
 #: Прогоны: токен -> что мы о нём знаем. Ключи выдаёт сервер, клиент их только
 #: возвращает. **Путь от страницы не принимается никогда** — это и есть защита
 #: от обхода каталога: снаружи ходят токен и номер, путь живёт здесь.
@@ -79,7 +102,8 @@ def _new_run() -> tuple[str, str]:
     path = os.path.join(RUNS_DIR, token)
     os.makedirs(path, exist_ok=True)
     with _LOCK:
-        _RUNS[token] = {"token": token, "dir": path, "template": None, "decks": []}
+        _RUNS[token] = {"token": token, "dir": path, "template": None,
+                        "decks": [], "previews": {}}
     return token, path
 
 
@@ -293,6 +317,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._deck(urllib.parse.parse_qs(url.query))
         if url.path == "/api/design":
             return self._design(urllib.parse.parse_qs(url.query))
+        if url.path == "/api/preview":
+            return self._preview(urllib.parse.parse_qs(url.query))
+        if url.path == "/api/preview-image":
+            return self._preview_image(urllib.parse.parse_qs(url.query))
         if url.path.startswith("/static/"):
             return self._static(url.path[len("/static/"):])
         self._fail(404, "нет такого адреса")
@@ -400,11 +428,24 @@ class Handler(BaseHTTPRequestHandler):
         if verify_requested:
             argv += ["--verify"]
 
+        # Проверка вёрстки поднимает PowerPoint, а он одноэкземплярный. Сборка
+        # **ждёт** замок, в отличие от превью: её попросили кнопкой, и ответить
+        # «занято» на прямое действие хуже, чем подождать. Предел ожидания есть
+        # — иначе зависший зонд подвесил бы и сборку (`PLAN-8.2`, дыра 3).
+        holding = False
+        if verify_requested:
+            holding = _POWERPOINT.acquire(timeout=BUILD_TIMEOUT_SECONDS)
+            if not holding:
+                return self._fail(
+                    503, "PowerPoint занят другой операцией дольше допустимого")
         started = time.perf_counter()
         try:
             proc = _engine(argv)
         except subprocess.TimeoutExpired:
             return self._fail(504, f"движок не уложился в {BUILD_TIMEOUT_SECONDS} с")
+        finally:
+            if holding:
+                _POWERPOINT.release()
         elapsed = time.perf_counter() - started
 
         report = _read_json(report_path)
@@ -424,6 +465,12 @@ class Handler(BaseHTTPRequestHandler):
         decks = report.get("decks") or []
         with _LOCK:
             run["decks"] = [d.get("path") for d in decks]
+            # Колоды пересобраны — старые картинки к ним больше не относятся.
+            # Оставить их значило бы показать прошлую вёрстку как нынешнюю
+            # (`PLAN-8.2`, логическая проверка 1, дыра 5).
+            run["previews"] = {}
+        for stale in glob.glob(os.path.join(run["dir"], "preview-*")):
+            shutil.rmtree(stale, ignore_errors=True)
 
         # Отчёт проверки вёрстки читаем и отдаём **как есть**: у него своя схема
         # (`contracts/render-report.schema.json`) с обязательным `status`, и
@@ -439,6 +486,11 @@ class Handler(BaseHTTPRequestHandler):
             "report": report,
             "verify": verify,
             "verify_requested": verify_requested,
+            # Сколько вариантов просили — говорит **сервер**, а не поле формы.
+            # Страница читала поле в момент показа, и стоило его тронуть после
+            # сборки, как подпись «вышло 1 из 3» начинала врать о том, чего не
+            # просили. Найдено проверкой глазами 22 сентября.
+            "variants_asked": variants,
             "returncode": proc.returncode,
             "seconds": round(elapsed, 2),
             "stderr": (proc.stderr or "")[-4000:],
@@ -485,6 +537,129 @@ class Handler(BaseHTTPRequestHandler):
         with _LOCK:
             run["design"] = payload
         self._json(payload)
+
+    # --- превью слайдов ------------------------------------------------
+
+    def _deck_index(self, query: dict, run: dict) -> int | None:
+        """Номер колоды из запроса. Снаружи приходит **только он**."""
+        raw = (query.get("n") or ["0"])[0]
+        if not raw.isdigit() or int(raw) >= len(run["decks"]):
+            return None
+        return int(raw)
+
+    def _preview(self, query: dict) -> None:
+        """Растр колоды: то же, чем стадия VERIFY меряет вёрстку.
+
+        **Рисуем по требованию и по одной колоде.** Три варианта — это три
+        запуска PowerPoint по 4–5 с, а попросить пользователь может и девять
+        (`PLAN-8.2`, логическая проверка 1, дыра 7).
+
+        Замок берётся **без ожидания**: если идёт проверка вёрстки, ждать её
+        можно до восьмидесяти секунд, и браузер всё это время висел бы.
+        Честнее ответить сразу.
+        """
+        run = _run((query.get("token") or [""])[0])
+        if not run:
+            return self._fail(404, "прогон не найден")
+        n = self._deck_index(query, run)
+        if n is None:
+            return self._fail(404, "нет такой колоды")
+
+        with _LOCK:
+            ready = run["previews"].get(n)
+        if ready:
+            return self._json({"ok": True, "slides": self._image_urls(run, n, len(ready)),
+                               "cached": True})
+
+        if not _POWERPOINT.acquire(blocking=False):
+            return self._json({
+                "ok": False, "busy": True,
+                "error": "PowerPoint сейчас занят другой операцией — идёт проверка "
+                         "вёрстки. Дождитесь её и повторите.",
+            })
+        try:
+            outcome = self._rasterise(run, n)
+        finally:
+            _POWERPOINT.release()
+        self._json(outcome, 200 if outcome.get("ok") else 200)
+
+    def _rasterise(self, run: dict, n: int) -> dict:
+        """Зовёт растровый зонд и переводит его код возврата в понятный ответ.
+
+        Кодов четыре, и **они означают разное**: 0 — нарисовано, 3 — PowerPoint
+        занят чужим экземпляром, 2 — не Windows, остальное — отказ. Свести их в
+        одно «не смогли» значило бы отнять у человека единственное действие,
+        которое он может совершить: закрыть PowerPoint.
+        """
+        target = os.path.join(run["dir"], f"preview-{n}")
+        # Каталог чистим: колода могла стать короче, и лишние картинки прошлого
+        # прогона выдали бы себя за нынешние слайды.
+        shutil.rmtree(target, ignore_errors=True)
+        os.makedirs(target, exist_ok=True)
+
+        deck = run["decks"][n]
+        deck = deck if os.path.isabs(deck) else os.path.join(ROOT, deck)
+        started = time.perf_counter()
+        try:
+            proc = subprocess.run(
+                [sys.executable, os.path.join(ROOT, "tools", "render_probe.py"),
+                 deck, "-o", target, "--width", str(PREVIEW_WIDTH)],
+                cwd=ROOT, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=BUILD_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "error": "растр не уложился во время"}
+
+        if proc.returncode == 3:
+            return {
+                "ok": False, "busy": True,
+                "error": "PowerPoint уже открыт — закройте его и повторите. "
+                         "Приложение одноэкземплярное, и мы не вправе закрывать "
+                         "ваши документы.",
+            }
+        if proc.returncode == 2:
+            return {"ok": False,
+                    "error": "растр рисует PowerPoint, а он есть только на Windows"}
+
+        # Список строим **обходом каталога**, а не счётчиком: имена вида
+        # `slide-01.png` перестают сортироваться как числа после сотого слайда
+        # (`PLAN-8.2`, дыра 4).
+        found = sorted(glob.glob(os.path.join(target, "slide-*.png")))
+        if proc.returncode != 0 or not found:
+            return {
+                "ok": False,
+                "error": "нарисовать слайды не вышло",
+                "stderr": ((proc.stdout or "") + (proc.stderr or ""))[-2000:],
+            }
+        with _LOCK:
+            run["previews"][n] = [os.path.basename(f) for f in found]
+        return {"ok": True, "slides": self._image_urls(run, n, len(found)),
+                "seconds": round(time.perf_counter() - started, 1), "cached": False}
+
+    def _image_urls(self, run: dict, n: int, count: int) -> list:
+        """Адреса картинок. **По номеру, а не по пути** — как у скачивания."""
+        # `safe=""` обязателен: по умолчанию `quote` **не трогает `/`**, и токен
+        # с косой чертой развалил бы адрес. Сегодня `token_urlsafe` таких не
+        # выдаёт, но полагаться на это значит оставить мину под сменой способа
+        # выдачи токенов. Нашёл тест.
+        token = urllib.parse.quote(run["token"], safe="")
+        return [f"/api/preview-image?token={token}&n={n}&i={i}" for i in range(count)]
+
+    def _preview_image(self, query: dict) -> None:
+        run = _run((query.get("token") or [""])[0])
+        if not run:
+            return self._fail(404, "прогон не найден")
+        n = self._deck_index(query, run)
+        raw = (query.get("i") or [""])[0]
+        with _LOCK:
+            names = run["previews"].get(n) if n is not None else None
+        if not names or not raw.isdigit() or int(raw) >= len(names):
+            return self._fail(404, "нет такой картинки")
+        path = os.path.join(run["dir"], f"preview-{n}", names[int(raw)])
+        if not os.path.isfile(path):
+            return self._fail(404, "картинка пропала")
+        with open(path, "rb") as fh:
+            self._send(200, fh.read(), "image/png")
 
     # --- скачивание ----------------------------------------------------
 
