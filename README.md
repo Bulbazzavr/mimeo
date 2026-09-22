@@ -157,6 +157,15 @@ python -m mimeo analyze шаблон.pptx -o out --validate
 python -m mimeo plan    шаблон.pptx examples/content-demo.md -o out --validate
 ```
 
+**Если предпочитаете браузер**, всё то же есть страницей — и сверх того разбор
+шаблона и слайды на экране; ставить по-прежнему нечего:
+
+```
+python web/serve.py
+```
+
+Подробности — [ниже](#веб-интерфейс-локальный) и в [`web/README.md`](web/README.md).
+
 Тесты и замеры:
 
 ```
@@ -421,6 +430,10 @@ python tools/config_version.py           сверить объявленные �
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | пайплайн и границы слоёв: парсинг, генерация, вёрстка, аудит, экспорт |
 | [`MODELS.md`](MODELS.md) | модели, области применения, системные требования, ссылки на huggingface |
 | [`AUDIT.md`](AUDIT.md) | список тестов и область их покрытия |
+
+Веб-слой описан отдельно: [`web/README.md`](web/README.md) — запуск, что
+умеет, чего не умеет намеренно, как устроена граница с движком. Задание, по
+которому он делался, — [`docs/SPEC-WEB.md`](docs/SPEC-WEB.md).
 
 Глубже: карта — [`docs/INDEX.md`](docs/INDEX.md), состояние —
 [`docs/STATE.md`](docs/STATE.md), решения с обоснованиями —
