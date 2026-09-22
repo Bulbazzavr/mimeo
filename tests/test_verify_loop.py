@@ -78,12 +78,18 @@ class Measurer:
     Считает вызовы: лишний контрольный сеанс иначе не поймать.
     """
 
-    def __init__(self, heights, font=44.0, fail_at=None, raise_at=None, fonts=None):
+    def __init__(self, heights, font=44.0, fail_at=None, raise_at=None, fonts=None,
+                 widths=None, extra=()):
         self.heights = list(heights)
         self.font = font
         #: Кегль по сеансам, если он должен падать от раунда к раунду: без
         #: этого не построить сцену «раунды кончились ровно на полу» (`Z-45`).
         self.fonts = list(fonts) if fonts else None
+        #: Ширина текста по сеансам. Ширина бывает и **после** пересборки —
+        #: так было у WorkSpace, вариант 3, и раунды её не видели (`Z-52`).
+        self.widths = list(widths) if widths else None
+        #: Фигуры, которых нет в плане, то есть донорские.
+        self.extra = tuple(extra)
         self.fail_at = fail_at
         self.raise_at = raise_at
         self.calls = 0
@@ -97,13 +103,16 @@ class Measurer:
         height = self.heights[min(self.calls, len(self.heights)) - 1]
         font = (self.fonts[min(self.calls, len(self.fonts)) - 1]
                 if self.fonts else self.font)
+        width = (self.widths[min(self.calls, len(self.widths)) - 1]
+                 if self.widths else 10.0)
         metric = ShapeMetric(
             slide=1, shape_id="11", width=100.0, height=BOX_HEIGHT,
-            text_width=10.0, text_height=height,
+            text_width=width, text_height=height,
             margin_left=0.0, margin_right=0.0, margin_top=0.0, margin_bottom=0.0,
             autofit=0, chars=100, font_size=font,
         )
-        return (Measurement(deck=decks[0], status="ok", shapes=(metric,), slides=1),)
+        return (Measurement(deck=decks[0], status="ok", shapes=(metric, *self.extra),
+                            slides=1),)
 
 
 class Builder:
@@ -364,3 +373,129 @@ def test_the_probe_does_not_touch_the_plan():
                           rounds=2, measurer=m, builder=Builder(report))
     assert outcome.report.stopped == STOP_FLOOR
     assert plan.to_json() == before, "исходный план изменён пробой"
+
+
+# --- Z-52: нечинимое названо своими именами и по итоговой колоде -------
+#
+# До 22 сентября сводка брала остаток `defects - ours - occluded` по раундам и
+# звала его «в фигурах донора — мы в них ничего не подставляли». Замер по
+# корпусу: остаток был **целиком** нашей шириной, 27 из 27, донорских ноль. А
+# у WorkSpace, вариант 3, ширина появилась после последней пересборки, и
+# раунды её не видели вовсе (`WORKLOG/2026-09-22-z52-baseline.md`).
+
+
+def donor_shape():
+    """Фигура, которой нет в плане: текст донора, выше своего места."""
+    return ShapeMetric(
+        slide=1, shape_id="99", width=100.0, height=BOX_HEIGHT,
+        text_width=10.0, text_height=120.0,
+        margin_left=0.0, margin_right=0.0, margin_top=0.0, margin_bottom=0.0,
+        autofit=0, chars=30, font_size=44.0,
+    )
+
+
+def test_width_that_appears_after_the_last_rebuild_is_reported():
+    """Сцена WorkSpace, вариант 3: ремонт убрал высоту, а в итоговой колоде
+    текст стал шире места. Раунд один и он до пересборки — остаток по
+    раундам ноль, и старая сводка молчала."""
+    rep, m, b = run([120.0, 40.0], rounds=1, widths=[10.0, 300.0])
+    assert m.calls == 2, "раунд и контрольный замер"
+    assert rep.after == 0
+    assert [(d.slide_index, d.slot_id) for d in rep.overflow_width] == [(0, "s01")]
+    residual = max(r.defects - r.ours - r.occluded for r in rep.rounds)
+    assert residual == 0, "сцена обязана воспроизводить слепоту раундов"
+
+
+def test_width_is_ours_and_the_donor_is_the_donor():
+    rep, _, _ = run([40.0], widths=[300.0], extra=(donor_shape(),))
+    assert rep.stopped == STOP_FITS
+    assert [d.slot_id for d in rep.overflow_width] == ["s01"]
+    assert [d.shape_id for d in rep.donor_overflow] == ["99"]
+    assert rep.before == 0 and rep.after == 0, "до/после — только чинимое, по высоте"
+
+
+def test_failed_measurement_names_nothing():
+    """Замер не состоялся — списки пусты, как `occluded` и `unresolved`.
+    Различать это с «чисто» велено по `status`, и он здесь не `ok`."""
+    rep, _, _ = run([40.0], fail_at=1, widths=[300.0], extra=(donor_shape(),))
+    assert rep.status == "not_measured"
+    assert rep.overflow_width == () and rep.donor_overflow == ()
+
+
+def test_report_json_names_width_and_donor_and_matches_the_schema():
+    rep, _, _ = run([40.0], widths=[300.0], extra=(donor_shape(),))
+    js = rep.to_json()
+    # Проверка схемой ничего не стоит на пустых списках — сперва убедиться,
+    # что проверять есть что.
+    assert js["overflow_width"] == [
+        {"slide": 0, "slot": "s01", "shape": "11", "role": "body", "ratio": 3.0}
+    ]
+    assert js["donor_overflow"] == [
+        {"slide": 0, "slot": "", "shape": "99", "role": "", "ratio": 2.4}
+    ]
+    validator().validate(js)
+
+
+def test_the_schema_refuses_a_nameless_width():
+    """Поимённо значит поимённо: запись без адреса схема не пропускает."""
+    import pytest
+
+    jsonschema = pytest.importorskip("jsonschema")
+    rep, _, _ = run([40.0], widths=[300.0])
+    bad = rep.to_json()
+    del bad["overflow_width"][0]["slide"]
+    with pytest.raises(jsonschema.ValidationError):
+        validator().validate(bad)
+
+
+# --- печатная сводка: до 22 сентября ни одного теста -------------------
+
+
+def lines_of(rep) -> str:
+    from mimeo.verify.report import describe
+
+    return "\n".join(describe(rep))
+
+
+def test_the_summary_does_not_call_our_width_the_donors():
+    text = lines_of(run([40.0], widths=[300.0])[0])
+    assert "шире своего места: 1 надпись" in text
+    assert "донора" not in text, "ширина — наша, подставляли её мы"
+
+
+def test_the_summary_still_names_a_real_donor():
+    text = lines_of(run([40.0], extra=(donor_shape(),))[0])
+    assert "плюс 1 переполнение в фигурах донора" in text
+    assert "шире своего места" not in text
+
+
+def test_the_summary_sees_the_width_the_rounds_missed():
+    text = lines_of(run([120.0, 40.0], rounds=1, widths=[10.0, 300.0])[0])
+    assert "шире своего места: 1 надпись" in text
+
+
+def test_fits_no_longer_claims_that_everything_fits():
+    """`fits` — «чинимого не осталось», а не «всё влезло»: ширину ремонт не
+    берёт, и петля встаёт с `fits` при тексте шире места."""
+    text = lines_of(run([40.0], widths=[300.0])[0])
+    assert "встала: ремонту больше нечего чинить" in text
+    assert "всё влезло" not in text
+    assert "переполнено по высоте 0 → 0" in text
+
+
+def test_long_lists_are_cut_and_the_tail_is_counted():
+    from mimeo.verify.detect import OVERFLOW_WIDTH, Defect
+    from mimeo.verify.loop import VerifyReport
+    from mimeo.verify.report import describe
+
+    wide = tuple(
+        Defect(kind=OVERFLOW_WIDTH, slide_index=i, slot_id="s01", shape_id=str(i),
+               role="title", ratio=2.0, repairable=False)
+        for i in range(13)
+    )
+    rep = VerifyReport(deck="d.pptx", status="ok", stopped=STOP_FITS,
+                       before=1, after=0, overflow_width=wide)
+    text = "\n".join(describe(rep))
+    assert "шире своего места: 13 надписей" in text
+    assert text.count("шире: ") == 5
+    assert "…и ещё 8" in text

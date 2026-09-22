@@ -23,7 +23,7 @@
 
 **Контрольный замер пропускается, если колоду не пересобирали.** Сеансов
 PowerPoint ровно `раундов + 1`, и каждый стоит ~4 с — это 60–70% всей стадии.
-Когда петля встала по «всё влезло» или «упёрлись в предел», файл после
+Когда петля встала по «чинить нечего» или «упёрлись в предел», файл после
 последнего замера не менялся, и контрольный замер померил бы тот же самый файл.
 
 **Инвариант, который стоил бы тихой лжи:** `after` и `unresolved` никогда не
@@ -40,7 +40,8 @@ from .detect import Defect, Inspection, find_defects
 from .metrics import MeasurerUnavailable, Measurement, measure
 from .repair import repair_plan
 
-#: Наших дефектов не осталось. Донорские могли остаться — см. `RoundRecord`.
+#: Чинимых дефектов не осталось. Нечинимые — наша ширина, заслонение,
+#: донорские фигуры — остаться могли, и они в своих списках (`Z-52`).
 STOP_FITS = "fits"
 #: Ужимать дальше некуда: упёрлись в предел читаемости.
 STOP_FLOOR = "floor"
@@ -59,9 +60,16 @@ DEFAULT_ROUNDS = 3
 class RoundRecord:
     """Один раунд петли.
 
-    `defects` и `ours` расходятся, и это не избыточность: донорская фигура может
-    переполняться, а чинить её нечем — мы в неё ничего не подставляли. Сводка,
-    показывающая один только `ours`, соврала бы «дефектов нет».
+    `defects` и `ours` расходятся, и это не избыточность: `ours` — только
+    **чинимые**, то есть переполнение по высоте. В разницу входят заслонение,
+    наш текст шире места и донорские фигуры. Сводка, показывающая один только
+    `ours`, соврала бы «дефектов нет».
+
+    **Разницу по раундам не разбирать на виды.** Так было до 22 сентября, и
+    сводка звала всю разницу за вычетом заслонения «донорской», а на корпусе
+    она целиком была нашей шириной. Вдобавок раунды не видят итоговой колоды:
+    контрольный замер после последней пересборки сюда не пишется. Поимённо и
+    по итоговой колоде — в `VerifyReport` (`Z-52`).
     """
 
     index: int
@@ -105,6 +113,12 @@ class VerifyReport:
     #: «ремонт не справился», а «ремонтом не чинится вовсе»: текст переносится,
     #: и меньший кегль не уводит строку из-под картинки.
     occluded: tuple[Defect, ...] = ()
+    #: Наш текст шире своего места (`Z-52`). Ремонт ширину не берёт
+    #: (`PLAN-4.0`). На корпусе 22 сентября таких 26 на семи шаблонах из
+    #: одиннадцати, и все они до того печатались как «донорские».
+    overflow_width: tuple[Defect, ...] = ()
+    #: Переполненные фигуры донора — куда мы ничего не подставляли (`Z-52`).
+    donor_overflow: tuple[Defect, ...] = ()
     seconds: float = 0.0
     note: str = ""
     version: str = SCHEMA_VERSION
@@ -148,9 +162,22 @@ class VerifyReport:
                 }
                 for d in self.unresolved
             ],
+            "overflow_width": [_named(d) for d in self.overflow_width],
+            "donor_overflow": [_named(d) for d in self.donor_overflow],
             "seconds": round(self.seconds, 2),
             "note": self.note,
         }
+
+
+def _named(d: Defect) -> dict:
+    """Дефект поимённо, без вида: вид задан самим списком, в котором он лежит."""
+    return {
+        "slide": d.slide_index,
+        "slot": d.slot_id,
+        "shape": d.shape_id,
+        "role": d.role,
+        "ratio": round(d.ratio, 3),
+    }
 
 
 @dataclass
@@ -198,7 +225,11 @@ def verify_deck(
 
     started = time.perf_counter()
 
-    def done(status, stopped, log, before, after, unresolved, note="", occluded=()):
+    def done(status, stopped, log, before, after, unresolved, note="", final=None):
+        # Всё нечинимое берётся из того же итогового осмотра, что и `after`.
+        # Раунды для этого не годятся: контрольный замер в них не пишется, и
+        # надпись, ставшая шире места после последней пересборки, осталась бы
+        # невидимой — так и было у WorkSpace, вариант 3 (`Z-52`).
         return VerifyOutcome(
             report=VerifyReport(
                 deck=output,
@@ -208,7 +239,9 @@ def verify_deck(
                 before=before,
                 after=after,
                 unresolved=tuple(unresolved),
-                occluded=tuple(occluded),
+                occluded=final.occluded if final is not None else (),
+                overflow_width=final.overflow_width if final is not None else (),
+                donor_overflow=final.donor_overflow if final is not None else (),
                 seconds=time.perf_counter() - started,
                 note=note,
             ),
@@ -283,11 +316,11 @@ def verify_deck(
         stale = False
 
     # Сюда можно попасть только со свежим осмотром — см. инвариант в шапке.
-    occluded: tuple[Defect, ...] = ()
+    final: Inspection | None = None
     if inspection is not None and not stale:
         after = len(inspection.repairable)
         unresolved = inspection.repairable
-        occluded = inspection.occluded
+        final = inspection
 
     # Раунды кончились ровно в тот момент, когда всё сошлось, — это «сделал», а
     # не «сдался». Без этой поправки честный успех отчитался бы как отказ.
@@ -314,7 +347,7 @@ def verify_deck(
         if not probe.changed:
             stopped = STOP_FLOOR
 
-    return done("ok", stopped, log, before, after, unresolved, occluded=occluded)
+    return done("ok", stopped, log, before, after, unresolved, final=final)
 
 
 def _one(measurer, output: str) -> Measurement | None:

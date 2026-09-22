@@ -103,14 +103,31 @@ class Inspection:
     @property
     def occluded(self) -> tuple[Defect, ...]:
         """Заслонённый текст. Отдельно от всего прочего намеренно: он не
-        чинится ремонтом и не относится к донору, а сводка донорских
-        переполнений считается как `defects - ours` — без этого свойства
-        заслонение уехало бы туда и соврало (`Z-47`)."""
+        чинится ремонтом и не относится к донору (`Z-47`). Остальное
+        нечинимое тоже идёт своими списками — `overflow_width` и
+        `donor_overflow`, а не остатком от вычитания (`Z-52`)."""
         return tuple(d for d in self.defects if d.kind == OCCLUDED)
 
     @property
     def repairable(self) -> tuple[Defect, ...]:
         return tuple(d for d in self.defects if d.repairable)
+
+    @property
+    def overflow_width(self) -> tuple[Defect, ...]:
+        """Наш текст шире своего места. Ремонт ширину не берёт (`PLAN-4.0`).
+
+        До 22 сентября это жило только в остатке `defects - ours - occluded`,
+        и сводка звала его «в фигурах донора — мы в них ничего не
+        подставляли». Замер по корпусу: из 27 таких «донорских» **все 27**
+        были нашими надписями шире места, донорских — ноль (`Z-52`,
+        `WORKLOG/2026-09-22-z52-baseline.md`).
+        """
+        return tuple(d for d in self.defects if d.kind == OVERFLOW_WIDTH)
+
+    @property
+    def donor_overflow(self) -> tuple[Defect, ...]:
+        """Переполненные фигуры донора — те, куда мы ничего не подставляли."""
+        return tuple(d for d in self.defects if d.kind == DONOR_OVERFLOW)
 
 
 def _slot_index(

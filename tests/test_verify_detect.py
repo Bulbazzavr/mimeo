@@ -144,6 +144,26 @@ def test_text_within_tolerance_is_not_a_defect():
     assert find_defects(measurement(metric(1, "11", 50.5)), PLAN, LIB, (0,)).defects == ()
 
 
+def test_width_and_donor_each_go_to_their_own_list():
+    """Наша ширина и донорская фигура — разные вещи, и списки у них разные.
+
+    До 22 сентября обе жили только в остатке `defects - ours - occluded`, и
+    сводка звала весь остаток «донорским». На корпусе он целиком был нашей
+    шириной — 27 из 27 (`Z-52`)."""
+    shapes = (
+        metric(1, "11", 10.0, text_width=300.0),   # наш слот, текст шире места
+        metric(1, "777", 120.0),                   # донорская фигура
+        metric(2, "11", 120.0),                    # наш слот, выше места
+    )
+    ins = find_defects(measurement(*shapes), PLAN, LIB, (0, 1))
+    assert [(d.slide_index, d.slot_id) for d in ins.overflow_width] == [(0, "s01")]
+    assert [d.shape_id for d in ins.donor_overflow] == ["777"]
+    assert [(d.slide_index, d.slot_id) for d in ins.repairable] == [(1, "s01")]
+    # Ничего не потеряно и ничего не посчитано дважды.
+    parts = ins.overflow_width + ins.donor_overflow + ins.repairable + ins.occluded
+    assert sorted(id(d) for d in parts) == sorted(id(d) for d in ins.defects)
+
+
 # --- честность отчёта ---------------------------------------------------
 
 

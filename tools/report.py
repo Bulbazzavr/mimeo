@@ -10,7 +10,7 @@
     python tools/report.py llm         цена обращения к модели: сколько вызовов на колоду
                                        и какого размера каждый (`--content путь`)
     python tools/report.py slots       сужённые и пустые слоты (`Z-48`, `Z-49`); PowerPoint не нужен
-    python tools/report.py verify      переполнения, заслонения и время настоящим PowerPoint
+    python tools/report.py verify      переполнения, ширина, заслонения и время настоящим PowerPoint
                                        (`--variants 3` на tz/templates — девять сдаточных колод)
     python tools/report.py prose       что даёт вход: форма, ёмкость слотов, колода
                                        (`--content путь`, по умолчанию прозаический пример;
@@ -271,10 +271,13 @@ def report_verify(content: str, slides: str | None, variants: int) -> None:
     os.makedirs("out/verify", exist_ok=True)
     print(f"Вход: `{content}`, вариантов {variants}"
           + (f", объём {slides}" if slides else "") + "\n")
-    print("| Шаблон | Вариант | Слайдов | Переполнений до | после | Заслонений "
-          "| Пустых | Чем встала | Вся команда, с | Петля, с |")
-    print("|---|---:|---:|---:|---:|---:|---:|---|---:|---:|")
-    before = after = occl = 0
+    # «Шире» и «донора» — из итоговой колоды, поимённые списки отчёта (`Z-52`).
+    # До 22 сентября их не было здесь вовсе, а печатная сводка звала всю
+    # нашу ширину «донорской»; замер по корпусу — 26 из 26 были нашими.
+    print("| Шаблон | Вариант | Слайдов | Переполнений до | после | Шире | Донора "
+          "| Заслонений | Пустых | Чем встала | Вся команда, с | Петля, с |")
+    print("|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|")
+    before = after = occl = wide = donor = 0
     for f in samples():
         a = analyze_template(f)
         plans = _variant_plans(doc, a, variants)
@@ -288,12 +291,16 @@ def report_verify(content: str, slides: str | None, variants: int) -> None:
             before += rep.before or 0
             after += rep.after or 0
             occl += len(rep.occluded)
+            wide += len(rep.overflow_width)
+            donor += len(rep.donor_overflow)
             print(f"| `{os.path.basename(f)}` | {n} | {len(outcome.plan.slides)} "
-                  f"| {rep.before} | {rep.after} | {len(rep.occluded)} "
+                  f"| {rep.before} | {rep.after} | {len(rep.overflow_width)} "
+                  f"| {len(rep.donor_overflow)} | {len(rep.occluded)} "
                   f"| {_empty_required(outcome.plan, a.patterns)} | {rep.stopped} "
                   f"| {time.perf_counter() - started:.1f} | {rep.seconds:.1f} |")
-    print(f"\n**Итого: переполнений {before} → {after}, заслонений {occl}.** "
-          "Заслонения ремонтом не берутся и в «до/после» не входят (`Z-47`).")
+    print(f"\n**Итого: переполнений по высоте {before} → {after}, шире места {wide}, "
+          f"в фигурах донора {donor}, заслонений {occl}.** Ремонт берёт только высоту: "
+          "ширина, донор и заслонения в «до/после» не входят (`Z-47`, `Z-52`).")
 
 
 def _variant_plans(doc, analysis, variants: int) -> list:
