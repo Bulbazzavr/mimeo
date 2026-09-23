@@ -405,7 +405,7 @@ python tools/build_verified.py <шаблон.pptx> <контент.md> -o out/de
 python tools/render_probe.py   <файл.pptx> -o out/render   # открыть и выгрузить PNG
 python tools/rank_dump.py      <шаблон.pptx> <контент.md>  # из чего был выбор раскладки
 python tools/report.py verify --content examples/content-mimeo.md   # переполнения, заслонения, время
-python tools/report.py verify --templates tz/templates --variants 3 --slides 10-15   # девять колод
+python tools/report.py verify --content examples/content-mimeo.md --templates tz/templates --variants 3 --slides 10-15   # девять колод
 ```
 
 **Числа в документах берутся этими двумя стадиями, а не разовыми скриптами.**
@@ -500,7 +500,8 @@ VK Tech; чистых по высоте десять шаблонов из од�
 Настоящих было девять, убрано шесть. «11 → 3» верно арифметически и завышает
 заслугу, поэтому в документах пишем «9 → 3».
 
-**Но на девяти сдаточных колодах их четыре, и это другая мерка.** Один на
+**Но на девяти сдаточных колодах их было четыре, и это другая мерка**
+(сразу после `Z-48`; после `Z-28a` — 16, см. таблицу выше). Один на
 VK Tech (второй вариант) и три на WorkSpace; до `Z-48` девятку на заслонения
 никто не мерил, так что «было» для неё нет. Случай на VK Tech **проверен
 растром и оказался ложным**: «И библиотеку готовых раскладок» читается целиком,

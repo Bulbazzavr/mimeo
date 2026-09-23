@@ -11,7 +11,9 @@
                                        и какого размера каждый (`--content путь`)
     python tools/report.py slots       сужённые и пустые слоты (`Z-48`, `Z-49`); PowerPoint не нужен
     python tools/report.py verify      переполнения, ширина, заслонения и время настоящим PowerPoint
-                                       (`--variants 3` на tz/templates — девять сдаточных колод)
+                                       (`--variants 3 --slides 10-15` на tz/templates с
+                                       `--content examples/content-mimeo.md` — девять сдаточных
+                                       колод; без `--content` возьмётся другой вход)
     python tools/report.py prose       что даёт вход: форма, ёмкость слотов, колода
                                        (`--content путь`, по умолчанию прозаический пример;
                                        `--raw` — без сегментации, как было до `Z-25`)
