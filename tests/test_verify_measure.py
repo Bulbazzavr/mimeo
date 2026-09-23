@@ -122,6 +122,40 @@ def test_shapes_are_sorted_deterministically():
     assert [(s.slide, s.shape_id) for s in only.shapes] == [(1, "2"), (1, "5"), (2, "9")]
 
 
+def test_text_corner_and_rotation_are_parsed():
+    """Настоящий угол набранного текста и поворот — для мерки по чужому
+    тексту (`Z-53`). Угол бокса плюс поле с ним совпадает только у якоря
+    «верх»; здесь нарочно не совпадает."""
+    out = (
+        "deck=0\n"
+        "shape slide=6 id=709 w=616.32 h=91.93 tw=481.75 th=77.76 ml=0 mr=0 "
+        "mt=0 mb=0 fit=0 sz=36 len=40 x=33.8 y=33.44 anchor=3 "
+        "bl=41.5 bt=40.25 rot=359.93\n"
+        "status=ok\nresult=OK\n"
+    )
+    (only,) = _collect(out, ["a.pptx"])
+    s = only.shapes[0]
+    assert (s.bound_left, s.bound_top) == (41.5, 40.25)
+    assert s.rotation == 359.93
+
+
+def test_missing_text_corner_is_unknown_not_zero():
+    """Старый зонд угла не отдаёт, а отказ COM даёт пустое значение. И то и
+    другое — «не знаем»: ноль у координаты — это край слайда, и мерка приняла
+    бы его за правду."""
+    out = (
+        "deck=0\n"
+        "shape slide=1 id=7 w=100 h=50 tw=80 th=40 ml=0 mr=0 mt=0 mb=0 fit=0 len=5\n"
+        "shape slide=1 id=8 w=100 h=50 tw=80 th=40 ml=0 mr=0 mt=0 mb=0 fit=0 len=5 "
+        "bl= bt= rot=\n"
+        "status=ok\nresult=OK\n"
+    )
+    (only,) = _collect(out, ["a.pptx"])
+    for s in only.shapes:
+        assert s.bound_left is None and s.bound_top is None
+        assert s.rotation == 0.0
+
+
 def test_skipped_shapes_are_counted_not_hidden():
     out = "deck=0\nskipped=E_FAIL\nstatus=ok\nresult=OK\n"
     (only,) = _collect(out, ["a.pptx"])

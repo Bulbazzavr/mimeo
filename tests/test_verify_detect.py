@@ -299,3 +299,53 @@ def test_occlusion_does_not_enter_the_repair_count():
     ins = find_defects(m, PLAN, LIB, (0, 1))
     assert len(ins.occluded) == 1
     assert not ins.repairable
+
+
+# --- Z-53: заголовок, выросший на текст в своём же боксе -----------------
+#
+# Сдаточная колода WorkSpace, вариант 3, слайд 6, как её отдал зонд. Дизайнер
+# поставил текст 712 в пустой низ бокса заголовка 709; наш заголовок
+# переносится на две строки и ложится на него. Отчёт писал «18 → 0»
+# (`WORKLOG/2026-09-23-z53-baseline.md`).
+
+
+def ws_metric(shape_id: str, left: float, top: float, width: float, height: float,
+              tw: float, th: float, size: float) -> ShapeMetric:
+    return ShapeMetric(
+        slide=1, shape_id=shape_id, width=width, height=height,
+        text_width=tw, text_height=th,
+        margin_left=0.0, margin_right=0.0, margin_top=0.0, margin_bottom=0.0,
+        autofit=0, chars=40, font_size=size, left=left, top=top, anchor=1,
+        bound_left=left, bound_top=top,
+    )
+
+
+WS_LIB = library(pattern("p06", (slot("s01", "709", "title"), slot("s02", "712"))))
+WS_PLAN = deck(planned(5, "p06", "s01", "s02"))
+WS_TITLE = ws_metric("709", 33.8, 33.44, 616.32, 91.93, 481.75, 77.76, 36.0)
+WS_BODY = ws_metric("712", 33.96, 97.89, 285.83, 50.73, 262.25, 43.2, 12.0)
+
+
+def ws_measurement(*shapes: ShapeMetric) -> Measurement:
+    boxes = tuple(Box(slide=1, shape_id=m.shape_id, x=m.left, y=m.top, w=m.width,
+                      h=m.height) for m in (WS_TITLE, WS_BODY))
+    return Measurement(deck="d.pptx", status="ok", shapes=shapes, slides=1,
+                       boxes=boxes, page=(960.0, 540.0))
+
+
+def test_title_grown_onto_the_text_in_its_box_is_a_repairable_overflow():
+    """Дефект один — у заголовка, который растёт, — и его берёт ремонт: это
+    нехватка высоты, а не новый вид дефекта."""
+    ins = find_defects(ws_measurement(WS_TITLE, WS_BODY), WS_PLAN, WS_LIB, (5,))
+    (d,) = ins.defects
+    assert d.kind == OVERFLOW_HEIGHT and d.repairable
+    assert (d.slide_index, d.slot_id) == (5, "s01")
+    assert 1.15 < d.ratio < 1.25, d.ratio          # 77.76 / 64.45
+
+
+def test_an_empty_box_in_the_title_box_leaves_the_title_alone():
+    """Пара к предыдущему: тот же бокс 712 без текста — слот не заполнили, и
+    его текст стёрт (`PLAN-3.1`). Границей служит набранный текст, а не бокс:
+    пустой бокс заголовку не мешает, и дефекта нет."""
+    ins = find_defects(ws_measurement(WS_TITLE), WS_PLAN, WS_LIB, (5,))
+    assert ins.defects == ()

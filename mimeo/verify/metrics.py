@@ -58,12 +58,27 @@ class ShapeMetric:
     #: (`PLAN-4.2`, `ADR-0015`).
     left: float = 0.0
     top: float = 0.0
-    #: Вертикальный якорь: 1 верх, 2 центр, 3 низ, 4 по ширине, 5 распределён.
-    #: Задаёт, КУДА растёт непоместившийся текст, а значит где искать место.
+    #: Вертикальный якорь, `MsoVerticalAnchor`: 1 верх, 3 середина, 4 низ;
+    #: 2 и 5 — верх и низ по базовой линии. Задаёт, КУДА растёт непоместившийся
+    #: текст, а значит где искать место. До 23 сентября здесь стояло «3 низ,
+    #: 4 по ширине» — это номера OOXML, а не COM; положение набранного текста
+    #: опровергло их на 643 надписях, и `space.py` читает 3 как низ до сих пор
+    #: (`Z-54`, `DOM-TEXT §13`).
     anchor: int = 1
     #: Видимый кегль в пунктах — уже с учётом `normAutofit`, а не номинал.
     #: 0 или -2 означает «неизвестен»: в фигуре разные размеры.
     font_size: float = 0.0
+    #: Настоящий левый верхний угол набранного текста, пункты:
+    #: `TextRange2.BoundLeft` и `BoundTop` (`Z-53`). Угол бокса плюс поле
+    #: совпадает с ним только у якоря «верх». `None` — зонд этого не отдал, и
+    #: мерка по чужому тексту молчит: не зная, где текст, нельзя сказать, на
+    #: чём он стоит. У повёрнутой фигуры это охватывающий прямоугольник на
+    #: слайде, а не угол в её собственных осях (`DOM-TEXT §13`).
+    bound_left: float | None = None
+    bound_top: float | None = None
+    #: Поворот фигуры, градусы, как отдаёт COM (0…360). У повёрнутой надписи
+    #: «вниз» — не вниз слайда, и мерка по чужому тексту её пропускает.
+    rotation: float = 0.0
 
     @property
     def usable_height(self) -> float:
@@ -172,6 +187,21 @@ def _num(raw: str) -> float:
         return float(raw)
     except ValueError:
         return 0.0
+
+
+def _coord(raw: str | None) -> float | None:
+    """Координата или `None`, если зонд её не отдал.
+
+    Не `_num`: там отказ становится нулём, а ноль у координаты — это место на
+    слайде, край, и мерка приняла бы его за правду (`Z-20`: «не знаем» не
+    «ноль»).
+    """
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        return None
 
 
 def _parse(line: str) -> dict[str, str]:
@@ -283,6 +313,9 @@ def _collect(stdout: str, paths: list[str]) -> tuple[Measurement, ...]:
                     left=_num(d.get("x", "0")),
                     top=_num(d.get("y", "0")),
                     anchor=int(d.get("anchor", "1") or 1),
+                    bound_left=_coord(d.get("bl")),
+                    bound_top=_coord(d.get("bt")),
+                    rotation=_num(d.get("rot", "0")),
                 )
             )
         elif line.startswith("box "):
