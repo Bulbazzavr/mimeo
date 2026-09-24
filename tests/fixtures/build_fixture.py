@@ -303,14 +303,17 @@ def build(dest: str | os.PathLike[str]) -> str:
     return _write(os.fspath(dest), PARTS)
 
 
-def build_multi(dest: str | os.PathLike[str]) -> str:
+def build_multi(dest: str | os.PathLike[str], slides: list[str] | None = None) -> str:
     """Шаблон на девять слайдов с двумя повторяющимися раскладками.
 
     На двух слайдах кластеризацию не проверить в принципе, поэтому под неё
     отдельная фикстура. Слайды 1-2 и 3-4 попарно одинаковы по раскладке.
+    `slides` — свой набор слайдов вместо `EXTRA_SLIDES` (`Z-58`: макет
+    оглавления посреди шаблона).
     """
+    slides = EXTRA_SLIDES if slides is None else slides
     parts = dict(PARTS)
-    n = len(EXTRA_SLIDES)
+    n = len(slides)
     ids = "".join(f'<p:sldId id="{256 + i}" r:id="rId{10 + i}"/>' for i in range(n))
     rels = "".join(
         f'<Relationship Id="rId{10 + i}" Type="{RT}/slide" '
@@ -334,7 +337,7 @@ def build_multi(dest: str | os.PathLike[str]) -> str:
     parts["[Content_Types].xml"] = re.sub(
         r'<Override PartName="/ppt/slides/slide\d+\.xml"[^/]*/>', "", CONTENT_TYPES
     ).replace("</Types>", overrides + "</Types>")
-    for i, body in enumerate(EXTRA_SLIDES, 1):
+    for i, body in enumerate(slides, 1):
         parts[f"ppt/slides/slide{i}.xml"] = body
         parts[f"ppt/slides/_rels/slide{i}.xml.rels"] = SLIDE_RELS
     return _write(os.fspath(dest), parts)

@@ -16,6 +16,9 @@ from dataclasses import dataclass, replace
 
 from ..model import OpaqueRegion, Pattern, PatternLibrary, PatternSource, Slot
 from ..oxml.ns import qn
+from .captions import CaptionConfig, caption_kind
+from .captions import config_path as caption_config_path
+from .captions import load_config as load_caption_config
 from .deck import Deck, Rect
 from .fitting import estimate
 from .picture import classify_slots
@@ -276,7 +279,8 @@ def _row_groups(shapes: list[ShapeObs], cy: int) -> list[list[ShapeObs]]:
     return rows
 
 
-def _classify(shapes: list[ShapeObs], cx: int, cy: int, index: int, total: int) -> str:
+def _classify(shapes: list[ShapeObs], cx: int, cy: int, index: int, total: int,
+              captions: CaptionConfig | None = None) -> str:
     area = cx * cy
     texts = [s for s in shapes if s.has_text]
     media = [s for s in shapes if _content_class(s) == "media"]
@@ -285,6 +289,13 @@ def _classify(shapes: list[ShapeObs], cx: int, cy: int, index: int, total: int) 
         return "chart"
     if any(s.has_table for s in shapes):
         return "table"
+    # Подпись дизайнера — раньше геометрии (`Z-58`): финал «Спасибо» на фоне
+    # фотографии иначе ушёл бы в `image_full`, оглавление из пунктов — в
+    # `cards`. Позиционное «последний слайд — финал» ниже остаётся запасным,
+    # когда подписи нет.
+    caption = caption_kind(texts, captions, _SHORT_TEXT) if captions else None
+    if caption:
+        return caption
     if any(s.rect.area >= area * 0.55 for s in media):
         return "image_full"
 
@@ -600,6 +611,7 @@ def build_pattern_library(
     source = PatternSource(filename=filename, sha256=deck.pkg.sha256)
     # Один раз на шаблон, а не на каждую раскладку: файл один и тот же.
     typo = load_typeface_config()
+    captions = load_caption_config()
 
     # Байты картинки по имени части, с кэшем: одна и та же картинка стоит на
     # разных слайдах и разбирать её дважды незачем (`PLAN-7.8`, дыра 4).
@@ -664,7 +676,7 @@ def build_pattern_library(
         patterns.append(
             Pattern(
                 id=f"p{n:02d}",
-                kind=_classify(donor_shapes, cx, cy, donor_index, len(slides)),
+                kind=_classify(donor_shapes, cx, cy, donor_index, len(slides), captions),
                 donor_part=slides[donor_index].part,
                 donor_index=donor_index,
                 slots=_slots(donor_shapes, design_system, body, typo,
@@ -681,6 +693,11 @@ def build_pattern_library(
         )
 
     notes: list[str] = []
+    if not captions.loaded:
+        notes.append(
+            f"Конфиг подписей оглавления и финала не прочитан, работают встроенные "
+            f"значения: {caption_config_path()}"
+        )
     if opacity_unhandled:
         # Молчаливый пропуск неотличим от «проверено и чисто», поэтому факт
         # называется вслух: слот не сужен, потому что судить было не по чему.

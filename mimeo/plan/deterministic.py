@@ -30,9 +30,26 @@ _MAX_PARTS = 6
 _POSITION_BONUS = 0.5
 
 #: И обратное: обложка и финал в середине колоды неуместны по смыслу, каким бы
-#: удачным ни оказалось их геометрическое совпадение.
+#: удачным ни оказалось их геометрическое совпадение. Тот же штраф платит макет
+#: оглавления под обычным текстом — на любом месте: оглавление встаёт, только
+#: если его заказали (`Z-58`, `PLAN-9.0`, часть Б), а путь без модели его не
+#: заказывает никогда. Штраф, а не запрет: на бедном шаблоне такой макет может
+#: оказаться единственным, куда раздел влезает, и потерять раздел хуже.
+#:
+#: **Привязан к штрафу за повтор** (`Z-58`) — как штраф за чужую гарнитуру
+#: (`Z-43`) и по той же причине: `config/variants.json` гоняет `repeat` до 0.8,
+#: и голые 0.6 тонули в политиках, из которых собираются варианты сдаточных
+#: колод. Замер на VK Tech, вариант 3 (политика `r0.8-s0.45-o0.9`): хорошие
+#: раскладки уже стояли в колоде и платили по 0.8 за повтор, и макеты
+#: «Содержание» (0.10) и «Спасибо» (0.13) обходили их посреди колоды. Правило то
+#: же, что у гарнитуры: **неуместный макет хуже любого повтора, который
+#: политика способна назначить.**
 _POSITION_PENALTY = 0.6
 _POSITIONAL_KINDS = ("cover", "closing")
+
+
+def position_penalty(tuning: Tuning) -> float:
+    return _POSITION_PENALTY + tuning.repeat * _REPEAT_CAP
 
 #: Штраф за каждое предыдущее использование раскладки в колоде. Замер: без него
 #: на дизайнерском шаблоне все пять содержательных слайдов брали один и тот же
@@ -174,10 +191,14 @@ def _avoid_repeat(
     return sorted(adjusted, key=lambda m: (-m.score, m.pattern_id))
 
 
-def _positional(matches: list[Match], first: bool, last: bool) -> list[Match]:
+def _positional(
+    matches: list[Match], first: bool, last: bool, tuning: Tuning = DEFAULT_TUNING
+) -> list[Match]:
     """Место в колоде — тоже довод. Обложка уместна только первой, финал только
-    последним, и в середине оба неуместны, как бы ни совпала геометрия."""
+    последним, и в середине оба неуместны, как бы ни совпала геометрия.
+    Оглавление неуместно под обычным текстом нигде (`Z-58`)."""
     wanted = "cover" if first else ("closing" if last else None)
+    penalty = position_penalty(tuning)
     adjusted = []
     for m in matches:
         score, reason = m.score, m.reason
@@ -191,7 +212,10 @@ def _positional(matches: list[Match], first: bool, last: bool) -> list[Match]:
             # спокойно вставала в конец колоды.
             misplaced = (m.kind == "cover" and not first) or (m.kind == "closing" and not last)
             if misplaced:
-                score -= _POSITION_PENALTY
+                score -= penalty
+        elif m.kind == "agenda":
+            score -= penalty
+            reason = f"{m.reason}; это макет оглавления, а оглавления не заказывали"
         adjusted.append(replace(m, score=round(score, 4), reason=reason))
     return sorted(adjusted, key=lambda m: (-m.score, m.pattern_id))
 
@@ -238,6 +262,7 @@ def _place(
                 rank(chunk, patterns, tuning),
                 first=first and n == 0,
                 last=last and n == len(chunks) - 1,
+                tuning=tuning,
             )
             ranked = _avoid_repeat(ranked, tally, tuning, exclusive, fired)
             if not ranked:

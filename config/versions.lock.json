@@ -5,6 +5,10 @@
       "version": "1.1",
       "sha256": "5a22ab82895e2b74442c95eaed191d41d2d83a7b04577cee9bf3fca3e4378df1"
     },
+    "kinds.json": {
+      "version": "1.0",
+      "sha256": "afec12411eae2ecf236e110eccb2a4d65a92d3b7414cf53b109e2e1285cd7b1c"
+    },
     "model.json": {
       "version": "1.0",
       "sha256": "681a9b68cb89822ece3f0b7c69dd32c36c4c94cd682da3961e9c3ed415b24297"

@@ -20,8 +20,8 @@
 
 Здесь нет чтения самих настроек — только их паспорт. Значения читают
 `plan/prose.py`, `plan/variants.py`, `plan/client.py`, `plan/prompt.py`,
-`analyze/typeface.py` и `analyze/picture.py`, каждый по-своему и каждый со своими встроенными
-запасными.
+`analyze/typeface.py`, `analyze/picture.py` и `analyze/captions.py`, каждый по-своему и
+каждый со своими встроенными запасными.
 """
 
 from __future__ import annotations
@@ -40,6 +40,7 @@ from .model import ConfigStamp
 #: впечатление, будто он на что-то влиял.
 KNOWN = (
     "images.json",
+    "kinds.json",
     "model.json",
     "prompt.json",
     "prose.json",
