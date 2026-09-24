@@ -62,7 +62,7 @@
 | [ADR-0007](architecture/adr/ADR-0007-own-clustering.md) | Своя кластеризация; дробление полос сравнивается точно, а не по расстоянию |
 | [ADR-0008](architecture/adr/ADR-0008-capacity-from-donor.md) | Вместимость: грубая оценка плюс донор как нижняя граница |
 | [ADR-0009](architecture/adr/ADR-0009-deterministic-planner.md) | Планировщик без модели — основа, а не запасной путь |
-| [ADR-0010](architecture/adr/ADR-0010-prompt-contract.md) | Промпт-контракт: три режима отправки, одна проверка |
+| [ADR-0010](architecture/adr/ADR-0010-prompt-contract.md) | Промпт-контракт: три режима отправки, одна проверка. **Заменён `ADR-0023`** (24 сентября) |
 | [ADR-0011](architecture/adr/ADR-0011-raw-package-write.md) | Пакет пишем сами, стандартной библиотекой; python-pptx — проверяющий, не строитель |
 | [ADR-0012](architecture/adr/ADR-0012-clone-with-rels.md) | Клон слайда — копия части и её файла связей |
 | [ADR-0013](architecture/adr/ADR-0013-renderer-powerpoint-first.md) | Рендер для VERIFY: PowerPoint через COM, LibreOffice запасным |
@@ -75,6 +75,7 @@
 | [ADR-0020](architecture/adr/ADR-0020-generate-and-select.md) | Порождать много колод и выбирать лучшую по весам, а не угадывать с первого раза |
 | [ADR-0021](architecture/adr/ADR-0021-cache-first-model-access.md) | Доступ к модели по умолчанию из кэша, а не из сети: три состояния, бюджет прогона, разделённый надвое кэш |
 | [ADR-0022](architecture/adr/ADR-0022-settings-out-contracts-in.md) | Настройки и промпты — отдельными файлами, контракты остаются в коде; версия конфига на трёх носителях: объявленная, хэш в артефакте, замок |
+| [ADR-0023](architecture/adr/ADR-0023-model-builds-deck-before-layout.md) | Модель строит колоду из текста до вёрстки — число слайдов, порядок, заголовки, тезисы, тип слайда; шаблон не видит, раскладку выбирает код; ответ принимается колодой целиком или идёт путь без модели. Заменяет `ADR-0010`, частично — `ADR-0002`, `ADR-0009`, `ADR-0016`; уточняет `ADR-0021` |
 
 ## Планы работ
 
