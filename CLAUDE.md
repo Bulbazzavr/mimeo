@@ -918,6 +918,17 @@ D:\0_model_llm\openbmb\MiniCPM-V-4.6-gguf                  отвергнута 
 Подъём занимает 4–7 с и **9 ГБ видеопамяти из 12** — держать модель включённой
 между замерами незачем. Остановка: `Get-Process llama-server | Stop-Process -Force`.
 
+**Среда модели одна — `llama-server`; LM Studio не используем вовсе** (решение
+пользователя 24 сентября: «она нам вообще не нужна, Лама-сервер отлично
+справляется»). Папка весов `lmstudio-community` — это организация на Hugging
+Face, выложившая GGUF, а не программа LM Studio: веса нужны. **Модель для
+текста — Gemma 4 12B QAT** (`Z-57`), подъём для неё — без `--mmproj`, зрение не
+нужно; `-c 8192` и все слои на видеокарте — как в замерах 19 и 23 сентября:
+
+```
+D:\0_model_llm\llama.cpp\llama-server.exe -m D:\0_model_llm\lmstudio-community\gemma-4-12B-it-QAT-GGUF\gemma-4-12B-it-QAT-Q4_0.gguf -c 8192 -ngl 99 --host 127.0.0.1 --port 8080
+```
+
 ```
 llama-server.exe -m <веса.gguf> --mmproj <mmproj.gguf> -c 8192 -ngl 99 --host 127.0.0.1 --port 8080
 python tools/bench_models.py --only 3.5 --no-think     сравнить модели на нашей задаче
@@ -945,7 +956,8 @@ MiniCPM-V 4.5 и 4.6 замерены 19 сентября и **отвергну�
 в тексте **не действует**. Выбор и числа — `CTX-MODELS`,
 `WORKLOG/2026-09-17-model-championship.md`.
 
-**Но приём работает не везде.** На `llama-server` — да, на **LM Studio нет**:
+**Но приём работает не везде** (история: с 24 сентября LM Studio не
+используем, `OQ-32` закрыт). На `llama-server` — да, на **LM Studio нет**:
 параметр уходит в запрос и не применяется, модель тратит 1198 токенов из 1200 на
 рассуждение и возвращает пустоту (`WORKLOG/2026-09-17-llm-client.md`, замер 8;
 `OQ-32`). Поэтому `extra_body` и живёт в `config/model.json`, а не в коде: рычаг
