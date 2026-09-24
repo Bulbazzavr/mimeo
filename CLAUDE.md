@@ -361,6 +361,8 @@ python tools/report.py slots          # сужённые и пустые сло�
 python tools/config_version.py        # сверить версии конфигов с замком
 python tools/audit_doc.py --write     # перегенерировать таблицу тестов в AUDIT.md
 python tools/doc_check.py             # не обещают ли документы того, чего в коде нет
+python tools/deck_lock.py --check     # замок Ш0: путь без модели — те же байты, 93 колоды
+python tools/deck_lock.py --check --verify   # то же для 23 колод через PowerPoint
 python web/serve.py                   # локальный веб-интерфейс на 127.0.0.1:8000 (Z-29)
 ```
 

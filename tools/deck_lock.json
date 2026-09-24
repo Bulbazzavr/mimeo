@@ -1,0 +1,995 @@
+{
+ "_": "Замок Ш0 (PLAN-9.0, Z-57): sha256 колод пути без модели. Пишется и сверяется tools/deck_lock.py. Слой compose переносим, слой verify — только машина, где его снимали (PowerPoint).",
+ "layers": {
+  "compose": {
+   "code": "46de0e2",
+   "decks": {
+    "nine|2_Датасет VK Tech шаблон.pptx": {
+     "content_sha256": "bbd844329e5ea81e25ba19bb41c362f29080b9df4bac3613cc46c93e57e2331e",
+     "exit": 0,
+     "files": {
+      "2_Датасет VK Tech шаблон-1.pptx": "ab1bff9954a28edad490e9a67f70557767b0d0ac90008c90a8f46cba720aa175",
+      "2_Датасет VK Tech шаблон-2.pptx": "781e6573e99c972c6b80b4d21113d78b96134fe8c32ee445ed19cdad251d2119",
+      "2_Датасет VK Tech шаблон-3.pptx": "deae5ed8278c8f5b4064d94cb0668cc47c260dc67b77b54099901535efae9646"
+     },
+     "flags": [
+      "--variants",
+      "3",
+      "--slides",
+      "10-15"
+     ],
+     "template_sha256": "cbbe3aa6a21d23cebc4d1383b93dd07a9cea460d683de1903567b616c839485d"
+    },
+    "nine|2_Датасет VK_WorkSpace_Клиентская_конференция_Шаблон_03.pptx": {
+     "content_sha256": "bbd844329e5ea81e25ba19bb41c362f29080b9df4bac3613cc46c93e57e2331e",
+     "exit": 0,
+     "files": {
+      "2_Датасет VK_WorkSpace_Клиентская_конференция_Шаблон_03-1.pptx": "062dfdb77469e8a2c8359ce718884f27f2216af6796a507cd301e5a931540931",
+      "2_Датасет VK_WorkSpace_Клиентская_конференция_Шаблон_03-2.pptx": "0e5d0a2c39c0527dd1df3a060e1be364321cab501dcc731761f9e660b65dd00d",
+      "2_Датасет VK_WorkSpace_Клиентская_конференция_Шаблон_03-3.pptx": "148d14f0421d47e0d8ea6f09e8e08a2ae8c05830b9a7c996cc6c96f25736e86b"
+     },
+     "flags": [
+      "--variants",
+      "3",
+      "--slides",
+      "10-15"
+     ],
+     "template_sha256": "1b8883114486c69dff706e9c4fd9382727c4506c2cfa3ec34f86987f1e852f2f"
+    },
+    "nine|2_Датасет Шаблон презентации VK Education.pptx": {
+     "content_sha256": "bbd844329e5ea81e25ba19bb41c362f29080b9df4bac3613cc46c93e57e2331e",
+     "exit": 0,
+     "files": {
+      "2_Датасет Шаблон презентации VK Education-1.pptx": "493a969b89ecfb4e799dee8fd985a1395c70cc6d74eac652ac26e12b9324edf9",
+      "2_Датасет Шаблон презентации VK Education-2.pptx": "3542cc4c074c7115ee13eef0e69c112c988287e0842d1c4a622d9379f0247401",
+      "2_Датасет Шаблон презентации VK Education-3.pptx": "e40dd3846c5cb10bd2c5cd841d300d461ce67e8fff8367e64f4b38bacdcb6ec8"
+     },
+     "flags": [
+      "--variants",
+      "3",
+      "--slides",
+      "10-15"
+     ],
+     "template_sha256": "9ef2323ed5f49f464aee5ae7065f1f57bb92c8be3a635be507d59819e285cfe0"
+    },
+    "single|content-chat.md|2411-Performance_Up.pptx": {
+     "content_sha256": "1409826a79888c29695b7d03dbb8c3b6df6991c3abd7935b48499e95681b6f14",
+     "exit": 0,
+     "files": {
+      "2411-Performance_Up.pptx": "9280ab7c4f98758ea57e8cb71608f45afe044b24e3c9d26df2d8f3a09c018607"
+     },
+     "flags": [],
+     "template_sha256": "a387861a0066ad11ba85aba9572830c1ec1ab9a24380728ead34d2b5b26662c0"
+    },
+    "single|content-chat.md|2_Датасет VK Tech шаблон.pptx": {
+     "content_sha256": "1409826a79888c29695b7d03dbb8c3b6df6991c3abd7935b48499e95681b6f14",
+     "exit": 0,
+     "files": {
+      "2_Датасет VK Tech шаблон.pptx": "d5def35c4227a3db8ac477bbb099535699e5ce25316167a1a06596288aba9ef4"
+     },
+     "flags": [],
+     "template_sha256": "cbbe3aa6a21d23cebc4d1383b93dd07a9cea460d683de1903567b616c839485d"
+    },
+    "single|content-chat.md|2_Датасет VK_WorkSpace_Клиентская_конференция_Шаблон_03.pptx": {
+     "content_sha256": "1409826a79888c29695b7d03dbb8c3b6df6991c3abd7935b48499e95681b6f14",
+     "exit": 0,
+     "files": {
+      "2_Датасет VK_WorkSpace_Клиентская_конференция_Шаблон_03.pptx": "8b961350fc0c8c96dd2b653919d8cf547a2aceff07b561cd1ac6ff6bfbcc2696"
+     },
+     "flags": [],
+     "template_sha256": "1b8883114486c69dff706e9c4fd9382727c4506c2cfa3ec34f86987f1e852f2f"
+    },
+    "single|content-chat.md|2_Датасет Шаблон презентации VK Education.pptx": {
+     "content_sha256": "1409826a79888c29695b7d03dbb8c3b6df6991c3abd7935b48499e95681b6f14",
+     "exit": 0,
+     "files": {
+      "2_Датасет Шаблон презентации VK Education.pptx": "4f0141cb915d375faa1a1134e75ca2b7c792df3ac605d7c329759b2546bf15eb"
+     },
+     "flags": [],
+     "template_sha256": "9ef2323ed5f49f464aee5ae7065f1f57bb92c8be3a635be507d59819e285cfe0"
+    },
+    "single|content-chat.md|60042.pptx": {
+     "content_sha256": "1409826a79888c29695b7d03dbb8c3b6df6991c3abd7935b48499e95681b6f14",
+     "exit": 0,
+     "files": {
+      "60042.pptx": "76370f3a69b121fbc1d7003f4baf39b82c74179bded713a36835c856a1124281"
+     },
+     "flags": [],
+     "template_sha256": "d72533cdc38a93dd87c5fa7268b185d3b871daf4c4693627a09bc0dc80a04f04"
+    },
+    "single|content-chat.md|ArtisticEffectSample.pptx": {
+     "content_sha256": "1409826a79888c29695b7d03dbb8c3b6df6991c3abd7935b48499e95681b6f14",
+     "exit": 0,
+     "files": {
+      "ArtisticEffectSample.pptx": "c5937857616fe6edff19f70c8a505c53f858343159ae774acbc4227edaa6f3c4"
+     },
+     "flags": [],
+     "template_sha256": "55c9b01d60efc8245f5d28097e702e1921e06aebfab522b6de574dcb435d66b7"
+    },
+    "single|content-chat.md|SampleShow.pptx": {
+     "content_sha256": "1409826a79888c29695b7d03dbb8c3b6df6991c3abd7935b48499e95681b6f14",
+     "exit": 0,
+     "files": {
+      "SampleShow.pptx": "613e8f3e4838033eceb467eb3fe9038bc04896392996a26a9a4a2cca4efa6211"
+     },
+     "flags": [],
+     "template_sha256": "bfb4b2f07c9233afd2f32aa5781d849d0c7d225bf03721a10becf487b481d828"
+    },
+    "single|content-chat.md|WithMaster.pptx": {
+     "content_sha256": "1409826a79888c29695b7d03dbb8c3b6df6991c3abd7935b48499e95681b6f14",
+     "exit": 0,
+     "files": {
+      "WithMaster.pptx": "6411e9b603af1e63fb2c56f366f6bdeba4244c686be182879471315f509990db"
+     },
+     "flags": [],
+     "template_sha256": "54ae7677fd2813a815160cc72bd8960a4e482690dfc369b392868521c9b61549"
+    },
+    "single|content-chat.md|business-plan-ppt-template-10-slides-creative.pptx": {
+     "content_sha256": "1409826a79888c29695b7d03dbb8c3b6df6991c3abd7935b48499e95681b6f14",
+     "exit": 0,
+     "files": {
+      "business-plan-ppt-template-10-slides-creative.pptx": "acb80bfa596397a5f54985f8198b74a01ac38b0b452457ee7b6d9dcdf2b092f2"
+     },
+     "flags": [],
+     "template_sha256": "f98ca3ece3de4aa647b7805a78ba602d0cd1eb0a07d4173131161a9e0073ff5a"
+    },
+    "single|content-chat.md|business_plan.pptx": {
+     "content_sha256": "1409826a79888c29695b7d03dbb8c3b6df6991c3abd7935b48499e95681b6f14",
+     "exit": 0,
+     "files": {
+      "business_plan.pptx": "4d61dd18f78b4568feed5e0632e02f425bef3ceb33755174e7218b961dca2693"
+     },
+     "flags": [],
+     "template_sha256": "1dda0e4b92fa727110ebf970257ffa77388f6df9cf11bd723a7d1333f54a0e2c"
+    },
+    "single|content-chat.md|prostoj-shablon-prezentacii-dlja-kompanii.pptx": {
+     "content_sha256": "1409826a79888c29695b7d03dbb8c3b6df6991c3abd7935b48499e95681b6f14",
+     "exit": 0,
+     "files": {
+      "prostoj-shablon-prezentacii-dlja-kompanii.pptx": "c75942c17d4c04e9d795b940c3c0895d9ba45e57772374da636591ddc03c38e5"
+     },
+     "flags": [],
+     "template_sha256": "4929ea6417da617ec20a98cdedc7c57a7558f370119aeb5bdda25586d25b599f"
+    },
+    "single|content-chat.md|shablon-prezentacii-biznes-plana.pptx": {
+     "content_sha256": "1409826a79888c29695b7d03dbb8c3b6df6991c3abd7935b48499e95681b6f14",
+     "exit": 0,
+     "files": {
+      "shablon-prezentacii-biznes-plana.pptx": "cfb16b1a3bfa94b6eb58b1c6e3050213fd28b34e5d09ce5cc22282085707bf15"
+     },
+     "flags": [],
+     "template_sha256": "2d2ad10fb74abba902d5e88c6aa5bb93ca7831ff8ece02eecf0dbf3a4ef39783"
+    },
+    "single|content-chat.md|stilnyj-shablon-korporativnoj-prezentacii.pptx": {
+     "content_sha256": "1409826a79888c29695b7d03dbb8c3b6df6991c3abd7935b48499e95681b6f14",
+     "exit": 0,
+     "files": {
+      "stilnyj-shablon-korporativnoj-prezentacii.pptx": "5036777835f224a218a3e2c101772a3951f9f8dc54f11525fa235bb3069d980f"
+     },
+     "flags": [],
+     "template_sha256": "2f2a9e9c3744e1c233dcaf2a5d7b1c46e79e14114705383ee6eee1307b553adb"
+    },
+    "single|content-chat.md|svetlaja-tema-dlja-prezentaciipptx.pptx": {
+     "content_sha256": "1409826a79888c29695b7d03dbb8c3b6df6991c3abd7935b48499e95681b6f14",
+     "exit": 2,
+     "files": {
+      "svetlaja-tema-dlja-prezentaciipptx.pptx": "c54f5cdcc0a33e591e6fe36a2d1d4bac017bc627afeec95ce113b9cc1df938ea"
+     },
+     "flags": [],
+     "template_sha256": "a336e742fc91d3845ed5d5890605edbbe9a73eb8d0c794877b572e9d94df5798"
+    },
+    "single|content-demo.md|2411-Performance_Up.pptx": {
+     "content_sha256": "52029c96c7a1b5f064c7cc6e7b8cbcf37b17e28e57a4b0e655bcf6c1a571d75d",
+     "exit": 0,
+     "files": {
+      "2411-Performance_Up.pptx": "f0740a49777fcc3d2ad93b461f94556a3d7911442bf235343b2c9c8a08b1d22c"
+     },
+     "flags": [],
+     "template_sha256": "a387861a0066ad11ba85aba9572830c1ec1ab9a24380728ead34d2b5b26662c0"
+    },
+    "single|content-demo.md|2_Датасет VK Tech шаблон.pptx": {
+     "content_sha256": "52029c96c7a1b5f064c7cc6e7b8cbcf37b17e28e57a4b0e655bcf6c1a571d75d",
+     "exit": 0,
+     "files": {
+      "2_Датасет VK Tech шаблон.pptx": "d47eaa7d3648485826f703162761adcdfb09ea776cacfb9c6fccb261cd76571a"
+     },
+     "flags": [],
+     "template_sha256": "cbbe3aa6a21d23cebc4d1383b93dd07a9cea460d683de1903567b616c839485d"
+    },
+    "single|content-demo.md|2_Датасет VK_WorkSpace_Клиентская_конференция_Шаблон_03.pptx": {
+     "content_sha256": "52029c96c7a1b5f064c7cc6e7b8cbcf37b17e28e57a4b0e655bcf6c1a571d75d",
+     "exit": 0,
+     "files": {
+      "2_Датасет VK_WorkSpace_Клиентская_конференция_Шаблон_03.pptx": "1f37e0d088dfb379d4d1d70e81ac8c1f0fb56d55f16b568344db5be540e3e88a"
+     },
+     "flags": [],
+     "template_sha256": "1b8883114486c69dff706e9c4fd9382727c4506c2cfa3ec34f86987f1e852f2f"
+    },
+    "single|content-demo.md|2_Датасет Шаблон презентации VK Education.pptx": {
+     "content_sha256": "52029c96c7a1b5f064c7cc6e7b8cbcf37b17e28e57a4b0e655bcf6c1a571d75d",
+     "exit": 0,
+     "files": {
+      "2_Датасет Шаблон презентации VK Education.pptx": "2aed2351d4ffa29167d0ef127bb5ca06179ff38ca5bf37dddfb08e85541f8ea0"
+     },
+     "flags": [],
+     "template_sha256": "9ef2323ed5f49f464aee5ae7065f1f57bb92c8be3a635be507d59819e285cfe0"
+    },
+    "single|content-demo.md|60042.pptx": {
+     "content_sha256": "52029c96c7a1b5f064c7cc6e7b8cbcf37b17e28e57a4b0e655bcf6c1a571d75d",
+     "exit": 0,
+     "files": {
+      "60042.pptx": "396d65a60072785583fc2841fdc33cbf123df5178f09afae5db4f90f7ce2aa6b"
+     },
+     "flags": [],
+     "template_sha256": "d72533cdc38a93dd87c5fa7268b185d3b871daf4c4693627a09bc0dc80a04f04"
+    },
+    "single|content-demo.md|ArtisticEffectSample.pptx": {
+     "content_sha256": "52029c96c7a1b5f064c7cc6e7b8cbcf37b17e28e57a4b0e655bcf6c1a571d75d",
+     "exit": 0,
+     "files": {
+      "ArtisticEffectSample.pptx": "21dd2702b26b9c5d76f58c5cf2ae1b259d8ffabdde98c5216cbd6f2812b8725e"
+     },
+     "flags": [],
+     "template_sha256": "55c9b01d60efc8245f5d28097e702e1921e06aebfab522b6de574dcb435d66b7"
+    },
+    "single|content-demo.md|SampleShow.pptx": {
+     "content_sha256": "52029c96c7a1b5f064c7cc6e7b8cbcf37b17e28e57a4b0e655bcf6c1a571d75d",
+     "exit": 0,
+     "files": {
+      "SampleShow.pptx": "f553cf71b1a0372afb58ed3ee3d0fc59066124a5a4122d2099e09125eb74997d"
+     },
+     "flags": [],
+     "template_sha256": "bfb4b2f07c9233afd2f32aa5781d849d0c7d225bf03721a10becf487b481d828"
+    },
+    "single|content-demo.md|WithMaster.pptx": {
+     "content_sha256": "52029c96c7a1b5f064c7cc6e7b8cbcf37b17e28e57a4b0e655bcf6c1a571d75d",
+     "exit": 0,
+     "files": {
+      "WithMaster.pptx": "ffa7ade7de7ff918de42dd6695c1f9705c85623affd2b19bbd34262c0f989f7a"
+     },
+     "flags": [],
+     "template_sha256": "54ae7677fd2813a815160cc72bd8960a4e482690dfc369b392868521c9b61549"
+    },
+    "single|content-demo.md|business-plan-ppt-template-10-slides-creative.pptx": {
+     "content_sha256": "52029c96c7a1b5f064c7cc6e7b8cbcf37b17e28e57a4b0e655bcf6c1a571d75d",
+     "exit": 0,
+     "files": {
+      "business-plan-ppt-template-10-slides-creative.pptx": "db8bfc907479d279b8490c83fba7423c71fd92c13dcf1238f270aa7f8c1b4f79"
+     },
+     "flags": [],
+     "template_sha256": "f98ca3ece3de4aa647b7805a78ba602d0cd1eb0a07d4173131161a9e0073ff5a"
+    },
+    "single|content-demo.md|business_plan.pptx": {
+     "content_sha256": "52029c96c7a1b5f064c7cc6e7b8cbcf37b17e28e57a4b0e655bcf6c1a571d75d",
+     "exit": 0,
+     "files": {
+      "business_plan.pptx": "2ad2ba76820d37fc9e7a3475761f5aec6436f71e845d5cad34fd6b1e5c6afaae"
+     },
+     "flags": [],
+     "template_sha256": "1dda0e4b92fa727110ebf970257ffa77388f6df9cf11bd723a7d1333f54a0e2c"
+    },
+    "single|content-demo.md|prostoj-shablon-prezentacii-dlja-kompanii.pptx": {
+     "content_sha256": "52029c96c7a1b5f064c7cc6e7b8cbcf37b17e28e57a4b0e655bcf6c1a571d75d",
+     "exit": 0,
+     "files": {
+      "prostoj-shablon-prezentacii-dlja-kompanii.pptx": "4269df17102e72caa3d91982b99f1e9c86be732b57888e2865408ef610e69b9f"
+     },
+     "flags": [],
+     "template_sha256": "4929ea6417da617ec20a98cdedc7c57a7558f370119aeb5bdda25586d25b599f"
+    },
+    "single|content-demo.md|shablon-prezentacii-biznes-plana.pptx": {
+     "content_sha256": "52029c96c7a1b5f064c7cc6e7b8cbcf37b17e28e57a4b0e655bcf6c1a571d75d",
+     "exit": 0,
+     "files": {
+      "shablon-prezentacii-biznes-plana.pptx": "826f909291e17ad4252f7cc27a3d0a61e64e9442faef2573445269213922852c"
+     },
+     "flags": [],
+     "template_sha256": "2d2ad10fb74abba902d5e88c6aa5bb93ca7831ff8ece02eecf0dbf3a4ef39783"
+    },
+    "single|content-demo.md|stilnyj-shablon-korporativnoj-prezentacii.pptx": {
+     "content_sha256": "52029c96c7a1b5f064c7cc6e7b8cbcf37b17e28e57a4b0e655bcf6c1a571d75d",
+     "exit": 0,
+     "files": {
+      "stilnyj-shablon-korporativnoj-prezentacii.pptx": "0989cded1f81febf5d1ee8107ffcfb54537bd6f8e9d4048bffe6b09d87c9cdfb"
+     },
+     "flags": [],
+     "template_sha256": "2f2a9e9c3744e1c233dcaf2a5d7b1c46e79e14114705383ee6eee1307b553adb"
+    },
+    "single|content-demo.md|svetlaja-tema-dlja-prezentaciipptx.pptx": {
+     "content_sha256": "52029c96c7a1b5f064c7cc6e7b8cbcf37b17e28e57a4b0e655bcf6c1a571d75d",
+     "exit": 0,
+     "files": {
+      "svetlaja-tema-dlja-prezentaciipptx.pptx": "ab78875212c4edff671c971dc58560cf399fb74ef2ba75b687603d1bc0d52de2"
+     },
+     "flags": [],
+     "template_sha256": "a336e742fc91d3845ed5d5890605edbbe9a73eb8d0c794877b572e9d94df5798"
+    },
+    "single|content-mimeo.md|2411-Performance_Up.pptx": {
+     "content_sha256": "bbd844329e5ea81e25ba19bb41c362f29080b9df4bac3613cc46c93e57e2331e",
+     "exit": 0,
+     "files": {
+      "2411-Performance_Up.pptx": "d6c070291da778c4dc33df5d0b2f56d4960026ddba0c11e97367d06ea56521e0"
+     },
+     "flags": [],
+     "template_sha256": "a387861a0066ad11ba85aba9572830c1ec1ab9a24380728ead34d2b5b26662c0"
+    },
+    "single|content-mimeo.md|2_Датасет VK Tech шаблон.pptx": {
+     "content_sha256": "bbd844329e5ea81e25ba19bb41c362f29080b9df4bac3613cc46c93e57e2331e",
+     "exit": 0,
+     "files": {
+      "2_Датасет VK Tech шаблон.pptx": "af44a7951ab3ade609430497ed23242ec0997ffd5a34afa3d9415686b4850862"
+     },
+     "flags": [],
+     "template_sha256": "cbbe3aa6a21d23cebc4d1383b93dd07a9cea460d683de1903567b616c839485d"
+    },
+    "single|content-mimeo.md|2_Датасет VK_WorkSpace_Клиентская_конференция_Шаблон_03.pptx": {
+     "content_sha256": "bbd844329e5ea81e25ba19bb41c362f29080b9df4bac3613cc46c93e57e2331e",
+     "exit": 0,
+     "files": {
+      "2_Датасет VK_WorkSpace_Клиентская_конференция_Шаблон_03.pptx": "dee6d033afe410d5678b29c81ff1016a61ee36959d3aad3fe455c0a439e0047b"
+     },
+     "flags": [],
+     "template_sha256": "1b8883114486c69dff706e9c4fd9382727c4506c2cfa3ec34f86987f1e852f2f"
+    },
+    "single|content-mimeo.md|2_Датасет Шаблон презентации VK Education.pptx": {
+     "content_sha256": "bbd844329e5ea81e25ba19bb41c362f29080b9df4bac3613cc46c93e57e2331e",
+     "exit": 0,
+     "files": {
+      "2_Датасет Шаблон презентации VK Education.pptx": "812478752d7be454dbfa83743f872cb555b7da7738ec64bd386d667c179406a6"
+     },
+     "flags": [],
+     "template_sha256": "9ef2323ed5f49f464aee5ae7065f1f57bb92c8be3a635be507d59819e285cfe0"
+    },
+    "single|content-mimeo.md|60042.pptx": {
+     "content_sha256": "bbd844329e5ea81e25ba19bb41c362f29080b9df4bac3613cc46c93e57e2331e",
+     "exit": 0,
+     "files": {
+      "60042.pptx": "a283007bc786b14a626ba04da1acdc2a04b98e086e73231dd3fed098faeaa05e"
+     },
+     "flags": [],
+     "template_sha256": "d72533cdc38a93dd87c5fa7268b185d3b871daf4c4693627a09bc0dc80a04f04"
+    },
+    "single|content-mimeo.md|ArtisticEffectSample.pptx": {
+     "content_sha256": "bbd844329e5ea81e25ba19bb41c362f29080b9df4bac3613cc46c93e57e2331e",
+     "exit": 0,
+     "files": {
+      "ArtisticEffectSample.pptx": "361637a12612d741ab1ec248232b9674f4ed289562b3b9476eddb9788e08156d"
+     },
+     "flags": [],
+     "template_sha256": "55c9b01d60efc8245f5d28097e702e1921e06aebfab522b6de574dcb435d66b7"
+    },
+    "single|content-mimeo.md|SampleShow.pptx": {
+     "content_sha256": "bbd844329e5ea81e25ba19bb41c362f29080b9df4bac3613cc46c93e57e2331e",
+     "exit": 0,
+     "files": {
+      "SampleShow.pptx": "e0de83c6ed11e096635695e6098c7788ba06503334a564944117c0ec02eb38b0"
+     },
+     "flags": [],
+     "template_sha256": "bfb4b2f07c9233afd2f32aa5781d849d0c7d225bf03721a10becf487b481d828"
+    },
+    "single|content-mimeo.md|WithMaster.pptx": {
+     "content_sha256": "bbd844329e5ea81e25ba19bb41c362f29080b9df4bac3613cc46c93e57e2331e",
+     "exit": 0,
+     "files": {
+      "WithMaster.pptx": "54d50e946226c8a471c8996eeeec0f2aae36ed7c0d31761172fbda6494bec21d"
+     },
+     "flags": [],
+     "template_sha256": "54ae7677fd2813a815160cc72bd8960a4e482690dfc369b392868521c9b61549"
+    },
+    "single|content-mimeo.md|business-plan-ppt-template-10-slides-creative.pptx": {
+     "content_sha256": "bbd844329e5ea81e25ba19bb41c362f29080b9df4bac3613cc46c93e57e2331e",
+     "exit": 0,
+     "files": {
+      "business-plan-ppt-template-10-slides-creative.pptx": "c4ad9f92228cebe330b2d81ad9fc8386a913231755dd473108bcf260b51ab92f"
+     },
+     "flags": [],
+     "template_sha256": "f98ca3ece3de4aa647b7805a78ba602d0cd1eb0a07d4173131161a9e0073ff5a"
+    },
+    "single|content-mimeo.md|business_plan.pptx": {
+     "content_sha256": "bbd844329e5ea81e25ba19bb41c362f29080b9df4bac3613cc46c93e57e2331e",
+     "exit": 0,
+     "files": {
+      "business_plan.pptx": "ff40b0bfaee3e7545c511af1bdb317b559477ef6c26ef40452c0d447a862a0c3"
+     },
+     "flags": [],
+     "template_sha256": "1dda0e4b92fa727110ebf970257ffa77388f6df9cf11bd723a7d1333f54a0e2c"
+    },
+    "single|content-mimeo.md|prostoj-shablon-prezentacii-dlja-kompanii.pptx": {
+     "content_sha256": "bbd844329e5ea81e25ba19bb41c362f29080b9df4bac3613cc46c93e57e2331e",
+     "exit": 0,
+     "files": {
+      "prostoj-shablon-prezentacii-dlja-kompanii.pptx": "d5e17b3612cba4fdb82ead5049ab75da155893e09d4554d28e657418446e94fc"
+     },
+     "flags": [],
+     "template_sha256": "4929ea6417da617ec20a98cdedc7c57a7558f370119aeb5bdda25586d25b599f"
+    },
+    "single|content-mimeo.md|shablon-prezentacii-biznes-plana.pptx": {
+     "content_sha256": "bbd844329e5ea81e25ba19bb41c362f29080b9df4bac3613cc46c93e57e2331e",
+     "exit": 0,
+     "files": {
+      "shablon-prezentacii-biznes-plana.pptx": "7deb0d03233ec3979f4a41b69b50500eb6d31a8ad3e4bbd518c9ec8b493272ce"
+     },
+     "flags": [],
+     "template_sha256": "2d2ad10fb74abba902d5e88c6aa5bb93ca7831ff8ece02eecf0dbf3a4ef39783"
+    },
+    "single|content-mimeo.md|stilnyj-shablon-korporativnoj-prezentacii.pptx": {
+     "content_sha256": "bbd844329e5ea81e25ba19bb41c362f29080b9df4bac3613cc46c93e57e2331e",
+     "exit": 0,
+     "files": {
+      "stilnyj-shablon-korporativnoj-prezentacii.pptx": "f9de20812407d1a6f3fad3fa188bf06f3b786429b4551e67f16f00967118948c"
+     },
+     "flags": [],
+     "template_sha256": "2f2a9e9c3744e1c233dcaf2a5d7b1c46e79e14114705383ee6eee1307b553adb"
+    },
+    "single|content-mimeo.md|svetlaja-tema-dlja-prezentaciipptx.pptx": {
+     "content_sha256": "bbd844329e5ea81e25ba19bb41c362f29080b9df4bac3613cc46c93e57e2331e",
+     "exit": 2,
+     "files": {
+      "svetlaja-tema-dlja-prezentaciipptx.pptx": "ee583b73a46057bfb260737d8a415e5f9e75cba793236f6a4d1a48a0eaeae31a"
+     },
+     "flags": [],
+     "template_sha256": "a336e742fc91d3845ed5d5890605edbbe9a73eb8d0c794877b572e9d94df5798"
+    },
+    "single|content-numbers.md|2411-Performance_Up.pptx": {
+     "content_sha256": "7e0838af6ddd3d64f10482c426b91f1a526e4d0effddaeaa5c63ffb575b1951c",
+     "exit": 0,
+     "files": {
+      "2411-Performance_Up.pptx": "62ce9447cc42a85b1e15d590e4faa7b850cf82c3414615638b095cf164f004cc"
+     },
+     "flags": [],
+     "template_sha256": "a387861a0066ad11ba85aba9572830c1ec1ab9a24380728ead34d2b5b26662c0"
+    },
+    "single|content-numbers.md|2_Датасет VK Tech шаблон.pptx": {
+     "content_sha256": "7e0838af6ddd3d64f10482c426b91f1a526e4d0effddaeaa5c63ffb575b1951c",
+     "exit": 0,
+     "files": {
+      "2_Датасет VK Tech шаблон.pptx": "24afc793c025d1735090d0a9aaf49b7c34236ade6720b3fff619c6dac8e32172"
+     },
+     "flags": [],
+     "template_sha256": "cbbe3aa6a21d23cebc4d1383b93dd07a9cea460d683de1903567b616c839485d"
+    },
+    "single|content-numbers.md|2_Датасет VK_WorkSpace_Клиентская_конференция_Шаблон_03.pptx": {
+     "content_sha256": "7e0838af6ddd3d64f10482c426b91f1a526e4d0effddaeaa5c63ffb575b1951c",
+     "exit": 0,
+     "files": {
+      "2_Датасет VK_WorkSpace_Клиентская_конференция_Шаблон_03.pptx": "2451629a7f273e41d8b8a6c698e06d67c3f309c8e99b32237391beb4f5d4736e"
+     },
+     "flags": [],
+     "template_sha256": "1b8883114486c69dff706e9c4fd9382727c4506c2cfa3ec34f86987f1e852f2f"
+    },
+    "single|content-numbers.md|2_Датасет Шаблон презентации VK Education.pptx": {
+     "content_sha256": "7e0838af6ddd3d64f10482c426b91f1a526e4d0effddaeaa5c63ffb575b1951c",
+     "exit": 0,
+     "files": {
+      "2_Датасет Шаблон презентации VK Education.pptx": "50728db72b94905fb3efbfa160e7a200aad67a6826d2bbc02b79fc77e74ef250"
+     },
+     "flags": [],
+     "template_sha256": "9ef2323ed5f49f464aee5ae7065f1f57bb92c8be3a635be507d59819e285cfe0"
+    },
+    "single|content-numbers.md|60042.pptx": {
+     "content_sha256": "7e0838af6ddd3d64f10482c426b91f1a526e4d0effddaeaa5c63ffb575b1951c",
+     "exit": 0,
+     "files": {
+      "60042.pptx": "a050aa972606d8f8da258a259f47e07d1a9f1ac544a62557b3841da059f86142"
+     },
+     "flags": [],
+     "template_sha256": "d72533cdc38a93dd87c5fa7268b185d3b871daf4c4693627a09bc0dc80a04f04"
+    },
+    "single|content-numbers.md|ArtisticEffectSample.pptx": {
+     "content_sha256": "7e0838af6ddd3d64f10482c426b91f1a526e4d0effddaeaa5c63ffb575b1951c",
+     "exit": 0,
+     "files": {
+      "ArtisticEffectSample.pptx": "48815835f3682c474f0e1e1c5bc693feccc79fd40254ca541d91f5e552c1fa7f"
+     },
+     "flags": [],
+     "template_sha256": "55c9b01d60efc8245f5d28097e702e1921e06aebfab522b6de574dcb435d66b7"
+    },
+    "single|content-numbers.md|SampleShow.pptx": {
+     "content_sha256": "7e0838af6ddd3d64f10482c426b91f1a526e4d0effddaeaa5c63ffb575b1951c",
+     "exit": 0,
+     "files": {
+      "SampleShow.pptx": "567da535ea7486743034ed42d477cbb217c04de821f56e671543ef92fe9777d3"
+     },
+     "flags": [],
+     "template_sha256": "bfb4b2f07c9233afd2f32aa5781d849d0c7d225bf03721a10becf487b481d828"
+    },
+    "single|content-numbers.md|WithMaster.pptx": {
+     "content_sha256": "7e0838af6ddd3d64f10482c426b91f1a526e4d0effddaeaa5c63ffb575b1951c",
+     "exit": 0,
+     "files": {
+      "WithMaster.pptx": "3465d7897d2e86884070bfb24ca74dd6d3b7183a80c40614c77e363a34c4a93d"
+     },
+     "flags": [],
+     "template_sha256": "54ae7677fd2813a815160cc72bd8960a4e482690dfc369b392868521c9b61549"
+    },
+    "single|content-numbers.md|business-plan-ppt-template-10-slides-creative.pptx": {
+     "content_sha256": "7e0838af6ddd3d64f10482c426b91f1a526e4d0effddaeaa5c63ffb575b1951c",
+     "exit": 0,
+     "files": {
+      "business-plan-ppt-template-10-slides-creative.pptx": "040a569fef078d73dff65e4b334389b15294a9e63239630e3463b2d4e2505e57"
+     },
+     "flags": [],
+     "template_sha256": "f98ca3ece3de4aa647b7805a78ba602d0cd1eb0a07d4173131161a9e0073ff5a"
+    },
+    "single|content-numbers.md|business_plan.pptx": {
+     "content_sha256": "7e0838af6ddd3d64f10482c426b91f1a526e4d0effddaeaa5c63ffb575b1951c",
+     "exit": 0,
+     "files": {
+      "business_plan.pptx": "8bd2a301b70e72b301118629a76575be18eee5218af09d1a4f874ad3442fa77b"
+     },
+     "flags": [],
+     "template_sha256": "1dda0e4b92fa727110ebf970257ffa77388f6df9cf11bd723a7d1333f54a0e2c"
+    },
+    "single|content-numbers.md|prostoj-shablon-prezentacii-dlja-kompanii.pptx": {
+     "content_sha256": "7e0838af6ddd3d64f10482c426b91f1a526e4d0effddaeaa5c63ffb575b1951c",
+     "exit": 0,
+     "files": {
+      "prostoj-shablon-prezentacii-dlja-kompanii.pptx": "ace1198ed5cee62b9dbc4e48889a389ad09046641e5f800472825c7436e2746a"
+     },
+     "flags": [],
+     "template_sha256": "4929ea6417da617ec20a98cdedc7c57a7558f370119aeb5bdda25586d25b599f"
+    },
+    "single|content-numbers.md|shablon-prezentacii-biznes-plana.pptx": {
+     "content_sha256": "7e0838af6ddd3d64f10482c426b91f1a526e4d0effddaeaa5c63ffb575b1951c",
+     "exit": 0,
+     "files": {
+      "shablon-prezentacii-biznes-plana.pptx": "3b440005363fe0bdb739d5c58cbb5965b9232fc525626ae4d789a464777f2b22"
+     },
+     "flags": [],
+     "template_sha256": "2d2ad10fb74abba902d5e88c6aa5bb93ca7831ff8ece02eecf0dbf3a4ef39783"
+    },
+    "single|content-numbers.md|stilnyj-shablon-korporativnoj-prezentacii.pptx": {
+     "content_sha256": "7e0838af6ddd3d64f10482c426b91f1a526e4d0effddaeaa5c63ffb575b1951c",
+     "exit": 0,
+     "files": {
+      "stilnyj-shablon-korporativnoj-prezentacii.pptx": "5f05be8c388752855a883d1b928c1eb30ab48de5ddb4eb4eaf705e0efdfb21c6"
+     },
+     "flags": [],
+     "template_sha256": "2f2a9e9c3744e1c233dcaf2a5d7b1c46e79e14114705383ee6eee1307b553adb"
+    },
+    "single|content-numbers.md|svetlaja-tema-dlja-prezentaciipptx.pptx": {
+     "content_sha256": "7e0838af6ddd3d64f10482c426b91f1a526e4d0effddaeaa5c63ffb575b1951c",
+     "exit": 0,
+     "files": {
+      "svetlaja-tema-dlja-prezentaciipptx.pptx": "dbb92e1c7f2e5d45080f52a7db51aec6dc43529d2c8f65abf621178f324f8665"
+     },
+     "flags": [],
+     "template_sha256": "a336e742fc91d3845ed5d5890605edbbe9a73eb8d0c794877b572e9d94df5798"
+    },
+    "single|content-prose.md|2411-Performance_Up.pptx": {
+     "content_sha256": "e8a03d21260778113bfa7c6e5e149b3058abedf45afd867210428b3ac9375e6a",
+     "exit": 0,
+     "files": {
+      "2411-Performance_Up.pptx": "12f188bcf58118867ce6222a038c60289d7ee97f92d5106b295804683a94c514"
+     },
+     "flags": [],
+     "template_sha256": "a387861a0066ad11ba85aba9572830c1ec1ab9a24380728ead34d2b5b26662c0"
+    },
+    "single|content-prose.md|2_Датасет VK Tech шаблон.pptx": {
+     "content_sha256": "e8a03d21260778113bfa7c6e5e149b3058abedf45afd867210428b3ac9375e6a",
+     "exit": 0,
+     "files": {
+      "2_Датасет VK Tech шаблон.pptx": "8afea58a4dcfa00e89d31b2593875552c4534875b8585784b14e4e30b290d12a"
+     },
+     "flags": [],
+     "template_sha256": "cbbe3aa6a21d23cebc4d1383b93dd07a9cea460d683de1903567b616c839485d"
+    },
+    "single|content-prose.md|2_Датасет VK_WorkSpace_Клиентская_конференция_Шаблон_03.pptx": {
+     "content_sha256": "e8a03d21260778113bfa7c6e5e149b3058abedf45afd867210428b3ac9375e6a",
+     "exit": 0,
+     "files": {
+      "2_Датасет VK_WorkSpace_Клиентская_конференция_Шаблон_03.pptx": "55fd1ba9fbb92b65743258741b1d9bae2b3d9641831cc4a3939ddc706e1c3427"
+     },
+     "flags": [],
+     "template_sha256": "1b8883114486c69dff706e9c4fd9382727c4506c2cfa3ec34f86987f1e852f2f"
+    },
+    "single|content-prose.md|2_Датасет Шаблон презентации VK Education.pptx": {
+     "content_sha256": "e8a03d21260778113bfa7c6e5e149b3058abedf45afd867210428b3ac9375e6a",
+     "exit": 0,
+     "files": {
+      "2_Датасет Шаблон презентации VK Education.pptx": "351f642b8e2e069aca71e4f52d68d6863dfa54c3180a1cae9802ea81d37873e7"
+     },
+     "flags": [],
+     "template_sha256": "9ef2323ed5f49f464aee5ae7065f1f57bb92c8be3a635be507d59819e285cfe0"
+    },
+    "single|content-prose.md|60042.pptx": {
+     "content_sha256": "e8a03d21260778113bfa7c6e5e149b3058abedf45afd867210428b3ac9375e6a",
+     "exit": 0,
+     "files": {
+      "60042.pptx": "5eafb92b795de76dbc2227301df6ecdb4a028e53c36e1f5e7a8325114d647bed"
+     },
+     "flags": [],
+     "template_sha256": "d72533cdc38a93dd87c5fa7268b185d3b871daf4c4693627a09bc0dc80a04f04"
+    },
+    "single|content-prose.md|ArtisticEffectSample.pptx": {
+     "content_sha256": "e8a03d21260778113bfa7c6e5e149b3058abedf45afd867210428b3ac9375e6a",
+     "exit": 0,
+     "files": {
+      "ArtisticEffectSample.pptx": "b527040ccbe10ac369acf01ba32918f6a3770935dfc128dc0017c6e92d93962e"
+     },
+     "flags": [],
+     "template_sha256": "55c9b01d60efc8245f5d28097e702e1921e06aebfab522b6de574dcb435d66b7"
+    },
+    "single|content-prose.md|SampleShow.pptx": {
+     "content_sha256": "e8a03d21260778113bfa7c6e5e149b3058abedf45afd867210428b3ac9375e6a",
+     "exit": 0,
+     "files": {
+      "SampleShow.pptx": "22cc32f119994cc6936e682850326f1138663bda763d6043a92a22706394ab42"
+     },
+     "flags": [],
+     "template_sha256": "bfb4b2f07c9233afd2f32aa5781d849d0c7d225bf03721a10becf487b481d828"
+    },
+    "single|content-prose.md|WithMaster.pptx": {
+     "content_sha256": "e8a03d21260778113bfa7c6e5e149b3058abedf45afd867210428b3ac9375e6a",
+     "exit": 0,
+     "files": {
+      "WithMaster.pptx": "a97746190ccd57610b8cc0cb14532d3f47ec4f8c6d235ddebe46c44f5ed47db8"
+     },
+     "flags": [],
+     "template_sha256": "54ae7677fd2813a815160cc72bd8960a4e482690dfc369b392868521c9b61549"
+    },
+    "single|content-prose.md|business-plan-ppt-template-10-slides-creative.pptx": {
+     "content_sha256": "e8a03d21260778113bfa7c6e5e149b3058abedf45afd867210428b3ac9375e6a",
+     "exit": 0,
+     "files": {
+      "business-plan-ppt-template-10-slides-creative.pptx": "09fd6ca3cfcdd40217f5fd7a9938a2e73ab9ac6284baa081386faa591b9a6465"
+     },
+     "flags": [],
+     "template_sha256": "f98ca3ece3de4aa647b7805a78ba602d0cd1eb0a07d4173131161a9e0073ff5a"
+    },
+    "single|content-prose.md|business_plan.pptx": {
+     "content_sha256": "e8a03d21260778113bfa7c6e5e149b3058abedf45afd867210428b3ac9375e6a",
+     "exit": 0,
+     "files": {
+      "business_plan.pptx": "32e81182fb5a4834f291802340bf0418fddf744564a2cbbb546df349ec2a7286"
+     },
+     "flags": [],
+     "template_sha256": "1dda0e4b92fa727110ebf970257ffa77388f6df9cf11bd723a7d1333f54a0e2c"
+    },
+    "single|content-prose.md|prostoj-shablon-prezentacii-dlja-kompanii.pptx": {
+     "content_sha256": "e8a03d21260778113bfa7c6e5e149b3058abedf45afd867210428b3ac9375e6a",
+     "exit": 0,
+     "files": {
+      "prostoj-shablon-prezentacii-dlja-kompanii.pptx": "57663474362bbd3fafad64393ffc492af056ecb9068d5baa6f5e8abf0d7fd0c0"
+     },
+     "flags": [],
+     "template_sha256": "4929ea6417da617ec20a98cdedc7c57a7558f370119aeb5bdda25586d25b599f"
+    },
+    "single|content-prose.md|shablon-prezentacii-biznes-plana.pptx": {
+     "content_sha256": "e8a03d21260778113bfa7c6e5e149b3058abedf45afd867210428b3ac9375e6a",
+     "exit": 0,
+     "files": {
+      "shablon-prezentacii-biznes-plana.pptx": "7d3c24199368bf22d62b942495feae1cfce8393a46690a580fca41ff723993ee"
+     },
+     "flags": [],
+     "template_sha256": "2d2ad10fb74abba902d5e88c6aa5bb93ca7831ff8ece02eecf0dbf3a4ef39783"
+    },
+    "single|content-prose.md|stilnyj-shablon-korporativnoj-prezentacii.pptx": {
+     "content_sha256": "e8a03d21260778113bfa7c6e5e149b3058abedf45afd867210428b3ac9375e6a",
+     "exit": 0,
+     "files": {
+      "stilnyj-shablon-korporativnoj-prezentacii.pptx": "b9fd607e42bfc42598f680c88e308df43d52a5f7a1bf801aabfdee52b0d7f056"
+     },
+     "flags": [],
+     "template_sha256": "2f2a9e9c3744e1c233dcaf2a5d7b1c46e79e14114705383ee6eee1307b553adb"
+    },
+    "single|content-prose.md|svetlaja-tema-dlja-prezentaciipptx.pptx": {
+     "content_sha256": "e8a03d21260778113bfa7c6e5e149b3058abedf45afd867210428b3ac9375e6a",
+     "exit": 0,
+     "files": {
+      "svetlaja-tema-dlja-prezentaciipptx.pptx": "09d71e6871fa039b68a9a0fbf9431e45b7ff079271d189dcb9c8447fd9e21209"
+     },
+     "flags": [],
+     "template_sha256": "a336e742fc91d3845ed5d5890605edbbe9a73eb8d0c794877b572e9d94df5798"
+    },
+    "single|content-short.md|2411-Performance_Up.pptx": {
+     "content_sha256": "3eb53cfbb7247db8f7f91bc19187e4921fa2aeda5d8e90aeaac2366a5afd0f0f",
+     "exit": 0,
+     "files": {
+      "2411-Performance_Up.pptx": "2e256e173e85bf55b389bb17c2fb8d4d354dd664135e699fd54bd92f587ea2ff"
+     },
+     "flags": [],
+     "template_sha256": "a387861a0066ad11ba85aba9572830c1ec1ab9a24380728ead34d2b5b26662c0"
+    },
+    "single|content-short.md|2_Датасет VK Tech шаблон.pptx": {
+     "content_sha256": "3eb53cfbb7247db8f7f91bc19187e4921fa2aeda5d8e90aeaac2366a5afd0f0f",
+     "exit": 0,
+     "files": {
+      "2_Датасет VK Tech шаблон.pptx": "be692e5b8d81e0fcaa26868f9b65bc1f6cdf66c299ed6e9a0cf420d4e5cc81ef"
+     },
+     "flags": [],
+     "template_sha256": "cbbe3aa6a21d23cebc4d1383b93dd07a9cea460d683de1903567b616c839485d"
+    },
+    "single|content-short.md|2_Датасет VK_WorkSpace_Клиентская_конференция_Шаблон_03.pptx": {
+     "content_sha256": "3eb53cfbb7247db8f7f91bc19187e4921fa2aeda5d8e90aeaac2366a5afd0f0f",
+     "exit": 0,
+     "files": {
+      "2_Датасет VK_WorkSpace_Клиентская_конференция_Шаблон_03.pptx": "e93c3dfcbff9b81c23320daa1b52d000534f74c4ed13eae093f4de2a086f014a"
+     },
+     "flags": [],
+     "template_sha256": "1b8883114486c69dff706e9c4fd9382727c4506c2cfa3ec34f86987f1e852f2f"
+    },
+    "single|content-short.md|2_Датасет Шаблон презентации VK Education.pptx": {
+     "content_sha256": "3eb53cfbb7247db8f7f91bc19187e4921fa2aeda5d8e90aeaac2366a5afd0f0f",
+     "exit": 0,
+     "files": {
+      "2_Датасет Шаблон презентации VK Education.pptx": "be443c1e9da19f7c287200c0dcdad9913c029f41d80ee8e76f050b6b1f6c2027"
+     },
+     "flags": [],
+     "template_sha256": "9ef2323ed5f49f464aee5ae7065f1f57bb92c8be3a635be507d59819e285cfe0"
+    },
+    "single|content-short.md|60042.pptx": {
+     "content_sha256": "3eb53cfbb7247db8f7f91bc19187e4921fa2aeda5d8e90aeaac2366a5afd0f0f",
+     "exit": 0,
+     "files": {
+      "60042.pptx": "2d4be5491c0c9fa4711579668d48555082fb5a9026574d7f66e4da07d57285d8"
+     },
+     "flags": [],
+     "template_sha256": "d72533cdc38a93dd87c5fa7268b185d3b871daf4c4693627a09bc0dc80a04f04"
+    },
+    "single|content-short.md|ArtisticEffectSample.pptx": {
+     "content_sha256": "3eb53cfbb7247db8f7f91bc19187e4921fa2aeda5d8e90aeaac2366a5afd0f0f",
+     "exit": 0,
+     "files": {
+      "ArtisticEffectSample.pptx": "83da7248b6598fc7800c1db1a7a8f4ed5ed292fab671462ff133e6d67060235a"
+     },
+     "flags": [],
+     "template_sha256": "55c9b01d60efc8245f5d28097e702e1921e06aebfab522b6de574dcb435d66b7"
+    },
+    "single|content-short.md|SampleShow.pptx": {
+     "content_sha256": "3eb53cfbb7247db8f7f91bc19187e4921fa2aeda5d8e90aeaac2366a5afd0f0f",
+     "exit": 0,
+     "files": {
+      "SampleShow.pptx": "9e42d6bbefdcbe3e1e73b9d73367ff3284d908be9dd1b51fc25a8a5a788cb173"
+     },
+     "flags": [],
+     "template_sha256": "bfb4b2f07c9233afd2f32aa5781d849d0c7d225bf03721a10becf487b481d828"
+    },
+    "single|content-short.md|WithMaster.pptx": {
+     "content_sha256": "3eb53cfbb7247db8f7f91bc19187e4921fa2aeda5d8e90aeaac2366a5afd0f0f",
+     "exit": 0,
+     "files": {
+      "WithMaster.pptx": "7b834cd43ef7ac02081f046ad34b78b81723af0b197192c5df950c5e02610315"
+     },
+     "flags": [],
+     "template_sha256": "54ae7677fd2813a815160cc72bd8960a4e482690dfc369b392868521c9b61549"
+    },
+    "single|content-short.md|business-plan-ppt-template-10-slides-creative.pptx": {
+     "content_sha256": "3eb53cfbb7247db8f7f91bc19187e4921fa2aeda5d8e90aeaac2366a5afd0f0f",
+     "exit": 0,
+     "files": {
+      "business-plan-ppt-template-10-slides-creative.pptx": "375061d3f1ab19afedb015a9a3e753f0da7f4e2e19d05fce73ad597fdbdd4e51"
+     },
+     "flags": [],
+     "template_sha256": "f98ca3ece3de4aa647b7805a78ba602d0cd1eb0a07d4173131161a9e0073ff5a"
+    },
+    "single|content-short.md|business_plan.pptx": {
+     "content_sha256": "3eb53cfbb7247db8f7f91bc19187e4921fa2aeda5d8e90aeaac2366a5afd0f0f",
+     "exit": 0,
+     "files": {
+      "business_plan.pptx": "3497a9a0d0d4ca54b298424e837a0ceb1af3aa5ec4dd857edf2946a8e5845314"
+     },
+     "flags": [],
+     "template_sha256": "1dda0e4b92fa727110ebf970257ffa77388f6df9cf11bd723a7d1333f54a0e2c"
+    },
+    "single|content-short.md|prostoj-shablon-prezentacii-dlja-kompanii.pptx": {
+     "content_sha256": "3eb53cfbb7247db8f7f91bc19187e4921fa2aeda5d8e90aeaac2366a5afd0f0f",
+     "exit": 0,
+     "files": {
+      "prostoj-shablon-prezentacii-dlja-kompanii.pptx": "4342f175728abf294159c2793d6f599804204066a40050a10d78fc364ba9fa44"
+     },
+     "flags": [],
+     "template_sha256": "4929ea6417da617ec20a98cdedc7c57a7558f370119aeb5bdda25586d25b599f"
+    },
+    "single|content-short.md|shablon-prezentacii-biznes-plana.pptx": {
+     "content_sha256": "3eb53cfbb7247db8f7f91bc19187e4921fa2aeda5d8e90aeaac2366a5afd0f0f",
+     "exit": 0,
+     "files": {
+      "shablon-prezentacii-biznes-plana.pptx": "fe7754c68cbaf4dc802a30cdd7dfd6d0e02e62436bca3ea46c4fbdba897f1665"
+     },
+     "flags": [],
+     "template_sha256": "2d2ad10fb74abba902d5e88c6aa5bb93ca7831ff8ece02eecf0dbf3a4ef39783"
+    },
+    "single|content-short.md|stilnyj-shablon-korporativnoj-prezentacii.pptx": {
+     "content_sha256": "3eb53cfbb7247db8f7f91bc19187e4921fa2aeda5d8e90aeaac2366a5afd0f0f",
+     "exit": 0,
+     "files": {
+      "stilnyj-shablon-korporativnoj-prezentacii.pptx": "a0a0a2fafc30b2564cdc8e8d9bbd25cba4a58e0ad0285d2104f76b38bc97e807"
+     },
+     "flags": [],
+     "template_sha256": "2f2a9e9c3744e1c233dcaf2a5d7b1c46e79e14114705383ee6eee1307b553adb"
+    },
+    "single|content-short.md|svetlaja-tema-dlja-prezentaciipptx.pptx": {
+     "content_sha256": "3eb53cfbb7247db8f7f91bc19187e4921fa2aeda5d8e90aeaac2366a5afd0f0f",
+     "exit": 0,
+     "files": {
+      "svetlaja-tema-dlja-prezentaciipptx.pptx": "6641892091802cf5bada51d618578e674ad1e92ce0a1a73804fae39301a17750"
+     },
+     "flags": [],
+     "template_sha256": "a336e742fc91d3845ed5d5890605edbbe9a73eb8d0c794877b572e9d94df5798"
+    }
+   },
+   "written": "2026-09-24"
+  },
+  "verify": {
+   "code": "46de0e2",
+   "decks": {
+    "nine|2_Датасет VK Tech шаблон.pptx": {
+     "content_sha256": "bbd844329e5ea81e25ba19bb41c362f29080b9df4bac3613cc46c93e57e2331e",
+     "exit": 0,
+     "files": {
+      "2_Датасет VK Tech шаблон-1.pptx": "c8b5cc745ead4d63629a28a306c20bb63a1bada1b246dd31005c02bb7e32720a",
+      "2_Датасет VK Tech шаблон-2.pptx": "fb0002eaf9cf2ef4cfc3a5534b9684a7bcf73695a60c57d0a60a2e59407418e5",
+      "2_Датасет VK Tech шаблон-3.pptx": "cb94e3302f648d08d8be527d117281b6563d59b42ec6eaa69bd282fcababae6b"
+     },
+     "flags": [
+      "--variants",
+      "3",
+      "--slides",
+      "10-15"
+     ],
+     "template_sha256": "cbbe3aa6a21d23cebc4d1383b93dd07a9cea460d683de1903567b616c839485d"
+    },
+    "nine|2_Датасет VK_WorkSpace_Клиентская_конференция_Шаблон_03.pptx": {
+     "content_sha256": "bbd844329e5ea81e25ba19bb41c362f29080b9df4bac3613cc46c93e57e2331e",
+     "exit": 0,
+     "files": {
+      "2_Датасет VK_WorkSpace_Клиентская_конференция_Шаблон_03-1.pptx": "0f1a2f45266e3f8a6aef432821a65f2c022161b25f7bc33b71ebe926bc58b521",
+      "2_Датасет VK_WorkSpace_Клиентская_конференция_Шаблон_03-2.pptx": "f713c37d46efe3ce99caf185f6d41d13ae6955c39370fd44583652b745a35619",
+      "2_Датасет VK_WorkSpace_Клиентская_конференция_Шаблон_03-3.pptx": "4395bc4813a59ffa46c8b3cc3bb9cf21b25ed8e0057d7c1994a0b77f570b7bff"
+     },
+     "flags": [
+      "--variants",
+      "3",
+      "--slides",
+      "10-15"
+     ],
+     "template_sha256": "1b8883114486c69dff706e9c4fd9382727c4506c2cfa3ec34f86987f1e852f2f"
+    },
+    "nine|2_Датасет Шаблон презентации VK Education.pptx": {
+     "content_sha256": "bbd844329e5ea81e25ba19bb41c362f29080b9df4bac3613cc46c93e57e2331e",
+     "exit": 0,
+     "files": {
+      "2_Датасет Шаблон презентации VK Education-1.pptx": "0c845d08b3f6dedc5312a3941678aac467a1b7a08576b52981af2813ffeedc78",
+      "2_Датасет Шаблон презентации VK Education-2.pptx": "694fa888dbc8cb8b770bb783d8edcab60cd4da5bf00ce45576bcf3b7b185ebf7",
+      "2_Датасет Шаблон презентации VK Education-3.pptx": "d704605d4480f5e100464cb694c130319e8699e718873208097508f387dfcc95"
+     },
+     "flags": [
+      "--variants",
+      "3",
+      "--slides",
+      "10-15"
+     ],
+     "template_sha256": "9ef2323ed5f49f464aee5ae7065f1f57bb92c8be3a635be507d59819e285cfe0"
+    },
+    "single|content-mimeo.md|2411-Performance_Up.pptx": {
+     "content_sha256": "bbd844329e5ea81e25ba19bb41c362f29080b9df4bac3613cc46c93e57e2331e",
+     "exit": 0,
+     "files": {
+      "2411-Performance_Up.pptx": "e97b636d5f398aa980c16dd61b7dd21497fcb55a41b5dbeb783bdf4e68861b74"
+     },
+     "flags": [],
+     "template_sha256": "a387861a0066ad11ba85aba9572830c1ec1ab9a24380728ead34d2b5b26662c0"
+    },
+    "single|content-mimeo.md|2_Датасет VK Tech шаблон.pptx": {
+     "content_sha256": "bbd844329e5ea81e25ba19bb41c362f29080b9df4bac3613cc46c93e57e2331e",
+     "exit": 0,
+     "files": {
+      "2_Датасет VK Tech шаблон.pptx": "3a4a14a94992f82a3aaaefd84265d42d998f25c7edecdf7408cd27c94e6adfcf"
+     },
+     "flags": [],
+     "template_sha256": "cbbe3aa6a21d23cebc4d1383b93dd07a9cea460d683de1903567b616c839485d"
+    },
+    "single|content-mimeo.md|2_Датасет VK_WorkSpace_Клиентская_конференция_Шаблон_03.pptx": {
+     "content_sha256": "bbd844329e5ea81e25ba19bb41c362f29080b9df4bac3613cc46c93e57e2331e",
+     "exit": 0,
+     "files": {
+      "2_Датасет VK_WorkSpace_Клиентская_конференция_Шаблон_03.pptx": "3f50a093965cb25fa8715975b49844f4cc23b64aef28e931ab5efc953a6f726f"
+     },
+     "flags": [],
+     "template_sha256": "1b8883114486c69dff706e9c4fd9382727c4506c2cfa3ec34f86987f1e852f2f"
+    },
+    "single|content-mimeo.md|2_Датасет Шаблон презентации VK Education.pptx": {
+     "content_sha256": "bbd844329e5ea81e25ba19bb41c362f29080b9df4bac3613cc46c93e57e2331e",
+     "exit": 0,
+     "files": {
+      "2_Датасет Шаблон презентации VK Education.pptx": "31d028816feb72b0e57a10222af37d5341eb2ef2bbb321a3a992a2000a0b0113"
+     },
+     "flags": [],
+     "template_sha256": "9ef2323ed5f49f464aee5ae7065f1f57bb92c8be3a635be507d59819e285cfe0"
+    },
+    "single|content-mimeo.md|60042.pptx": {
+     "content_sha256": "bbd844329e5ea81e25ba19bb41c362f29080b9df4bac3613cc46c93e57e2331e",
+     "exit": 0,
+     "files": {
+      "60042.pptx": "a283007bc786b14a626ba04da1acdc2a04b98e086e73231dd3fed098faeaa05e"
+     },
+     "flags": [],
+     "template_sha256": "d72533cdc38a93dd87c5fa7268b185d3b871daf4c4693627a09bc0dc80a04f04"
+    },
+    "single|content-mimeo.md|ArtisticEffectSample.pptx": {
+     "content_sha256": "bbd844329e5ea81e25ba19bb41c362f29080b9df4bac3613cc46c93e57e2331e",
+     "exit": 0,
+     "files": {
+      "ArtisticEffectSample.pptx": "361637a12612d741ab1ec248232b9674f4ed289562b3b9476eddb9788e08156d"
+     },
+     "flags": [],
+     "template_sha256": "55c9b01d60efc8245f5d28097e702e1921e06aebfab522b6de574dcb435d66b7"
+    },
+    "single|content-mimeo.md|SampleShow.pptx": {
+     "content_sha256": "bbd844329e5ea81e25ba19bb41c362f29080b9df4bac3613cc46c93e57e2331e",
+     "exit": 0,
+     "files": {
+      "SampleShow.pptx": "e0de83c6ed11e096635695e6098c7788ba06503334a564944117c0ec02eb38b0"
+     },
+     "flags": [],
+     "template_sha256": "bfb4b2f07c9233afd2f32aa5781d849d0c7d225bf03721a10becf487b481d828"
+    },
+    "single|content-mimeo.md|WithMaster.pptx": {
+     "content_sha256": "bbd844329e5ea81e25ba19bb41c362f29080b9df4bac3613cc46c93e57e2331e",
+     "exit": 0,
+     "files": {
+      "WithMaster.pptx": "54d50e946226c8a471c8996eeeec0f2aae36ed7c0d31761172fbda6494bec21d"
+     },
+     "flags": [],
+     "template_sha256": "54ae7677fd2813a815160cc72bd8960a4e482690dfc369b392868521c9b61549"
+    },
+    "single|content-mimeo.md|business-plan-ppt-template-10-slides-creative.pptx": {
+     "content_sha256": "bbd844329e5ea81e25ba19bb41c362f29080b9df4bac3613cc46c93e57e2331e",
+     "exit": 0,
+     "files": {
+      "business-plan-ppt-template-10-slides-creative.pptx": "f0559bcdd26aa9ff374f0edf93ff6f049a62cf5d0e130ac840a301006c715ab1"
+     },
+     "flags": [],
+     "template_sha256": "f98ca3ece3de4aa647b7805a78ba602d0cd1eb0a07d4173131161a9e0073ff5a"
+    },
+    "single|content-mimeo.md|business_plan.pptx": {
+     "content_sha256": "bbd844329e5ea81e25ba19bb41c362f29080b9df4bac3613cc46c93e57e2331e",
+     "exit": 0,
+     "files": {
+      "business_plan.pptx": "a91834f83278842ad766cd1e6db37982f6d49d58b5156d9d73b260b96035f26b"
+     },
+     "flags": [],
+     "template_sha256": "1dda0e4b92fa727110ebf970257ffa77388f6df9cf11bd723a7d1333f54a0e2c"
+    },
+    "single|content-mimeo.md|prostoj-shablon-prezentacii-dlja-kompanii.pptx": {
+     "content_sha256": "bbd844329e5ea81e25ba19bb41c362f29080b9df4bac3613cc46c93e57e2331e",
+     "exit": 0,
+     "files": {
+      "prostoj-shablon-prezentacii-dlja-kompanii.pptx": "fb4b7a5fa757df5d85ca90154cb1fe715f8816fb1fbe5bb78eb05e915443f127"
+     },
+     "flags": [],
+     "template_sha256": "4929ea6417da617ec20a98cdedc7c57a7558f370119aeb5bdda25586d25b599f"
+    },
+    "single|content-mimeo.md|shablon-prezentacii-biznes-plana.pptx": {
+     "content_sha256": "bbd844329e5ea81e25ba19bb41c362f29080b9df4bac3613cc46c93e57e2331e",
+     "exit": 0,
+     "files": {
+      "shablon-prezentacii-biznes-plana.pptx": "7bc5ee4ec5789bce183dd50895ebdbb81752f762d248cf7fdaf0f4bbaeffa7f6"
+     },
+     "flags": [],
+     "template_sha256": "2d2ad10fb74abba902d5e88c6aa5bb93ca7831ff8ece02eecf0dbf3a4ef39783"
+    },
+    "single|content-mimeo.md|stilnyj-shablon-korporativnoj-prezentacii.pptx": {
+     "content_sha256": "bbd844329e5ea81e25ba19bb41c362f29080b9df4bac3613cc46c93e57e2331e",
+     "exit": 0,
+     "files": {
+      "stilnyj-shablon-korporativnoj-prezentacii.pptx": "4ac99c029d7882dba365c24086e75ce17e225f2005a2bdcd3349e8023cfd5387"
+     },
+     "flags": [],
+     "template_sha256": "2f2a9e9c3744e1c233dcaf2a5d7b1c46e79e14114705383ee6eee1307b553adb"
+    },
+    "single|content-mimeo.md|svetlaja-tema-dlja-prezentaciipptx.pptx": {
+     "content_sha256": "bbd844329e5ea81e25ba19bb41c362f29080b9df4bac3613cc46c93e57e2331e",
+     "exit": 2,
+     "files": {
+      "svetlaja-tema-dlja-prezentaciipptx.pptx": "44d2571d2bd5dfadd317c2d36df17c994c567110b38da439557af07fe76ff272"
+     },
+     "flags": [],
+     "template_sha256": "a336e742fc91d3845ed5d5890605edbbe9a73eb8d0c794877b572e9d94df5798"
+    }
+   },
+   "written": "2026-09-24"
+  }
+ }
+}
