@@ -11,9 +11,14 @@ from mimeo.plan import outline
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+#: Запись промпта, которым снят последний замер. Сменили промпт — новый замер,
+#: новая запись и новое имя здесь; иначе этот тест падает (заморозка до Ш9).
+MEASURED_PROMPT = "2026-09-25-z57-prompt.md"
+
+
 def _measured_blocks() -> list[str]:
-    """Три блока кода из записи замера: общий текст, тезисы «как есть» и «доработать»."""
-    path = os.path.join(ROOT, "WORKLOG", "2026-09-24-z57-prompt.md")
+    """Три блока кода из записи замера: общий текст, тезисы «оставить» и «доработать»."""
+    path = os.path.join(ROOT, "WORKLOG", MEASURED_PROMPT)
     text = open(path, encoding="utf-8").read()
     return re.findall(r"```\n(.*?)\n```", text, re.S)[:3]
 
@@ -52,6 +57,138 @@ def test_kinds_are_the_code_vocabulary():
     slide = outline.RESPONSE_SCHEMA["properties"]["slides"]["items"]
     assert slide["properties"]["kind"]["enum"] == list(outline.KINDS)
     assert set(slide["required"]) == set(slide["properties"])
+
+
+TEXT = (
+    "Сделай, пожалуйста, презентацию про наш движок mimeo. "
+    "Точка после латиницы — не часть слова: движок mimeo.\n"
+    "Мы вытаскиваем из шаблона дизайн-систему, то есть цвета, шрифты, размеры. "
+    "Раскладок в живых шаблонах от 5 до 49 штук. "
+    "У них нет контроля качества, у нас же свой приёмочный склад. "
+    "Не забудь про картинки: схему стадий — examples/img/stages.png.\n"
+    "- январь — 41 200\n"
+    "Доля долгих выдач: 4%, 5%.\n"
+    "В конце попроси доступ к инференсу."
+)
+
+
+def _slide(heading, kind="text", theses=(), images=()):
+    return {"heading": heading, "kind": kind, "role": "прочее", "theses": list(theses),
+            "image_idea": "", "images": list(images)}
+
+
+def _answer(*extra, cover=None, closing=None):
+    """Чистый ответ: проходит все проверки в обоих режимах."""
+    slides = [
+        cover or _slide("Движок mimeo", "cover", ["презентацию про наш движок mimeo"]),
+        _slide("Разбор шаблона", "bullets", ["Мы вытаскиваем из шаблона дизайн-систему",
+                                             "цвета, шрифты, размеры"]),
+        _slide("Раскладки", "metric", ["от 5 до 49 штук"]),
+        _slide("Склад", "text", ["свой приёмочный склад"]),
+        _slide("Схема стадий", "image_text", ["схема стадий"], ["examples/img/stages.png"]),
+        _slide("Январь", "metric", ["январь — 41 200"]),
+        _slide("Долгие выдачи", "metric", ["Доля долгих выдач: 4%, 5%"]),
+        *extra,
+        closing or _slide("Просьба", "closing", ["доступ к инференсу"]),
+    ]
+    return {"slides": slides, "missing_roles": []}
+
+
+def _failed(answer, mode="keep", slides_max=15):
+    return {c.name for c in outline.check_outline(TEXT, answer, mode, slides_max) if not c.ok}
+
+
+@pytest.mark.parametrize("mode", ["keep", "improve"])
+def test_clean_answer_passes(mode):
+    """Сжатие фразы, другой падеж («схема» — «схему»), разряды «41 200» — не отказ."""
+    checks = outline.check_outline(TEXT, _answer(), mode, 15)
+    assert outline.accepted(checks), [c for c in checks if not c.ok]
+
+
+@pytest.mark.parametrize("mutate, expected", [
+    (lambda a: a["slides"][5]["theses"].__setitem__(0, "январь"), "числа"),
+    (lambda a: a["slides"][3]["theses"].append("складов 60"), "числа"),
+    (lambda a: a["slides"][4]["images"].clear(), "картинки"),
+    (lambda a: a["slides"][3]["images"].append("examples/img/stages.png"), "картинки"),
+    (lambda a: a["slides"][3]["theses"].append("см. examples/img/stages.png"), "картинки"),
+    (lambda a: a["slides"][3].__setitem__("heading", "Склад на Python"), "латиница"),
+    (lambda a: a["slides"][3]["theses"].append("Не забудь про склад"), "обращения"),
+    (lambda a: a["slides"].extend(_slide(f"Ещё {i}") for i in range(10)), "объём"),
+    (lambda a: a["slides"][3].__setitem__("kind", "chart"), "типы"),
+    (lambda a: a["slides"][2].__setitem__("kind", "agenda") or a["slides"][3].__setitem__("kind", "agenda"), "типы"),
+    (lambda a: a["slides"][0].__setitem__("heading", "Революция в презентациях"), "название"),
+    (lambda a: a["slides"][-1]["theses"].append("ваш путь к успеху"), "дословность"),
+    (lambda a: a["slides"][-1].__setitem__("heading", "Спасибо за внимание"), "клише финала"),
+])
+def test_each_check_catches_its_violation(mutate, expected):
+    answer = _answer()
+    mutate(answer)
+    assert expected in _failed(answer, slides_max=15), _failed(answer)
+
+
+@pytest.mark.parametrize("thesis", [
+    "Свежесть: свой приёмочный склад",   # подставлено подлежащее
+    "январь 4%",                          # склеены два предложения
+    "склад для приёмки свой",             # переставлен порядок слов
+])
+def test_keep_refuses_retelling(thesis):
+    """В «оставить» пересказ — отказ; в «доработать» тот же тезис законен."""
+    answer = _answer()
+    answer["slides"][3]["theses"] = [thesis]
+    assert _failed(answer, "keep") == {"дословность"}
+    assert _failed(answer, "improve") == set()
+
+
+def test_agenda_theses_are_not_on_slides():
+    """Пункты оглавления соберёт код: число, стоящее только там, потеряно."""
+    answer = _answer(_slide("Содержание", "agenda", ["от 5 до 49 штук"]))
+    answer["slides"][2]["theses"] = ["раскладок много"]
+    assert "числа" in _failed(answer)
+
+
+def test_numbers_are_compared_whole():
+    """«41 200» — одно число: «41» и «200» не выдают его за найденное."""
+    answer = _answer()
+    answer["slides"][5]["theses"] = ["январь 41"]
+    assert {"числа", "дословность"} <= _failed(answer)
+    assert outline.same_stem("движка", "движок") and outline.same_stem("схема", "схему")
+    assert not outline.same_stem("12500", "12501") and not outline.same_stem("путь", "пустой")
+
+
+def test_number_written_as_digit_is_not_invention():
+    """«из четырёх переведены три» → «3 из 4»: цифрой вместо слова, не выдумка;
+    «5 из 4» — выдумка. И обратно: цифра автора, записанная словом, не потеряна."""
+    text = "Из четырёх площадок переведены три. Заказов 7 за день."
+    def deck(*theses):
+        return {"slides": [_slide("Площадки", "metric", list(theses))], "missing_roles": []}
+    assert outline.accepted(outline.check_outline(text, deck("Переведено 3 из 4", "семь заказов"), "improve", 15))
+    failed = {c.name for c in outline.check_outline(text, deck("Переведено 5 из 4", "7 заказов"), "improve", 15) if not c.ok}
+    assert failed == {"числа"}
+
+
+def test_function_words_are_not_invention():
+    """Предлог, которого нет в тексте, — не выдумка: так замер Ш1б назвал «для»
+    в «Презентация для технического заказчика», и это была ошибка проверки."""
+    answer = _answer(cover=_slide("Движок для презентаций", "cover", ["презентацию про наш движок mimeo"]))
+    assert "название" not in _failed(answer, "improve")
+
+
+def test_improve_may_reword_cover_and_closing():
+    """«Данные за полугодие…» из «с цифрами… за полугодие» — законная
+    переформулировка «доработать», не отказ (замер Ш1б); «Спасибо…» — отказ."""
+    answer = _answer(closing=_slide("Просьба", "closing", ["Ожидаем доступ к инференсу"]))
+    answer["slides"][0]["theses"] = ["Данные о движке mimeo"]
+    assert _failed(answer, "improve") == set()
+    answer["slides"][-1]["theses"] = ["Спасибо за внимание"]
+    assert _failed(answer, "improve") == {"клише финала"}
+
+
+@pytest.mark.parametrize("field", ["heading", "kind", "theses", "images"])
+def test_broken_form_is_one_refusal(field):
+    """Схема держит форму и в режиме со схемой проверяется всё равно (`ADR-0023`)."""
+    answer = _answer()
+    del answer["slides"][3][field]
+    assert _failed(answer) == {"форма"}
 
 
 def _walk(node):

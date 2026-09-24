@@ -300,6 +300,13 @@ def _strip_address(text: str, cfg: ProseConfig) -> str | None:
     return f"{before}: {after}"
 
 
+def has_address(text: str, cfg: ProseConfig | None = None) -> bool:
+    """Есть ли в строке обращение к исполнителю — тем же признаком, которым путь
+    без модели снимает его с прозы (`Z-41`). Им же проверяется ответ модели:
+    «Не забудь про картинки» на слайде — отказ колоде (`ADR-0023`, п. 5)."""
+    return _strip_address(text, cfg or load_config()) is not None
+
+
 def _strip_lead_in(text: str, cfg: ProseConfig) -> tuple[str, int]:
     """Снимает вводный оборот («расскажи, что…»). Возвращает текст и сколько
     знаков отброшено: потеря считается, а не замалчивается (`PLAN-2.2`).

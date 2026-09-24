@@ -10,12 +10,12 @@
       "sha256": "73caee184b3e7e1c7827646e4e2546dfbfc516100b445bea100f45da66e68ec3"
     },
     "model.json": {
-      "version": "1.1",
-      "sha256": "205d79a97b749359d54c71fbf005ab2f41bb041e50ea83ebee2d5e7931dd74c9"
+      "version": "1.2",
+      "sha256": "9c4ad7c793c8c9c11c06ecb1739022ed6f57adcd009ad17598203c74ecc2846b"
     },
     "outline.json": {
-      "version": "1.0",
-      "sha256": "2164ef476a454e5146b6d6d5445c359520e7e2262414920823d3d7eb810ec98a"
+      "version": "1.1",
+      "sha256": "da5ea01e4bade81882422d474ace0e3c0495787687a2ceefe82de35c55e71178"
     },
     "prompt.json": {
       "version": "1.0",
