@@ -42,6 +42,7 @@ KNOWN = (
     "images.json",
     "kinds.json",
     "model.json",
+    "outline.json",
     "prompt.json",
     "prose.json",
     "typography.json",

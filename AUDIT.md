@@ -49,6 +49,7 @@ python tools/audit_doc.py --write
 | [`tests/test_mce_prefixes.py`](tests/test_mce_prefixes.py) | 5 | Пространства имён Markup Compatibility переживают пересериализацию. |
 | [`tests/test_model_client.py`](tests/test_model_client.py) | 32 | Клиент к модели: транспорт, кэш, откат. `Z-07`, `PLAN-2.6`, шаги 1, 2, 4. |
 | [`tests/test_occlusion.py`](tests/test_occlusion.py) | 23 | Ёмкость слота знает, что лежит поверх него. `Z-48`, `PLAN-7.8`. |
+| [`tests/test_outline.py`](tests/test_outline.py) | 5 | Промпт и схема ответа модели, строящей колоду (`ADR-0023`, `PLAN-9.0`, Ш1). |
 | [`tests/test_paragraph_order.py`](tests/test_paragraph_order.py) | 6 | Порядок детей `a:p` по схеме DrawingML: прогоны до `a:endParaRPr`. |
 | [`tests/test_patterns.py`](tests/test_patterns.py) | 13 | Библиотека паттернов. ADR-0004, ADR-0006, ADR-0007. |
 | [`tests/test_plan.py`](tests/test_plan.py) | 20 | Подбор раскладок и планировщик без модели. ADR-0009. |
@@ -69,7 +70,7 @@ python tools/audit_doc.py --write
 | [`tests/test_volume.py`](tests/test_volume.py) | 15 | Объём колоды: 10–15 слайдов или сколько задали. `Z-35`, план `PLAN-2.3`. |
 | [`tests/test_web_boundary.py`](tests/test_web_boundary.py) | 5 | Граница веб-слоя (`Z-29`, `PLAN-8.0`, `SPEC-WEB` раздел 2). |
 | [`tests/test_web_design.py`](tests/test_web_design.py) | 10 | Экран «что вынули из вашего шаблона» (`Z-29`, `PLAN-8.1`, часть A). |
-| **всего** | **537** | в 34 файлах |
+| **всего** | **542** | в 35 файлах |
 
 <!-- /порождается -->
 
