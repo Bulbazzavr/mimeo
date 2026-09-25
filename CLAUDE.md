@@ -393,7 +393,7 @@ python -m mimeo build  <шаблон.pptx> <контент.md> --llm on    # м�
 python -m mimeo build  --config config/run.example.json <шаблон.pptx>
 python -m mimeo analyze <шаблон.pptx> -o out --validate
 python -m mimeo plan   <шаблон.pptx> <контент.md> -o out --validate
-python -m pytest
+python -m pytest                      # pyproject.toml уже даёт -q; второй -q (-qq) прячет строку «N passed»
 python tools/report.py compose        # таблица замеров для WORKLOG
 python tools/report.py slots          # сужённые и пустые слоты (Z-48, Z-49), PowerPoint не нужен
 python tools/config_version.py        # сверить версии конфигов с замком
