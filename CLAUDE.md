@@ -367,6 +367,23 @@ ls samples/*.pptx || python tools/fetch_samples.py samples
   `tools/llm_cache.py`. Отдельно: `tools/bench_models.py` и `tools/llm_probe.py`
   ходят в сеть всегда — это инструменты, не продукт.
 
+## Локальные модели
+
+Среда модели одна — `llama-server`; LM Studio не используем (решение
+пользователя 24 сентября). Подъём Gemma 4 12B QAT для текста (`Z-57`) — зрение
+не нужно, поэтому без `--mmproj`:
+
+```
+D:\0_model_llm\llama.cpp\llama-server.exe -m D:\0_model_llm\lmstudio-community\gemma-4-12B-it-QAT-GGUF\gemma-4-12B-it-QAT-Q4_0.gguf -c 8192 -ngl 99 --host 127.0.0.1 --port 8080
+```
+
+Папка `lmstudio-community` — организация на Hugging Face, выложившая веса, а не
+программа LM Studio: веса нужны. Два поля запроса продукт шлёт сам
+(`config/model.json`, `extra_body`): `enable_thinking: false` — иначе «думание»
+съедает ответ — и `cache_prompt: false` — иначе ответ зависит от предыдущего
+запроса (`WORKLOG/2026-09-25-z57-sh1b-result.md`). **Разовые скрипты замера
+обязаны слать оба.**
+
 ## Запуск
 
 ```
