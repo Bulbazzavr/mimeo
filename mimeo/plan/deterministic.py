@@ -427,10 +427,12 @@ def _forced_parts(
         best = None
         for n, section in enumerate(sections):
             if section.kind == "agenda":
-                # Оглавление добором не делится: у колоды модели оно часто самый
-                # крупный раздел (до двенадцати пунктов), и добор делил бы его
+                # Оглавление добором не делится: оно бывает самым крупным
+                # разделом (до двенадцати пунктов), и добор делил бы его
                 # первым — два слайда «Содержание» подряд хуже недобора
-                # (`PLAN-9.0`, Ш3, проверка 1, п. 4).
+                # (`PLAN-9.0`, Ш3, проверка 1, п. 4). Колоду модели, где
+                # оглавление и живёт, `plan_deck` с Ш5 не добирает вовсе;
+                # правило — свойство оглавления, а не пути, и держится здесь.
                 continue
             atoms = len(_atoms(section))
             elective_max = _elective_limit(section)
@@ -460,10 +462,12 @@ def plan_deck(
 ) -> DeckPlan:
     """План колоды. `target` — желаемое число слайдов (`Z-35`, `PLAN-2.3`).
 
-    Цель достигается **только доборот вниз**: если слайдов вышло меньше нижней
-    границы, разделы с двумя и более атомами переразмещаются с принудительным
-    дроблением. Перебор сверху лечится раньше — подгонкой числа тем в
-    `prose.py`, до планирования (`PLAN-2.3`, дыра 2).
+    Цель достигается **только добором вниз**: если слайдов вышло меньше нижней
+    границы, разделы, которые можно поделить по две единицы на часть,
+    переразмещаются с принудительным дроблением (`_forced_parts`). **Колоду
+    модели добор не трогает** — число слайдов решила она (`PLAN-9.0`, Ш5).
+    Перебор сверху лечится раньше — подгонкой числа тем в `prose.py`, до
+    планирования (`PLAN-2.3`, дыра 2).
     """
     patterns = library.patterns
     # Паспорт конфигов снимается один раз на план, а не на каждый возврат:
@@ -503,7 +507,17 @@ def plan_deck(
     #: видит — `empty_required` в `matching.py` исключает `image`.
     blank_used: list[tuple[int, str, int, int]] = []
     fired: set[str] = set()
-    forced = _forced_parts(sections, patterns, target, tuning=tuning, exclusive=exclusive)
+    # Колоду модели ради объёма не добираем (`PLAN-9.0`, Ш5; `ADR-0023`, «Что
+    # уточнил Ш5»; решение пользователя 25 сентября). Число слайдов решила
+    # модель, а добор резал её смысловой слайд: ряд из шести месяцев — на три
+    # слайда по два, и на всех трёх выданных шаблонах это хуже колоды без
+    # добора (`WORKLOG/2026-09-25-z57-sh5-baseline.md`). Делится только слайд,
+    # который целиком не встаёт ни в одну раскладку (`_place`). `mixed` у
+    # документа ставит только `outline.to_doc` — принятому ответу модели.
+    by_model = doc.planner == "mixed"
+    forced = {} if by_model else _forced_parts(
+        sections, patterns, target, tuning=tuning, exclusive=exclusive
+    )
     used: dict[str, int] = {}
     for n, section in enumerate(sections):
         placed, parts = _place(
@@ -525,10 +539,9 @@ def plan_deck(
             )
             continue
         if parts > 1:
-            warnings.append(
-                f"Раздел «{section.heading or section.id}» разбит на {parts} слайда: "
-                f"целиком он не помещался ни в одну раскладку."
-            )
+            warnings.append(_split_note(
+                section.heading or section.id, parts, forced.get(section.id, 1), target
+            ))
         for part, (chunk, m) in enumerate(placed, 1):
             used[m.pattern_id] = used.get(m.pattern_id, 0) + 1
             # Раскладку со слотом под код или пиктограммы ранг штрафует, но не
@@ -663,7 +676,7 @@ def plan_deck(
         )
 
     if target:
-        warnings.append(_volume_note(len(slides), target, forced, len(patterns)))
+        warnings.append(_volume_note(len(slides), target, forced, len(patterns), by_model))
 
     return DeckPlan(
         source=PlanSource(doc.name, design_system_sha256, library.source.sha256, configs),
@@ -674,14 +687,54 @@ def plan_deck(
     )
 
 
+def _plural(n: int, one: str, few: str, many: str) -> str:
+    """«1 слайд», «3 слайда», «5 слайдов» — то же правило, что у
+    `verify.report.plural`; стадия PLAN от VERIFY не зависит, поэтому своя копия.
+    Частей у раздела бывает до `_MAX_PARTS` = 6."""
+    if n % 10 == 1 and n % 100 != 11:
+        return one
+    if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
+        return few
+    return many
+
+
+def _split_note(
+    name: str, parts: int, ordered: int, target: tuple[int, int] | None
+) -> str:
+    """Почему раздел разошёлся на несколько слайдов — у каждого пути деления
+    своя причина (`PLAN-9.0`, Ш5). `ordered` — сколько частей велел добор
+    (`_forced_parts`), 1 — не велел; велеть он может только при заданной цели.
+
+    До Ш5 здесь стояло одно «целиком он не помещался» на всё, и при доборе это
+    была неправда: план без цели ставил тот же раздел на один слайд
+    (`WORKLOG/2026-09-25-z57-sh5-baseline.md`, § 1). «Ради объёма» верно и
+    тогда, когда целиком раздел не встал бы: добор оставляет свои части, только
+    если слайдов от них прибыло, — значит, без него частей было меньше.
+    """
+    slides = f"{parts} {_plural(parts, 'слайд', 'слайда', 'слайдов')}"
+    if ordered <= 1:
+        return (f"Раздел «{name}» разбит на {slides}: целиком он не помещался "
+                f"ни в одну раскладку.")
+    if parts == ordered:
+        return (f"Раздел «{name}» разбит на {slides} ради объёма: без деления "
+                f"слайдов выходило меньше {target[0]}.")
+    pieces = f"{ordered} {_plural(ordered, 'часть', 'части', 'частей')}"
+    return (f"Раздел «{name}» разбит на {slides}: добор объёма просил {pieces}, "
+            f"но для частей такого размера раскладки не нашлось.")
+
+
 def _volume_note(
-    got: int, target: tuple[int, int], forced: dict[str, int], patterns: int
+    got: int, target: tuple[int, int], forced: dict[str, int], patterns: int,
+    by_model: bool = False,
 ) -> str:
     """Что вышло с объёмом и почему.
 
     Недобор и перебор — разные новости, и причины у них разные: мало контента,
     бедный шаблон или раздел, не влезший в раскладку целиком. Одинаковое «цель не
     достигнута» на все случаи было бы отговоркой (`PLAN-2.3`, второй проход).
+
+    У колоды модели недобор — её решение: слайды она построила сама, и код их
+    ради объёма не делит (`PLAN-9.0`, Ш5).
     """
     low, high = target
     want = f"{low}" if low == high else f"{low}–{high}"
@@ -697,6 +750,12 @@ def _volume_note(
             )
         return note
     if got < low:
+        if by_model:
+            return (
+                f"Целевой объём {want} слайдов не достигнут: вышло {got}. "
+                f"Слайды колоды построила модель, и код их ради объёма не делит: "
+                f"половина таблицы или списка на отдельном слайде хуже недобора."
+            )
         if got >= patterns:
             return (
                 f"Целевой объём {want} слайдов не достигнут: вышло {got}. "

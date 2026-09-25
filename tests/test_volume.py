@@ -178,12 +178,13 @@ def test_elective_split_floor_is_two_units_per_part():
     assert _elective_limit(section(7)) == 3
 
 
-def _roomy_pattern(pattern_id: str):
+def _roomy_pattern(pattern_id: str, items: int = 9):
     """Раскладка, в которую влезает что угодно: заголовок и просторный список.
 
     Нужна, чтобы проверить потолок. На фикстурных шаблонах добор не срабатывает
     вовсе — раздел и так расходится на части по тесноте, — и проверка потолка
-    через них была бы непроваливаемой.
+    через них была бы непроваливаемой. `items` — сколько пунктов берёт список:
+    тесная раскладка нужна тестам причины деления (Ш5).
     """
     from mimeo.analyze.deck import Rect
     from mimeo.model import Capacity, Pattern, Slot
@@ -201,7 +202,7 @@ def _roomy_pattern(pattern_id: str):
     return Pattern(
         id=pattern_id, kind="bullets", donor_part=f"/ppt/slides/{pattern_id}.xml",
         donor_index=0,
-        slots=(slot("s01", "title", "text", None), slot("s02", "bullet_list", "list", 9)),
+        slots=(slot("s01", "title", "text", None), slot("s02", "bullet_list", "list", items)),
         members=(0,), cohesion=None, donor_reason="тест", source="slides",
     )
 
@@ -250,3 +251,98 @@ def test_elective_split_never_makes_a_one_atom_slide(library):
     ]
     repeated = len(headings) - len(set(headings))
     assert repeated <= 1, f"одинаковых заголовков {repeated}: {headings}"
+
+
+# --- колода модели и причина деления (`PLAN-9.0`, Ш5) -----------------------
+
+
+def _section(sid: str, units: int):
+    from mimeo.plan.content import ContentBlock, ContentSection
+
+    return ContentSection(
+        id=sid, heading=f"Тема {sid}",
+        blocks=(ContentBlock(id=f"b{sid}", kind="list",
+                             items=tuple(f"тезис {sid}-{k}" for k in range(units)), text=" "),),
+    )
+
+
+def _plan(sections, patterns, target=None, planner="deterministic"):
+    """План по разделам без шаблона: `plan_deck` берёт от библиотеки только
+    раскладки и хэш источника."""
+    from types import SimpleNamespace
+
+    from mimeo.plan.content import ContentDoc
+
+    doc = ContentDoc(name="t", sections=list(sections), planner=planner)
+    library = SimpleNamespace(patterns=tuple(patterns), source=SimpleNamespace(sha256="t"))
+    return plan_deck(doc, library, "t", target=target)
+
+
+def _split_notes(plan) -> list[str]:
+    return [w for w in plan.warnings if w.startswith("Раздел «")]
+
+
+ROOMY = tuple(_roomy_pattern(f"p{i:02d}") for i in range(30))
+
+
+def test_model_deck_is_not_topped_up():
+    """Колоду модели код ради объёма не добирает: число слайдов решила она, а
+    добор резал её таблицу — шесть месяцев на три слайда по два, и растр на
+    всех трёх выданных шаблонах хуже колоды без добора (решение пользователя
+    25 сентября; `WORKLOG/2026-09-25-z57-sh5-baseline.md`). Тот же документ без
+    модели добор делит — держит именно признак колоды модели."""
+    sections = [_section("a", 6), _section("b", 2)]
+    by_code = _plan(sections, ROOMY, (4, 6))
+    by_model = _plan(sections, ROOMY, (4, 6), planner="mixed")
+
+    assert len(by_code.slides) == 4 and any(s.origin_of for s in by_code.slides)
+    assert len(by_model.slides) == 2 and not any(s.origin_of for s in by_model.slides)
+    assert not _split_notes(by_model)
+    volume = [w for w in by_model.warnings if w.startswith("Целевой объём")]
+    assert volume and "не достигнут: вышло 2" in volume[0]
+    assert "построила модель" in volume[0], volume
+
+
+def test_model_deck_still_splits_what_does_not_fit():
+    """Вынужденное деление у колоды модели остаётся: без него раздел не встал
+    бы никуда (`rank` отдаёт только пригодные раскладки)."""
+    plan = _plan([_section("a", 12)], ROOMY, (1, 6), planner="mixed")
+    assert [s.origin_of for s in plan.slides] == [2, 2]
+    assert _split_notes(plan) == [
+        "Раздел «Тема a» разбит на 2 слайда: целиком он не помещался ни в одну раскладку."
+    ]
+
+
+def _exclusive_and_tight():
+    """Просторная раскладка с исключительным донором (`Z-44`: в колоде один раз)
+    и тесная — на два пункта. Добор велит две части, вторая уже не встаёт в
+    занятую просторную, а в тесную — только по два пункта."""
+    from dataclasses import replace
+
+    return (replace(_roomy_pattern("p00"), exclusive=True), _roomy_pattern("p01", items=2))
+
+
+@pytest.mark.parametrize("sections, patterns, target, note", [
+    ([_section("a", 12)], ROOMY, None,
+     "Раздел «Тема a» разбит на 2 слайда: целиком он не помещался ни в одну раскладку."),
+    ([_section("a", 6), _section("b", 2)], ROOMY, (4, 6),
+     "Раздел «Тема a» разбит на 3 слайда ради объёма: без деления слайдов выходило меньше 4."),
+    ([_section("a", 6)], _exclusive_and_tight(), (3, 5),
+     "Раздел «Тема a» разбит на 3 слайда: добор объёма просил 2 части, но для частей "
+     "такого размера раскладки не нашлось."),
+], ids=["fit", "top-up", "top-up-and-fit"])
+def test_split_note_names_its_own_reason(sections, patterns, target, note):
+    """Предупреждение о делении называет свою причину (`PLAN-9.0`, Ш5; приёмка 8).
+    До Ш5 «целиком он не помещался» стояло при любом делении, и при доборе это
+    была неправда: без цели тот же раздел вставал на один слайд."""
+    assert _split_notes(_plan(sections, patterns, target)) == [note]
+
+
+def test_plural_of_slides_and_parts():
+    from mimeo.plan.deterministic import _plural
+
+    forms = ("слайд", "слайда", "слайдов")
+    assert [_plural(n, *forms) for n in (1, 2, 4, 5, 6, 11, 12, 21, 22, 25)] == [
+        "слайд", "слайда", "слайда", "слайдов", "слайдов", "слайдов", "слайдов",
+        "слайд", "слайда", "слайдов",
+    ]
