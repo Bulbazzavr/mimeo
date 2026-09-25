@@ -14,8 +14,8 @@
       "sha256": "9c4ad7c793c8c9c11c06ecb1739022ed6f57adcd009ad17598203c74ecc2846b"
     },
     "outline.json": {
-      "version": "1.1",
-      "sha256": "da5ea01e4bade81882422d474ace0e3c0495787687a2ceefe82de35c55e71178"
+      "version": "1.1.1",
+      "sha256": "dddc5fb9140ecfb40b037553597aeab20f0d1b2432dbf9eab62e1a3876f18607"
     },
     "prompt.json": {
       "version": "1.0",
