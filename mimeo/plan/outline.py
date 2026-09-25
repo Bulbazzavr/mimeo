@@ -31,6 +31,15 @@ KINDS = (
     "metric", "quote", "table", "image_text", "closing",
 )
 
+#: Те же типы словами — как их называет строка `kind` промпта. Нужны там, где
+#: тип читает человек: в предупреждении плана об идеях картинок (Ш6).
+KIND_WORDS = {
+    "cover": "обложка", "agenda": "оглавление", "section": "разделитель",
+    "text": "абзац", "bullets": "список", "cards": "равные пункты",
+    "two_column": "сравнение", "metric": "крупное число", "quote": "цитата",
+    "table": "таблица", "image_text": "картинка с текстом", "closing": "финал",
+}
+
 #: Роли слайда пишутся только в `outline.json` рядом с колодой: омоним «модель»
 #: их путает (замер 23 сентября, часть 4), сверка с эталоном — дело `Z-37`.
 ROLES = (
@@ -131,6 +140,48 @@ def system_prompt(mode: str, slides_min: int, slides_max: int, path: str | None 
         common.replace("{slides_min}", str(slides_min))
         .replace("{slides_max}", str(slides_max))
         .replace("{theses}", theses[mode])
+    )
+
+
+# --- Какие идеи картинок идут в план колоды (`PLAN-9.0`, Ш6) -----------------
+#
+# Замер 25 сентября (`WORKLOG/2026-09-25-z57-sh6-baseline.md`): из 63 идей
+# промпта 1.1 нарисовать можно 8, и все восемь — на слайдах text, bullets и
+# cards; на обложке, числах, таблице, сравнении и цитате — ни одной из 22: там
+# модель просит график или значок, а это нативные объекты (`Z-32`). Отбор
+# «по типу, затем по порядку» терял один сюжет из восьми, «по порядку» —
+# четыре. Потолок — страховка на чужом тексте: главное держит промпт.
+
+#: Запасные значения — те же, что `image_ideas` в `config/outline.json`; сверяет тест.
+_IDEA_KINDS = ("text", "bullets", "cards", "image_text")
+_SLIDES_PER_IDEA = 3
+
+
+@dataclass(frozen=True)
+class IdeaRules:
+    """Типы слайда, на которых идея может стоять, и потолок: не больше одной
+    идеи на `slides_per_idea` слайдов колоды."""
+
+    kinds: tuple[str, ...] = _IDEA_KINDS
+    slides_per_idea: int = _SLIDES_PER_IDEA
+
+
+def idea_rules(path: str | None = None) -> IdeaRules:
+    """Правила отбора идей из `config/outline.json`. Нет файла или ключа —
+    встроенные значения, как у промпта; тип не из `KINDS` не принимается."""
+    path = path or config_path()
+    try:
+        with open(path, encoding="utf-8") as f:
+            raw = json.load(f).get("image_ideas") or {}
+    except FileNotFoundError:
+        return IdeaRules()
+    kinds = raw.get("kinds")
+    per = raw.get("slides_per_idea")
+    good_kinds = isinstance(kinds, list) and kinds and all(k in KINDS for k in kinds)
+    return IdeaRules(
+        kinds=tuple(kinds) if good_kinds else _IDEA_KINDS,
+        slides_per_idea=per if isinstance(per, int) and not isinstance(per, bool) and per >= 1
+        else _SLIDES_PER_IDEA,
     )
 
 

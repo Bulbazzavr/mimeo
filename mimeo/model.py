@@ -492,6 +492,11 @@ class PlannedSlide:
     origin_part: int | None = None
     origin_of: int | None = None
     notes: str | None = None
+    #: Сюжет иллюстрации — идея модели для генератора картинок (`PLAN-9.0`, Ш6;
+    #: `ADR-0023`, п. 1). Отбирает её `plan_deck`; сборка поле не читает, рисует
+    #: генератор отдельным планом (`Z-28`). `None` — идеи у слайда нет, и тогда
+    #: ключа нет и в JSON: план пути без модели не меняется ни ключом.
+    image_idea: str | None = None
 
     def to_json(self) -> dict:
         origin = None
@@ -501,7 +506,7 @@ class PlannedSlide:
                 "part": self.origin_part,
                 "of": self.origin_of,
             }
-        return {
+        out = {
             "index": self.index,
             "pattern_id": self.pattern_id,
             "fills": [f.to_json() for f in self.fills],
@@ -509,6 +514,9 @@ class PlannedSlide:
             "origin": origin,
             "notes": self.notes,
         }
+        if self.image_idea:
+            out["image_idea"] = self.image_idea
+        return out
 
 
 @dataclass(frozen=True)

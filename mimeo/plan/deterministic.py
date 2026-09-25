@@ -573,6 +573,10 @@ def plan_deck(
                 )
             )
 
+    # Идеи картинок модели — в план колоды, не больше одной на три слайда
+    # (`PLAN-9.0`, Ш6). У пути без модели идей нет, и план не меняется ни ключом.
+    slides, ideas_note = _pick_ideas(doc, slides)
+
     # Донор с исключительными частями занят — и это надо сказать, а не
     # подразумевать: иначе «почему тут другая раскладка» останется загадкой
     # (`PLAN-6.1`, Ш1.3).
@@ -675,6 +679,9 @@ def plan_deck(
             f"не нашлось (Z-49)."
         )
 
+    if ideas_note:
+        warnings.append(ideas_note)
+
     if target:
         warnings.append(_volume_note(len(slides), target, forced, len(patterns), by_model))
 
@@ -684,6 +691,70 @@ def plan_deck(
         planner=doc.planner,
         unplaced=tuple(unplaced),
         warnings=tuple(warnings),
+    )
+
+
+def _pick_ideas(
+    doc: ContentDoc, slides: list[PlannedSlide], rules=None
+) -> tuple[list[PlannedSlide], str | None]:
+    """Какие идеи картинок модели идут в план колоды (`PLAN-9.0`, Ш6).
+
+    Идея встаёт на **первый** слайд своего раздела — у поделённого раздела она
+    одна на все части. Не встаёт: на типах слайда вне `rules.kinds` (обложка,
+    данные, служебные — там сюжетов в замере не было ни одного из 22, модель
+    просила график или значок); на разделе с картинкой автора — картинка уже
+    есть (`Z-28`, «Когда НЕ генерируем»); сверх потолка — не больше одной на
+    `rules.slides_per_idea` слайдов колоды, по порядку колоды. Порядок, а не
+    выбор «лучших»: так в замере терялся один сюжет из восьми
+    (`WORKLOG/2026-09-25-z57-sh6-baseline.md`, § 4).
+
+    Всё, что не взято, названо в предупреждении — молча идея не пропадает.
+    """
+    ideas = [s for s in doc.sections if s.image_idea.strip()]
+    if not ideas:
+        return slides, None
+    from .outline import KIND_WORDS, idea_rules
+
+    rules = rules or idea_rules()
+    first: dict[str, int] = {}
+    for i, s in enumerate(slides):
+        first.setdefault(s.origin_section, i)
+    by_kind, with_image, absent, fit = [], [], [], []
+    for s in ideas:
+        if s.kind not in rules.kinds:
+            by_kind.append(s)
+        elif any(b.kind == "image" for b in s.blocks):
+            with_image.append(s)
+        elif s.id not in first:
+            absent.append(s)
+        else:
+            fit.append(s)
+    cap = len(slides) // rules.slides_per_idea
+    kept, over = fit[:cap], fit[cap:]
+    out = list(slides)
+    for s in kept:
+        out[first[s.id]] = replace(out[first[s.id]], image_idea=s.image_idea.strip())
+    if not (by_kind or with_image or absent or over):
+        return out, None
+    parts = []
+    if by_kind:
+        words = list(dict.fromkeys(KIND_WORDS.get(s.kind, s.kind or "?") for s in by_kind))
+        parts.append(f"по типу слайда — {len(by_kind)} ({', '.join(words)})")
+    if with_image:
+        parts.append(f"на слайде с картинкой из текста — {len(with_image)}")
+    if absent:
+        parts.append(f"раздела нет в колоде — {len(absent)}")
+    if over:
+        names = ", ".join(f"«{s.heading or s.id}»" for s in over)
+        parts.append(f"сверх потолка — {len(over)}: {names}")
+    per = rules.slides_per_idea
+    return out, (
+        f"Идеи картинок: от модели {len(ideas)}, в план колоды взято {len(kept)} — не больше "
+        f"одной на {per} {_plural(per, 'слайд', 'слайда', 'слайдов')} (потолок {cap} при "
+        f"{len(slides)} {_plural(len(slides), 'слайде', 'слайдах', 'слайдах')}). Не взяты: "
+        f"{'; '.join(parts)}. Идея остаётся там, где картинку можно нарисовать и она не спорит "
+        f"с данными: графики, таблицы и значки — нативные объекты (Z-32), а идеи нарисует "
+        f"генератор отдельным планом (Z-28; PLAN-9.0, Ш6)."
     )
 
 
