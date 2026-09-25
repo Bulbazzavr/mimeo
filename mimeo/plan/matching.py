@@ -255,7 +255,27 @@ class Match:
 
 
 def preferred_kinds(section: ContentSection) -> tuple[str, ...]:
-    """Какие раскладки просит этот кусок контента. Первая — самая подходящая."""
+    """Какие раскладки просит этот кусок контента. Первая — самая подходящая.
+
+    **Тип слайда от модели — довод, а не приказ** (`ADR-0023`, п. 3; `PLAN-9.0`,
+    Ш3). Он встаёт первым, только если он уже среди видов, которые содержание
+    раздела способно заполнить: под «metric» и «table» модель содержимого не
+    даёт — тезисы у неё текстом, — и бонус увёл бы текст на макет с пустой
+    таблицей или числами донора. Замер: так было бы у 18 слайдов из 106
+    (`WORKLOG/2026-09-25-z57-sh3-baseline.md`, § 6). Новой величины нет:
+    та же лестница 0.40 / 0.18. Оглавление код собирает сам, и у заказанного
+    оглавления его вид — первый всегда. У пути без модели `kind` пуст, и ответ
+    тот же, что до Ш3.
+    """
+    derived = _derived_kinds(section)
+    ordered = section.kind
+    if ordered == "agenda" or (ordered and ordered in derived):
+        return (ordered,) + tuple(k for k in derived if k != ordered)
+    return derived
+
+
+def _derived_kinds(section: ContentSection) -> tuple[str, ...]:
+    """Виды раскладок, которые просит само содержание раздела."""
     kinds = section.kinds()
     lists = [b for b in section.blocks if b.kind == "list"]
 

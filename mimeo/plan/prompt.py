@@ -143,6 +143,14 @@ class Request:
     schema: dict
     section_id: str
     candidates: tuple[str, ...]
+    #: Имя схемы в `json_schema`, имя и описание инструмента в `tool_call`.
+    #: Умолчания — прежнего контракта (`ADR-0010`); запрос колоды (`ADR-0023`)
+    #: зовёт схему `deck`, как в замере. В ключ кэша имена не входят, а на
+    #: ответ не влияют: `llama-server` дал те же ответы при `slide_plan` и
+    #: `deck`, 10 из 10 (`WORKLOG/2026-09-25-z57-sh3-baseline.md`, § 2).
+    name: str = "slide_plan"
+    tool: str = "place_slide"
+    purpose: str = "Разложить кусок контента по слотам выбранной раскладки."
 
     def as_messages(self) -> list[dict]:
         return [

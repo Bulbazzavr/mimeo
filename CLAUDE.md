@@ -362,10 +362,13 @@ ls samples/*.pptx || python tools/fetch_samples.py samples
   Режимов три: `off`, **`cache` — по умолчанию**, `on`. В режиме `cache`
   продукт читает коммиченные ответы и **не делает ни одного сетевого запроса**:
   эксперт без видеокарты обязан получить наш результат, а не тихо другой
-  (критерий 2). **Сегодня читать нечего:** сборка модель не зовёт, первый
-  потребитель — `Z-57` (`PLAN-9.0`). Сеть включается руками, и по-настоящему — только в
-  `tools/llm_cache.py`. Отдельно: `tools/bench_models.py` и `tools/llm_probe.py`
-  ходят в сеть всегда — это инструменты, не продукт.
+  (критерий 2). **С 25 сентября сборка зовёт модель** (`Z-57`, `PLAN-9.0`,
+  Ш3): для сплошного текста, одним запросом на колоду, в сеть — только с
+  `--llm on` и только при промахе кэша. **Кэш колод пока пуст** (наполнит Ш8),
+  поэтому по умолчанию колода собирается путём без модели, и сводка говорит это
+  словами. `tools/llm_cache.py` — прежнего контракта (`ADR-0010`), сборке не
+  нужен. Отдельно: `tools/bench_models.py` и `tools/llm_probe.py` ходят в сеть
+  всегда — это инструменты, не продукт.
 
 ## Запуск
 
@@ -374,6 +377,7 @@ python -m mimeo build  <шаблон.pptx> <контент.md> --output out/deck
 python -m mimeo build  <шаблон.pptx> <контент.md> --slides 10-15 --output out/deck.pptx
 python -m mimeo build  <шаблон.pptx> <контент.md> --variants 3 --output out/deck.pptx
 python -m mimeo build  <шаблон.pptx> <контент.md> --llm off --text keep   # модель: off|cache|on, текст: keep|improve (PLAN-9.0, Ш2)
+python -m mimeo build  <шаблон.pptx> <контент.md> --llm on    # модель строит колоду (нужен llama-server); что было — <out>/outline.json (Ш3)
 python -m mimeo build  --config config/run.example.json <шаблон.pptx>
 python -m mimeo analyze <шаблон.pptx> -o out --validate
 python -m mimeo plan   <шаблон.pptx> <контент.md> -o out --validate
@@ -957,8 +961,8 @@ python tools/bench_models.py --only 3.5 --no-think     сравнить моде
 python tools/bench_models.py --only gemma --no-think --temp 1.0 --top-p 0.95 --top-k 64 --repeat 3
 python tools/llm_probe.py                             готова ли модель отвечать строгим JSON
 python tools/llm_cache.py list                        что лежит в кэше ответов
-python tools/llm_cache.py fill <шаблон> <контент>     наполнить кэш (единственное место,
-                                                      где продукт зовёт модель)
+python tools/llm_cache.py fill <шаблон> <контент>     наполнить кэш прежнего контракта
+                                                      (ADR-0010); сборке не нужен
 ```
 
 **Обе команды модели — прежнего контракта `ADR-0010`** (запрос на раздел с

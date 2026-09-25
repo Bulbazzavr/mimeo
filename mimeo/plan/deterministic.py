@@ -124,7 +124,10 @@ def _rebuild(section: ContentSection, chunk: list[tuple[str, object]]) -> Conten
             flush()
             blocks.append(payload)  # type: ignore[arg-type]
     flush()
-    return ContentSection(id=section.id, heading=section.heading, blocks=tuple(blocks))
+    # `replace`, а не сборка руками: тип слайда и идея картинки от модели
+    # (`PLAN-9.0`, Ш3) обязаны пережить дробление — иначе вторая часть
+    # заказанного оглавления потеряла бы вид и получила бы штраф.
+    return replace(section, blocks=tuple(blocks))
 
 
 def split(section: ContentSection, parts: int) -> list[ContentSection]:
@@ -192,11 +195,19 @@ def _avoid_repeat(
 
 
 def _positional(
-    matches: list[Match], first: bool, last: bool, tuning: Tuning = DEFAULT_TUNING
+    matches: list[Match],
+    first: bool,
+    last: bool,
+    tuning: Tuning = DEFAULT_TUNING,
+    agenda: bool = False,
 ) -> list[Match]:
     """Место в колоде — тоже довод. Обложка уместна только первой, финал только
     последним, и в середине оба неуместны, как бы ни совпала геометрия.
-    Оглавление неуместно под обычным текстом нигде (`Z-58`)."""
+    Оглавление неуместно под обычным текстом нигде (`Z-58`) — кроме раздела,
+    который и есть оглавление: его заказала модель, пункты собрал код
+    (`agenda`, `PLAN-9.0`, Ш3). Без этого штраф 1.35 при умолчании хоронил бы
+    заказанное оглавление против бонуса вида 0.40
+    (`WORKLOG/2026-09-25-z57-sh3-baseline.md`, § 6)."""
     wanted = "cover" if first else ("closing" if last else None)
     penalty = position_penalty(tuning)
     adjusted = []
@@ -213,7 +224,7 @@ def _positional(
             misplaced = (m.kind == "cover" and not first) or (m.kind == "closing" and not last)
             if misplaced:
                 score -= penalty
-        elif m.kind == "agenda":
+        elif m.kind == "agenda" and not agenda:
             score -= penalty
             reason = f"{m.reason}; это макет оглавления, а оглавления не заказывали"
         adjusted.append(replace(m, score=round(score, 4), reason=reason))
@@ -263,7 +274,10 @@ def _place(
                 first=first and n == 0,
                 last=last and n == len(chunks) - 1,
                 tuning=tuning,
+                agenda=chunk.kind == "agenda",
             )
+            if chunk.kind == "agenda":
+                ranked = [m for m in ranked if _whole_agenda(m, patterns)]
             ranked = _avoid_repeat(ranked, tally, tuning, exclusive, fired)
             if not ranked:
                 placed = []
@@ -273,6 +287,56 @@ def _place(
         if placed:
             return placed, len(chunks)
     return [], 0
+
+
+def _whole_agenda(match: Match, patterns: tuple[Pattern, ...]) -> bool:
+    """Макет оглавления, принявший заказанное оглавление **целиком и без пустых
+    мест** (`PLAN-9.0`, Ш3).
+
+    Растр Ш3 показал оба способа испортить слайд. Оглавление из двенадцати
+    пунктов на обычной раскладке — карточках — читается как иерархия: пункт
+    встаёт подзаголовком соседнего, а два пункта — заголовками групп. А макет
+    оглавления, заполненный не до конца, оставляет пустые номерные плашки:
+    у WorkSpace пять пунктов с «01…05» (`WORKLOG/2026-09-25-z57-sh3-result.md`).
+    Лучше оглавления нет, чем такое.
+    """
+    if match.kind != "agenda" or not match.fits:
+        return False
+    pattern = next((p for p in patterns if p.id == match.pattern_id), None)
+    if pattern is None:
+        return False
+    filled = {f.slot_id for f in match.fills}
+    return not any(
+        s.required and s.content_type != "image" and s.id not in filled for s in pattern.slots
+    )
+
+
+def _drop_unplaceable_agenda(
+    sections: list[ContentSection], patterns: tuple[Pattern, ...], tuning: Tuning
+) -> tuple[list[ContentSection], list[str]]:
+    """Заказанное оглавление, которому нет макета по `_whole_agenda`, в колоду не
+    идёт — и об этом сказано. Иначе `_place` не нашёл бы ему места, и отчёт
+    назвал бы оглавление потерянным содержанием, а оно не содержание текста:
+    его пункты собрал код из заголовков колоды."""
+    kept: list[ContentSection] = []
+    notes: list[str] = []
+    for section in sections:
+        if section.kind == "agenda" and not any(
+            _whole_agenda(m, patterns) for m in rank(section, patterns, tuning)
+        ):
+            items = sum(b.units for b in section.blocks)
+            why = (
+                "ни один макет оглавления этого шаблона не принимает их целиком и без пустых мест"
+                if any(p.kind == "agenda" for p in patterns)
+                else "в шаблоне нет макета оглавления"
+            )
+            notes.append(
+                f"Оглавление, заказанное моделью (пунктов: {items}), в колоду не вошло: {why}. "
+                f"На обычной раскладке пункты читались бы как иерархия (PLAN-9.0, Ш3)."
+            )
+            continue
+        kept.append(section)
+    return kept, notes
 
 
 def _with_cover(doc: ContentDoc) -> list[ContentSection]:
@@ -362,6 +426,12 @@ def _forced_parts(
         # по порядку колоды.
         best = None
         for n, section in enumerate(sections):
+            if section.kind == "agenda":
+                # Оглавление добором не делится: у колоды модели оно часто самый
+                # крупный раздел (до двенадцати пунктов), и добор делил бы его
+                # первым — два слайда «Содержание» подряд хуже недобора
+                # (`PLAN-9.0`, Ш3, проверка 1, п. 4).
+                continue
             atoms = len(_atoms(section))
             elective_max = _elective_limit(section)
             if elective_max >= 2 and forced.get(section.id, 1) < elective_max:
@@ -409,11 +479,14 @@ def plan_deck(
         return DeckPlan(
             source=PlanSource(doc.name, design_system_sha256, library.source.sha256, configs),
             slides=(),
+            planner=doc.planner,
             unplaced=tuple(s.id for s in doc.sections),
             warnings=tuple(warnings) + ("В библиотеке нет ни одного паттерна: планировать не на что.",),
         )
 
     sections = _with_cover(doc)
+    sections, agenda_notes = _drop_unplaceable_agenda(sections, patterns, tuning)
+    warnings.extend(agenda_notes)
     # Доноры, которые нельзя ставить в колоду дважды (`Z-44`). Множество
     # считается один раз и передаётся вниз: пересчитывать его на каждом
     # разделе значило бы звать `pkg.rels` в цикле.
@@ -595,7 +668,7 @@ def plan_deck(
     return DeckPlan(
         source=PlanSource(doc.name, design_system_sha256, library.source.sha256, configs),
         slides=tuple(slides),
-        planner="deterministic",
+        planner=doc.planner,
         unplaced=tuple(unplaced),
         warnings=tuple(warnings),
     )

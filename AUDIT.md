@@ -49,6 +49,7 @@ python tools/audit_doc.py --write
 | [`tests/test_mce_prefixes.py`](tests/test_mce_prefixes.py) | 5 | Пространства имён Markup Compatibility переживают пересериализацию. |
 | [`tests/test_model_client.py`](tests/test_model_client.py) | 35 | Клиент к модели: транспорт, кэш, откат. `Z-07`, `PLAN-2.6`, шаги 1, 2, 4. |
 | [`tests/test_model_flags.py`](tests/test_model_flags.py) | 9 | Флаги модели `--llm` и `--text` (`PLAN-9.0`, Ш2; `ADR-0021`, `ADR-0023`). |
+| [`tests/test_model_path.py`](tests/test_model_path.py) | 26 | Путь модели в сборке (`PLAN-9.0`, Ш3; `ADR-0023`). |
 | [`tests/test_occlusion.py`](tests/test_occlusion.py) | 23 | Ёмкость слота знает, что лежит поверх него. `Z-48`, `PLAN-7.8`. |
 | [`tests/test_outline.py`](tests/test_outline.py) | 14 | Промпт и схема ответа модели, строящей колоду (`ADR-0023`, `PLAN-9.0`, Ш1). |
 | [`tests/test_paragraph_order.py`](tests/test_paragraph_order.py) | 6 | Порядок детей `a:p` по схеме DrawingML: прогоны до `a:endParaRPr`. |
@@ -71,7 +72,7 @@ python tools/audit_doc.py --write
 | [`tests/test_volume.py`](tests/test_volume.py) | 15 | Объём колоды: 10–15 слайдов или сколько задали. `Z-35`, план `PLAN-2.3`. |
 | [`tests/test_web_boundary.py`](tests/test_web_boundary.py) | 5 | Граница веб-слоя (`Z-29`, `PLAN-8.0`, `SPEC-WEB` раздел 2). |
 | [`tests/test_web_design.py`](tests/test_web_design.py) | 10 | Экран «что вынули из вашего шаблона» (`Z-29`, `PLAN-8.1`, часть A). |
-| **всего** | **565** | в 36 файлах |
+| **всего** | **591** | в 37 файлах |
 
 <!-- /порождается -->
 

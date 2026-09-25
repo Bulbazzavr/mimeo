@@ -64,6 +64,11 @@ class Endpoint:
     #: обрезали бы.
     max_tokens: int = 4000
     context_tokens: int = 8192
+    #: Знаков на токен — нижняя оценка для порога длины текста (`PLAN-9.0`,
+    #: Ш3): токенизатор есть только у сервера, а порог нужен и без сети. Замер
+    #: 25 сентября: проза 3.4–3.7, текст с числами 2.39 — цифры дробятся мельче
+    #: (`WORKLOG/2026-09-25-z57-sh3-baseline.md`, § 4).
+    chars_per_token: float = 2.3
 
     @property
     def chat_url(self) -> str:
@@ -154,6 +159,7 @@ def load_config(path: str | None = None) -> ClientConfig:
         budget_sec=float(ep.get("budget_sec") or default.endpoint.budget_sec),
         max_tokens=int(ep.get("max_tokens") or default.endpoint.max_tokens),
         context_tokens=int(ep.get("context_tokens") or default.endpoint.context_tokens),
+        chars_per_token=float(ep.get("chars_per_token") or default.endpoint.chars_per_token),
     )
     store = _strip_comments(raw.get("cache") or {})
     return ClientConfig(
@@ -205,21 +211,22 @@ def chat_body(request: Request, config: ClientConfig) -> dict:
     if request.mode is Mode.JSON_SCHEMA:
         body["response_format"] = {
             "type": "json_schema",
-            "json_schema": {"name": "slide_plan", "schema": request.schema, "strict": True},
+            "json_schema": {"name": request.name, "schema": request.schema, "strict": True},
         }
     elif request.mode is Mode.TOOL_CALL:
         body["tools"] = [
             {
                 "type": "function",
                 "function": {
-                    "name": "place_slide",
-                    "description": "Разложить кусок контента по слотам выбранной раскладки.",
+                    "name": request.tool,
+                    "description": request.purpose,
                     "parameters": request.schema,
                 },
             }
         ]
-        body["tool_choice"] = {"type": "function", "function": {"name": "place_slide"}}
-    # FREE_TEXT: схема уже вписана в текст запроса самим `build_request`.
+        body["tool_choice"] = {"type": "function", "function": {"name": request.tool}}
+    # FREE_TEXT: схема уже вписана в текст запроса тем, кто его собрал
+    # (`build_request`, `outline.request`).
     body.update(config.extra_body)
     return body
 

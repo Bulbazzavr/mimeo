@@ -129,10 +129,14 @@ def test_diagnostics_carry_what_the_engine_says_out_loud(tmp_path):
 @needs_sample
 def test_without_the_flag_nothing_is_written(tmp_path):
     """Флаг добавлен, поведение по умолчанию не изменилось: девять сдаточных
-    колод собираются этой же командой."""
+    колод собираются этой же командой.
+
+    Рядом с колодой с Ш3 `PLAN-9.0` лежит `outline.json` — запись пути модели,
+    которую `ADR-0023` (п. 5) велит класть всегда; отчёта сборки — нет."""
     out = tmp_path / "out"
     _run(["build", SAMPLE, CONTENT, "-o", str(out), "--output", str(out / "deck.pptx"), "-q"])
-    assert not list(out.glob("*.json")), "без --report отчёт писаться не должен"
+    written = sorted(p.name for p in out.glob("*.json"))
+    assert written == ["outline.json"], "без --report отчёт писаться не должен"
 
 
 @needs_sample

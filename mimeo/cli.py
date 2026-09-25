@@ -15,7 +15,7 @@ from .analyze import Analysis, analyze_template
 from .model import DeckPlan, DesignSystem, PatternLibrary
 from .compose import build as compose_deck
 from .compose import inspect as inspect_package
-from .plan import load_content, plan_deck
+from .plan import load_content, outline, plan_deck
 from .plan.client import Access
 from .plan.client import load_config as load_model_config
 from .plan.outline import MODES
@@ -44,28 +44,26 @@ LLM_CHOICES = tuple(a.value for a in Access)
 TEXT_CHOICES = MODES
 
 
-def model_line(prose: bool, access: str, chosen: bool, text: str | None) -> str:
-    """Каким путём собран текст колоды — словами. ИКР `PLAN-9.0`: «без модели
-    сборка идёт прежним путём и говорит об этом словами».
+def model_path(args, doc, target):
+    """Путь модели для этой сборки (`PLAN-9.0`, Ш3; `ADR-0023`) и его запись.
 
-    Причина «модель ещё не строит» живёт до Ш3: там её сменят настоящие — ответ
-    из кэша, промах кэша, отказ проверок, отказ сервера.
+    Один вызов на сборку — и на `--variants N` тоже: запрос от политики
+    варианта не зависит, и три вёрстки берут одно содержание. Возвращает
+    исход и путь к `<out>/outline.json`; документ исхода идёт в вёрстку —
+    колода модели или документ пути без модели с заметкой почему.
     """
-    source = "задано при запуске" if chosen else "умолчание config/model.json"
-    ignored = f"; --text {text} не применяется" if text else ""
-    if not prose:
-        return f"модель      не нужна: вход размечен, структуру задал автор (Z-08){ignored}"
-    if access == Access.OFF.value:
-        return f"модель      выключена ({source}): колода собрана путём без модели{ignored}"
-    mode = f", режим текста {text}" if text else ""
-    return (f"модель      {access} ({source}{mode}): колоду модель ещё не строит — "
-            "подключение в Ш3 PLAN-9.0 (Z-57); собрано путём без модели")
+    outcome = outline.run(
+        args.content, doc,
+        access=getattr(args, "llm", None), text_mode=getattr(args, "text", None),
+        target=target, config=load_model_config(),
+    )
+    return outcome, outline.write_record(args.out, outcome.record)
 
 
-def _model_line(args, doc) -> str:
-    llm = getattr(args, "llm", None)
-    access = llm or load_model_config().access.value
-    return model_line(bool(doc.origin), access, bool(llm), getattr(args, "text", None))
+def _model_line(outcome, record_path) -> str:
+    """Строка сводки: каким путём собран текст колоды и почему — ИКР `PLAN-9.0`
+    («без модели сборка идёт прежним путём и говорит об этом словами»)."""
+    return f"модель      {outcome.line}; подробно — {_slash(record_path)}"
 
 
 def _summary(ds: DesignSystem, elapsed: float) -> str:
@@ -240,8 +238,9 @@ def cmd_plan(args):
     analysis = analyze_template(args.template)
     target = parse_slides(getattr(args, "slides", None))
     doc = load_content(args.content, target=target)
+    outcome, record_path = model_path(args, doc, target)
     plan = plan_deck(
-        doc, analysis.patterns, analysis.design_system.source.sha256, target=target
+        outcome.doc, analysis.patterns, analysis.design_system.source.sha256, target=target
     )
     elapsed = time.perf_counter() - started
 
@@ -262,7 +261,7 @@ def cmd_plan(args):
 
     if not args.quiet:
         print(_plan_summary(plan, analysis.patterns, elapsed))
-        print(_model_line(args, doc))
+        print(_model_line(outcome, record_path))
         print(f"записано    {target}")
     return 0
 
@@ -345,18 +344,25 @@ def write_build_report(target, decks, seconds, plan_or_plans, extra_warnings=())
 
 
 def cmd_build(args):
-    """Шаблон плюс контент — готовый файл. Без обращения к модели (ADR-0009)."""
+    """Шаблон плюс контент — готовый файл. Колоду из сплошного текста строит
+    модель, если она доступна и её ответ прошёл проверки (`ADR-0023`); иначе —
+    путь без модели (`ADR-0009`). Вёрстка — код в обоих случаях."""
     started = time.perf_counter()
     analysis = analyze_template(args.template)
     target = parse_slides(getattr(args, "slides", None))
     doc = load_content(args.content, target=target)
+    # До ветки вариантов: один вызов модели на все варианты (`ADR-0023`,
+    # «Следствия» — три вёрстки одного содержания).
+    outcome, record_path = model_path(args, doc, target)
+    doc = outcome.doc
 
     # Несколько вариантов вёрстки — отдельная ветка (`ADR-0020`, `Z-26`).
     # Умолчание не меняется: без флага собирается одна колода ровно как раньше.
     # Это не вежливость к старому коду — девять сдаточных колод собираются этой
     # же командой, и молчаливая смена поведения испортила бы их незаметно.
     if int(getattr(args, "variants", 1) or 1) > 1:
-        return _build_variants(args, analysis, doc, target, started)
+        return _build_variants(args, analysis, doc, target, started,
+                               _model_line(outcome, record_path))
 
     plan = plan_deck(
         doc, analysis.patterns, analysis.design_system.source.sha256, target=target
@@ -403,7 +409,7 @@ def cmd_build(args):
         kinds = {p.id: p.kind for p in analysis.patterns.patterns}
         print(f"шаблон      {os.path.basename(args.template)}")
         print(f"контент     {args.content}")
-        print(_model_line(args, doc))
+        print(_model_line(outcome, record_path))
         print(f"слайдов     {report.slides}")
         for slide in plan.slides:
             head = next((f.text for f in slide.fills if f.kind in ("text", "number") and f.text), "")
@@ -431,7 +437,7 @@ def cmd_build(args):
     return 2 if problems else 0
 
 
-def _build_variants(args, analysis, doc, target, started):
+def _build_variants(args, analysis, doc, target, started, model_summary=""):
     """Три (или сколько попросили) варианта вёрстки одного контента.
 
     Требование ТЗ, раздел 2, п. 5, и пункт критерия 3, который проверяют
@@ -495,7 +501,8 @@ def _build_variants(args, analysis, doc, target, started):
     if not args.quiet:
         print(f"шаблон      {os.path.basename(args.template)}")
         print(f"контент     {args.content}")
-        print(_model_line(args, doc))
+        if model_summary:
+            print(model_summary)
         print(f"политик     {len(policies)} ({source}), порог различия {min_distance:.0%}")
         for line in variants_report(chosen, reason):
             print(f"            {line}")
@@ -517,8 +524,9 @@ def _add_model_args(parser: argparse.ArgumentParser) -> None:
     """Флаги модели — у `plan` и у `build`: модель живёт в стадии PLAN (`ADR-0023`).
 
     Умолчание обоих — `None`, а не значение: доступ без флага берётся из
-    `config/model.json` (иначе умолчаний стало бы два), а умолчание режима текста
-    выберет пользователь (`PLAN-9.0`, Ш9).
+    `config/model.json` (иначе умолчаний стало бы два), режим текста —
+    `outline.DEFAULT_MODE` до решения пользователя (`PLAN-9.0`, Ш9). `None`
+    нужен и сводке: она различает «задано при запуске» и «умолчание».
     """
     parser.add_argument(
         "--llm",
@@ -527,15 +535,17 @@ def _add_model_args(parser: argparse.ArgumentParser) -> None:
         help="доступ к модели: off — без модели; cache — ответы из кэша, сети нет; "
              "on — звать модель и пополнять кэш. По умолчанию — access из "
              "config/model.json (ADR-0021). Модель строит колоду только из сплошного "
-             "текста; сборка её пока не зовёт — подключение в Ш3 PLAN-9.0 (Z-57)",
+             "текста; нет ответа, ответ не прошёл проверки или текст длиннее порога — "
+             "колода собирается путём без модели, и сводка говорит почему "
+             f"(ADR-0023; подробно — <out>/{outline.RECORD_NAME})",
     )
     parser.add_argument(
         "--text",
         choices=TEXT_CHOICES,
         default=None,
         help="что модель делает с текстом автора: keep — фразы дословно; improve — "
-             "переписать для ясности, не добавляя фактов (ADR-0023). Умолчание "
-             "выберет пользователь (PLAN-9.0, Ш9)",
+             "переписать для ясности, не добавляя фактов (ADR-0023). По умолчанию "
+             f"{outline.DEFAULT_MODE}",
     )
 
 
@@ -569,7 +579,8 @@ def build_parser() -> argparse.ArgumentParser:
     analyze.set_defaults(func=cmd_analyze)
 
     plan = sub.add_parser(
-        "plan", help="разложить контент по раскладкам шаблона (без обращения к модели)"
+        "plan", help="разложить контент по раскладкам шаблона; колоду из сплошного "
+                     "текста строит модель (--llm), раскладки выбирает код"
     )
     plan.add_argument("template", nargs="?", help="путь к .pptx или .potx")
     plan.add_argument("content", nargs="?", help="путь к markdown или текстовому файлу с контентом")
@@ -591,7 +602,8 @@ def build_parser() -> argparse.ArgumentParser:
     plan.set_defaults(func=cmd_plan)
 
     build = sub.add_parser(
-        "build", help="шаблон плюс контент -> готовый .pptx, без обращения к модели"
+        "build", help="шаблон плюс контент -> готовый .pptx; колоду из сплошного "
+                      "текста строит модель (--llm), вёрстку — код"
     )
     build.add_argument("template", nargs="?", help="путь к .pptx или .potx")
     build.add_argument("content", nargs="?", help="путь к markdown или текстовому файлу с контентом")

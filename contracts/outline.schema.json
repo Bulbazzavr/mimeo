@@ -1,0 +1,82 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/Bulbazzavr/mimeo/contracts/outline.schema.json",
+  "title": "Путь модели одной сборки",
+  "description": "Файл <out>/outline.json рядом с колодой: звали ли модель, что спросили, что она ответила, итог каждой проверки и что ушло в вёрстку. Нужен, чтобы «ничего не выдумано» проверялось глазами, а не на слово (ADR-0023, п. 5; PLAN-9.0, Ш3). Пишется командами plan и build ВСЕГДА, со статусом: иначе файл прошлой сборки в том же каталоге соврал бы про эту.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version", "status", "line", "access", "access_source", "text_mode", "text_mode_source",
+    "frames", "frames_source", "text", "model", "prompt_version", "key", "answer_source",
+    "seconds", "answer", "checks", "deck"
+  ],
+  "properties": {
+    "version": {"type": "string", "const": "1.0"},
+    "status": {
+      "enum": ["accepted", "rejected", "unparsed", "no_answer", "too_long", "off", "markup"],
+      "description": "accepted — колоду построила модель; rejected — ответ не прошёл проверки; unparsed — ответ не JSON; no_answer — ответа нет (промах кэша, сервер не ответил, бюджет); too_long — текст длиннее порога контекста, модель не звали; off — модель выключена; markup — вход размечен, модель не нужна (Z-08). Всё, кроме accepted, — путь без модели."
+    },
+    "line": {"type": "string", "description": "Та же строка, что печатает сводка после «модель»: каким путём собрана колода и почему."},
+    "access": {"enum": ["off", "cache", "on"]},
+    "access_source": {"type": "string", "description": "«задано при запуске» — флаг или конфиг прогона; иначе умолчание config/model.json."},
+    "text_mode": {"enum": ["keep", "improve"]},
+    "text_mode_source": {"type": "string"},
+    "frames": {
+      "type": "array", "minItems": 2, "maxItems": 2,
+      "items": {"type": "integer", "minimum": 1},
+      "description": "Рамки объёма в промпте: --slides или рамки ТЗ 10–15. Путь без модели без --slides объём не подгоняет — это рамки промпта, а не добор."
+    },
+    "frames_source": {"enum": ["--slides", "рамки ТЗ"]},
+    "text": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "chars", "content"],
+      "properties": {
+        "path": {"type": "string"},
+        "chars": {"type": ["integer", "null"]},
+        "content": {"type": ["string", "null"], "description": "Текст файла целиком — то, что ушло модели и чем её судили проверки. null — модель не звали (markup, off)."}
+      }
+    },
+    "model": {"type": "string"},
+    "prompt_version": {"type": ["string", "null"], "description": "Версия config/outline.json; null — файла нет, работают встроенные значения."},
+    "key": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$", "description": "Ключ запроса в кэше ответов (sha256)."},
+    "answer_source": {"enum": ["cache", "model", null]},
+    "seconds": {"type": ["number", "null"], "description": "Время вызова модели; null — ответ из кэша или вызова не было."},
+    "answer": {"type": ["object", "string", "null"], "description": "Разобранный JSON ответа; строка — ответ не разобрался; null — ответа не было."},
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "ok", "detail"],
+        "properties": {
+          "name": {"type": "string"},
+          "ok": {"type": "boolean"},
+          "detail": {"type": "string"}
+        }
+      }
+    },
+    "deck": {
+      "type": ["array", "null"],
+      "description": "Что ушло в вёрстку из принятого ответа: обложка — только название, пункты оглавления собраны кодом из заголовков, пути картинок — найденные файлы. null — колода собрана путём без модели.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["heading", "kind", "theses", "images", "image_idea"],
+        "properties": {
+          "heading": {"type": "string"},
+          "kind": {"type": "string"},
+          "theses": {"type": "array", "items": {"type": "string"}},
+          "images": {"type": "array", "items": {"type": "string"}},
+          "image_idea": {"type": "string"}
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "accepted"}}},
+      "then": {"properties": {"deck": {"type": "array"}, "answer": {"type": "object"}}}
+    }
+  ]
+}
