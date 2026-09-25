@@ -16,6 +16,9 @@ from .model import DeckPlan, DesignSystem, PatternLibrary
 from .compose import build as compose_deck
 from .compose import inspect as inspect_package
 from .plan import load_content, plan_deck
+from .plan.client import Access
+from .plan.client import load_config as load_model_config
+from .plan.outline import MODES
 from .opc.package import PackageError
 from .oxml.units import emu_to_inch
 
@@ -34,6 +37,35 @@ _ARTIFACTS = (
     ("patterns.json", "pattern-library.schema.json"),
 )
 _PLAN_ARTIFACT = ("deck-plan.json", "deck-plan.schema.json")
+
+#: Доступ к модели и режим текста (`PLAN-9.0`, Ш2; `ADR-0021`, `ADR-0023`).
+#: Значения берутся из самих модулей, чтобы флаг и код не разошлись.
+LLM_CHOICES = tuple(a.value for a in Access)
+TEXT_CHOICES = MODES
+
+
+def model_line(prose: bool, access: str, chosen: bool, text: str | None) -> str:
+    """Каким путём собран текст колоды — словами. ИКР `PLAN-9.0`: «без модели
+    сборка идёт прежним путём и говорит об этом словами».
+
+    Причина «модель ещё не строит» живёт до Ш3: там её сменят настоящие — ответ
+    из кэша, промах кэша, отказ проверок, отказ сервера.
+    """
+    source = "задано при запуске" if chosen else "умолчание config/model.json"
+    ignored = f"; --text {text} не применяется" if text else ""
+    if not prose:
+        return f"модель      не нужна: вход размечен, структуру задал автор (Z-08){ignored}"
+    if access == Access.OFF.value:
+        return f"модель      выключена ({source}): колода собрана путём без модели{ignored}"
+    mode = f", режим текста {text}" if text else ""
+    return (f"модель      {access} ({source}{mode}): колоду модель ещё не строит — "
+            "подключение в Ш3 PLAN-9.0 (Z-57); собрано путём без модели")
+
+
+def _model_line(args, doc) -> str:
+    llm = getattr(args, "llm", None)
+    access = llm or load_model_config().access.value
+    return model_line(bool(doc.origin), access, bool(llm), getattr(args, "text", None))
 
 
 def _summary(ds: DesignSystem, elapsed: float) -> str:
@@ -230,6 +262,7 @@ def cmd_plan(args):
 
     if not args.quiet:
         print(_plan_summary(plan, analysis.patterns, elapsed))
+        print(_model_line(args, doc))
         print(f"записано    {target}")
     return 0
 
@@ -370,6 +403,7 @@ def cmd_build(args):
         kinds = {p.id: p.kind for p in analysis.patterns.patterns}
         print(f"шаблон      {os.path.basename(args.template)}")
         print(f"контент     {args.content}")
+        print(_model_line(args, doc))
         print(f"слайдов     {report.slides}")
         for slide in plan.slides:
             head = next((f.text for f in slide.fills if f.kind in ("text", "number") and f.text), "")
@@ -461,6 +495,7 @@ def _build_variants(args, analysis, doc, target, started):
     if not args.quiet:
         print(f"шаблон      {os.path.basename(args.template)}")
         print(f"контент     {args.content}")
+        print(_model_line(args, doc))
         print(f"политик     {len(policies)} ({source}), порог различия {min_distance:.0%}")
         for line in variants_report(chosen, reason):
             print(f"            {line}")
@@ -476,6 +511,43 @@ def _build_variants(args, analysis, doc, target, started):
     # и причина уже напечатана. Кодом возврата отвечает только структурная
     # проверка, как и в обычной сборке.
     return 2 if worst else 0
+
+
+def _add_model_args(parser: argparse.ArgumentParser) -> None:
+    """Флаги модели — у `plan` и у `build`: модель живёт в стадии PLAN (`ADR-0023`).
+
+    Умолчание обоих — `None`, а не значение: доступ без флага берётся из
+    `config/model.json` (иначе умолчаний стало бы два), а умолчание режима текста
+    выберет пользователь (`PLAN-9.0`, Ш9).
+    """
+    parser.add_argument(
+        "--llm",
+        choices=LLM_CHOICES,
+        default=None,
+        help="доступ к модели: off — без модели; cache — ответы из кэша, сети нет; "
+             "on — звать модель и пополнять кэш. По умолчанию — access из "
+             "config/model.json (ADR-0021). Модель строит колоду только из сплошного "
+             "текста; сборка её пока не зовёт — подключение в Ш3 PLAN-9.0 (Z-57)",
+    )
+    parser.add_argument(
+        "--text",
+        choices=TEXT_CHOICES,
+        default=None,
+        help="что модель делает с текстом автора: keep — фразы дословно; improve — "
+             "переписать для ясности, не добавляя фактов (ADR-0023). Умолчание "
+             "выберет пользователь (PLAN-9.0, Ш9)",
+    )
+
+
+def _check_model_args(args: argparse.Namespace) -> None:
+    """`choices` действуют только на командную строку: значение из конфига
+    прогона `argparse` не видит, и `{"llm": "maybe"}` прошёл бы молча (замер Ш2)."""
+    for name, allowed in (("llm", LLM_CHOICES), ("text", TEXT_CHOICES)):
+        value = getattr(args, name, None)
+        if value is not None and value not in allowed:
+            raise SystemExit(
+                f"{args.command}: {name} = {value!r} — ожидается одно из: {', '.join(allowed)}"
+            )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -510,6 +582,7 @@ def build_parser() -> argparse.ArgumentParser:
              "По умолчанию объём определяется контентом",
     )
     plan.add_argument("-q", "--quiet", action="store_true", help="без сводки")
+    _add_model_args(plan)
     plan.add_argument(
         "--config",
         metavar="ФАЙЛ",
@@ -550,6 +623,7 @@ def build_parser() -> argparse.ArgumentParser:
              "(contracts/build-report.schema.json)",
     )
     build.add_argument("-q", "--quiet", action="store_true", help="без сводки")
+    _add_model_args(build)
     build.add_argument(
         "--verify",
         action="store_true",
@@ -690,6 +764,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         notes = apply_run_config(args, argv)
+        _check_model_args(args)
         _require(args, *(("template",) if args.command == "analyze" else ("template", "content")))
         if notes and not getattr(args, "quiet", False):
             print(NL.join(notes))

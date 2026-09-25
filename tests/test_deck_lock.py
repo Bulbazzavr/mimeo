@@ -39,6 +39,26 @@ GOT = {
 }
 
 
+def _llm_of(cmd: list[str]) -> str | None:
+    """Какой доступ к модели получит сборка — настоящим разбором движка."""
+    from mimeo.cli import build_parser
+
+    return build_parser().parse_args(cmd[cmd.index("build"):]).llm
+
+
+def test_lock_builds_without_the_model(lock_tool):
+    """Без хвоста замок сверяет путь без модели, как бы ни менялось умолчание (Ш2)."""
+    cmd = lock_tool.command("t.pptx", "c.md", ["--variants", "3"], [], "here", False)
+    assert _llm_of(cmd) == "off"
+
+
+def test_tail_overrides_the_lock_default(lock_tool):
+    """`-- --llm cache` — промах кэша: хвост стоит после `off` и побеждает."""
+    cmd = lock_tool.command("t.pptx", "c.md", [], ["--llm", "cache"], "here", False)
+    assert _llm_of(cmd) == "cache"
+    assert cmd.index("off") < cmd.index("cache")
+
+
 def test_same_bytes_pass(lock_tool):
     assert lock_tool.write("compose", GOT) == 0
     assert lock_tool.check("compose", json.loads(json.dumps(GOT))) == 0

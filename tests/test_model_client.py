@@ -28,6 +28,7 @@ import pytest
 from mimeo.analyze import analyze_template
 from mimeo.plan import cache, parse_markdown
 from mimeo.plan.client import (
+    API_KEY_ENV,
     Access,
     Answer,
     ClientConfig,
@@ -130,6 +131,45 @@ def test_thinking_switch_reaches_the_server(request_and_pattern, tmp_path):
     sent = fake.requests[0]
     assert sent["chat_template_kwargs"] == {"enable_thinking": False}
     assert sent["temperature"] == 0
+
+
+KEY = "sk-test-5e1f"
+
+
+def _lower(headers: dict) -> dict:
+    return {k.lower(): v for k, v in headers.items()}
+
+
+def test_api_key_goes_only_to_the_header(request_and_pattern, tmp_path, monkeypatch):
+    """Ключ — из окружения в заголовок; ни в тело, ни в кэш (`PLAN-9.0`, Ш2)."""
+    request, pattern = request_and_pattern
+    monkeypatch.setenv(API_KEY_ENV, KEY)
+    with FakeModel(answer=_answer_for(pattern)) as fake:
+        client = ModelClient(_config(fake, tmp_path))
+        assert client.complete(request).source == "model"
+    assert _lower(fake.headers[0])["authorization"] == f"Bearer {KEY}"
+    assert KEY not in json.dumps(fake.requests[0], ensure_ascii=False)
+    stored = [open(os.path.join(d, f), encoding="utf-8").read()
+              for d, _, files in os.walk(client.cache_root) for f in files]
+    assert stored and not any(KEY in s for s in stored)
+
+
+def test_no_key_no_header(request_and_pattern, tmp_path, monkeypatch):
+    request, pattern = request_and_pattern
+    monkeypatch.delenv(API_KEY_ENV, raising=False)
+    with FakeModel(answer=_answer_for(pattern)) as fake:
+        ModelClient(_config(fake, tmp_path)).complete(request)
+    assert "authorization" not in _lower(fake.headers[0])
+
+
+def test_key_echoed_by_the_server_is_masked(request_and_pattern, tmp_path, monkeypatch):
+    """Сервер повторил ключ в тексте отказа — в диагностику он не уходит."""
+    request, _ = request_and_pattern
+    monkeypatch.setenv(API_KEY_ENV, KEY)
+    with FakeModel("эхо-ключа") as fake:
+        answer = ModelClient(_config(fake, tmp_path)).complete(request)
+    assert answer.text is None and "401" in answer.note
+    assert KEY not in answer.note and "***" in answer.note
 
 
 def test_config_comments_do_not_leak_into_the_request(tmp_path):

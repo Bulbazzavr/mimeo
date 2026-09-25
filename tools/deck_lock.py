@@ -6,8 +6,13 @@ sha256 колод, собранных кодом части Б (`Z-58`), и св
 
     python tools/deck_lock.py --check                  93 колоды, PowerPoint не нужен
     python tools/deck_lock.py --check --verify         23 колоды через PowerPoint, эта машина
-    python tools/deck_lock.py --check -- --llm off     хвост после -- уходит в сборку как есть
+    python tools/deck_lock.py --check -- --llm cache   промах кэша: обязано совпасть тоже
     python tools/deck_lock.py --write [--verify]       переснять замок — только осознанно
+
+**С Ш2 команда сама передаёт `--llm off`**: умолчание сборки — `cache`
+(`ADR-0021`), и после Ш8 колоды пойдут из кэша ответов; без явного `off` голое
+`--check` показало бы «разошлись» при целом пути без модели. Хвост после `--`
+стоит **после** `off` и перекрывает его: `argparse` берёт последнее значение.
 
 **Собирает той же командой, что запускает эксперт** — `python -m mimeo build`,
 а не внутренними функциями: иначе замок мерил бы не то, что сдаётся.
@@ -75,16 +80,26 @@ def jobs(layer: str) -> list[tuple[str, str, str, list[str]]]:
     return out
 
 
+def command(template: str, content: str, flags: list[str], extra: list[str],
+            here: str, verify: bool) -> list[str]:
+    """Команда эксперта для одного задания. `--llm off` — между флагами задания и
+    хвостом: в замок пишутся только флаги задания, и он от этого не меняется."""
+    stem = os.path.splitext(os.path.basename(template))[0]
+    cmd = [sys.executable, "-m", "mimeo", "build", template, content, *flags,
+           "--llm", "off", *extra,
+           "--output", os.path.join(here, stem + ".pptx"), "-o", os.path.join(here, "art"), "-q"]
+    if verify:
+        cmd.append("--verify")
+    return cmd
+
+
 def build(job, verify: bool, extra: list[str], workdir: str) -> dict:
     """Собрать одно задание командой эксперта и вернуть хэши получившихся колод."""
     key, template, content, flags = job
     here = os.path.join(workdir, hashlib.sha256(key.encode("utf-8")).hexdigest()[:12])
     os.makedirs(here, exist_ok=True)
     stem = os.path.splitext(os.path.basename(template))[0]
-    cmd = [sys.executable, "-m", "mimeo", "build", template, content, *flags, *extra,
-           "--output", os.path.join(here, stem + ".pptx"), "-o", os.path.join(here, "art"), "-q"]
-    if verify:
-        cmd.append("--verify")
+    cmd = command(template, content, flags, extra, here, verify)
     proc = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True,
                           encoding="utf-8", errors="replace")
     decks = sorted(glob.glob(os.path.join(here, stem + "*.pptx")))

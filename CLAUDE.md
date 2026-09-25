@@ -382,7 +382,9 @@ python tools/report.py slots          # сужённые и пустые сло�
 python tools/config_version.py        # сверить версии конфигов с замком
 python tools/audit_doc.py --write     # перегенерировать таблицу тестов в AUDIT.md
 python tools/doc_check.py             # не обещают ли документы того, чего в коде нет
-python tools/deck_lock.py --check     # замок Ш0: путь без модели — те же байты, 93 колоды
+python -m mimeo build  <шаблон.pptx> <контент.md> --llm off --text keep   # модель: off|cache|on, текст: keep|improve (PLAN-9.0, Ш2)
+python tools/deck_lock.py --check     # замок Ш0: путь без модели (--llm off передаёт сам) — те же байты, 93 колоды
+python tools/deck_lock.py --check -- --llm cache   # промах кэша — обязано дать те же байты
 python tools/deck_lock.py --check --verify   # то же для 23 колод через PowerPoint
 python web/serve.py                   # локальный веб-интерфейс на 127.0.0.1:8000 (Z-29)
 ```
@@ -983,6 +985,12 @@ MiniCPM-V 4.5 и 4.6 замерены 19 сентября и **отвергну�
 трижды вперемешку с другими — три разные колоды, без кэша — одна
 (`WORKLOG/2026-09-25-z57-sh1b-result.md`). Оба поля продукт шлёт сам
 (`config/model.json`, `extra_body`); **разовые скрипты замера обязаны слать оба.**
+
+**Ключ API чужого инференса** — из переменной окружения `MIMEO_LLM_API_KEY`, в
+заголовок `Authorization: Bearer` (с 25 сентября, Ш2). Ни в конфиг, ни в кэш он
+не попадает: ключ кэша собран из тела запроса, а ключ API — не тело; если сервер
+повторит ключ в тексте отказа, в диагностике он вымаран. Своему `llama-server`
+ключ не нужен.
 
 **Но приём работает не везде** (история: с 24 сентября LM Studio не
 используем, `OQ-32` закрыт). На `llama-server` — да, на **LM Studio нет**:

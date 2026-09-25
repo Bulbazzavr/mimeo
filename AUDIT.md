@@ -41,13 +41,14 @@ python tools/audit_doc.py --write
 | [`tests/test_compose.py`](tests/test_compose.py) | 18 | Сборка колоды. ADR-0011, ADR-0012. |
 | [`tests/test_config_version.py`](tests/test_config_version.py) | 8 | Замок версий конфигов: он обязан уметь падать. |
 | [`tests/test_content.py`](tests/test_content.py) | 9 | Нормализация контента. Шаг Ш1 плана `PLAN-2.0`. |
-| [`tests/test_deck_lock.py`](tests/test_deck_lock.py) | 7 | Замок Ш0: сверка колод без модели с эталоном (`PLAN-9.0`, `tools/deck_lock.py`). |
+| [`tests/test_deck_lock.py`](tests/test_deck_lock.py) | 9 | Замок Ш0: сверка колод без модели с эталоном (`PLAN-9.0`, `tools/deck_lock.py`). |
 | [`tests/test_docs.py`](tests/test_docs.py) | 24 | Целостность документации. |
 | [`tests/test_exclusive_donors.py`](tests/test_exclusive_donors.py) | 9 | Доноры, которые нельзя клонировать дважды. `Z-44`, `DOM-PKG §9`, `PLAN-6.1`. |
 | [`tests/test_fitting.py`](tests/test_fitting.py) | 8 | Оценка вместимости. DOM-TEXT §6, §10, ADR-0008. |
 | [`tests/test_images.py`](tests/test_images.py) | 16 | Встраивание изображений (`Z-28a`, `PLAN-7.10`). |
 | [`tests/test_mce_prefixes.py`](tests/test_mce_prefixes.py) | 5 | Пространства имён Markup Compatibility переживают пересериализацию. |
-| [`tests/test_model_client.py`](tests/test_model_client.py) | 32 | Клиент к модели: транспорт, кэш, откат. `Z-07`, `PLAN-2.6`, шаги 1, 2, 4. |
+| [`tests/test_model_client.py`](tests/test_model_client.py) | 35 | Клиент к модели: транспорт, кэш, откат. `Z-07`, `PLAN-2.6`, шаги 1, 2, 4. |
+| [`tests/test_model_flags.py`](tests/test_model_flags.py) | 9 | Флаги модели `--llm` и `--text` (`PLAN-9.0`, Ш2; `ADR-0021`, `ADR-0023`). |
 | [`tests/test_occlusion.py`](tests/test_occlusion.py) | 23 | Ёмкость слота знает, что лежит поверх него. `Z-48`, `PLAN-7.8`. |
 | [`tests/test_outline.py`](tests/test_outline.py) | 14 | Промпт и схема ответа модели, строящей колоду (`ADR-0023`, `PLAN-9.0`, Ш1). |
 | [`tests/test_paragraph_order.py`](tests/test_paragraph_order.py) | 6 | Порядок детей `a:p` по схеме DrawingML: прогоны до `a:endParaRPr`. |
@@ -70,7 +71,7 @@ python tools/audit_doc.py --write
 | [`tests/test_volume.py`](tests/test_volume.py) | 15 | Объём колоды: 10–15 слайдов или сколько задали. `Z-35`, план `PLAN-2.3`. |
 | [`tests/test_web_boundary.py`](tests/test_web_boundary.py) | 5 | Граница веб-слоя (`Z-29`, `PLAN-8.0`, `SPEC-WEB` раздел 2). |
 | [`tests/test_web_design.py`](tests/test_web_design.py) | 10 | Экран «что вынули из вашего шаблона» (`Z-29`, `PLAN-8.1`, часть A). |
-| **всего** | **551** | в 35 файлах |
+| **всего** | **565** | в 36 файлах |
 
 <!-- /порождается -->
 

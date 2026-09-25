@@ -70,6 +70,7 @@ class _Handler(BaseHTTPRequestHandler):
     def do_POST(self):                   # noqa: N802
         length = int(self.headers.get("Content-Length") or 0)
         raw = self.rfile.read(length)
+        self.fake.headers.append(dict(self.headers))
         try:
             self.fake.requests.append(json.loads(raw.decode("utf-8")))
         except ValueError:
@@ -81,6 +82,10 @@ class _Handler(BaseHTTPRequestHandler):
 
         if step == "500":
             self._json(500, {"error": {"message": "модель не загружена"}})
+            return
+        if step == "эхо-ключа":
+            # Бывают серверы, повторяющие присланный ключ в тексте отказа.
+            self._json(401, {"error": {"message": f"не принят {self.headers.get('Authorization')}"}})
             return
         if step == "slow":
             time.sleep(self.fake.slow_sec)
@@ -146,6 +151,8 @@ class FakeModel:
         self.model = model
         self.slow_sec = slow_sec
         self.requests: list[dict] = []
+        #: Заголовки каждого запроса — ради ключа API (`PLAN-9.0`, Ш2).
+        self.headers: list[dict] = []
         self._server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
         self._server.fake = self         # type: ignore[attr-defined]
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)

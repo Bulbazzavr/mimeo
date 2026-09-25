@@ -255,6 +255,12 @@ def content_of(data: dict) -> str:
     raise ModelError("пусто", "модель вернула пустой ответ")
 
 
+#: Ключ API — только из окружения и только в заголовок (`PLAN-9.0`, Ш2). В
+#: `extra_body` он ушёл бы в ключ кэша (`ModelClient.key`) и в коммит, в конфиге —
+#: в репозиторий. Своему `llama-server` ключ не нужен; нужен чужому инференсу.
+API_KEY_ENV = "MIMEO_LLM_API_KEY"
+
+
 def post_chat(url: str, body: dict, timeout: float) -> dict:
     """Один запрос. Всё, чем транспорт может отказать, превращается в `ModelError`.
 
@@ -262,11 +268,18 @@ def post_chat(url: str, body: dict, timeout: float) -> dict:
     `IncompleteRead`: он наследуется от `HTTPException`, **а не от `URLError`**,
     и обрыв ответа прошёл бы мимо `except urllib.error.URLError`, уронив сборку
     вместо отката.
+
+    Ключ читается в момент запроса, а не хранится в `ClientConfig`: объект
+    настроек печатается и сравнивается, ключу там не место.
     """
+    key = os.environ.get(API_KEY_ENV, "").strip()
+    headers = {"Content-Type": "application/json"}
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
     request = urllib.request.Request(
         url,
         data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
     try:
@@ -281,6 +294,9 @@ def post_chat(url: str, body: dict, timeout: float) -> dict:
             detail = exc.read().decode("utf-8", "replace")[:300]
         except Exception:                            # noqa: BLE001, S110 — см. выше
             pass
+        if key:
+            # Сервер вправе повторить ключ в тексте отказа — в диагностику он уйти не должен.
+            detail = detail.replace(key, "***")
         raise ModelError("http", f"сервер ответил {exc.code} {exc.reason}: {detail}") from exc
     except urllib.error.URLError as exc:
         raise ModelError("сеть", f"нет связи с {url}: {exc.reason}") from exc
