@@ -45,6 +45,10 @@ class ContentBlock:
     value: str | None = None      # metric: само число
     label: str | None = None      # metric: подпись под числом
     ref: str | None = None        # image: путь
+    #: image: меньшая сторона места под иллюстрацию не короче, EMU. Задаётся
+    #: только заготовке генератора (`images.add_placeholders`, `Z-28`): нарисованная
+    #: картинка — украшение, миниатюра в рамке донора хуже слайда без неё.
+    min_side: int | None = None
 
     @property
     def units(self) -> int:

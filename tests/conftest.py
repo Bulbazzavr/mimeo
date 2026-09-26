@@ -12,6 +12,9 @@ from tests.fixtures.build_fixture import build, build_multi
 # конфига (`mimeo.plan.client.ACCESS_ENV`); тест, которому нужно умолчание
 # конфига, снимает её сам.
 os.environ["MIMEO_LLM_ACCESS"] = "off"
+# То же для генератора картинок (`mimeo.plan.images.ACCESS_ENV`): тест с
+# принятым ответом поддельной модели иначе пошёл бы в поднятый sd-server.
+os.environ["MIMEO_IMAGES_ACCESS"] = "off"
 
 
 @pytest.fixture(scope="session")

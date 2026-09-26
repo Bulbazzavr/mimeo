@@ -713,6 +713,7 @@ def _pick_ideas(
     ideas = [s for s in doc.sections if s.image_idea.strip()]
     if not ideas:
         return slides, None
+    from .images import GENERATED_PREFIX
     from .outline import KIND_WORDS, idea_rules
 
     rules = rules or idea_rules()
@@ -723,7 +724,9 @@ def _pick_ideas(
     for s in ideas:
         if s.kind not in rules.kinds:
             by_kind.append(s)
-        elif any(b.kind == "image" for b in s.blocks):
+        elif any(b.kind == "image" and not b.id.startswith(GENERATED_PREFIX) for b in s.blocks):
+            # Картинка автора — идея не нужна. Заготовка генератора (`Z-28`,
+            # `images.add_placeholders`) — это и есть нарисованная идея.
             with_image.append(s)
         elif s.id not in first:
             absent.append(s)

@@ -567,6 +567,9 @@ def match(
             # — картинка не потеряется, она просто не встанет, и об этом
             # скажет предупреждение плана.
             slots = [s for s in slots if s.picture_kind == _ILLUSTRATION]
+            if block.min_side:
+                # Заготовка генератора (`Z-28`): только место не мельче порога.
+                slots = [s for s in slots if min(s.rect.cx, s.rect.cy) >= block.min_side]
             slots = _clear_of_taken(slots, pattern, used)
             slots = _by_aspect(slots, block.ref)
             if not slots:

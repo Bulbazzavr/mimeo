@@ -64,6 +64,46 @@ def model_path(args, doc, target, config=None):
     return outcome, outline.write_record(args.out, outcome.record)
 
 
+def _pictures(args, doc, analysis):
+    """Картинки по идеям модели (`Z-28`): заготовки в документ до плана и тот,
+    кто их нарисует после. Возвращает (документ, художник, заметка)."""
+    from dataclasses import replace as _replace
+    from .plan import images
+
+    gen = images.load_config()
+    wanted = getattr(args, "images", None)
+    if wanted is not None:
+        gen = _replace(gen, access=wanted, access_source="задано при запуске")
+    slide = analysis.design_system.slide
+    size = (slide.cx_emu, slide.cy_emu)
+    model = load_model_config()
+    access = getattr(args, "llm", None)
+    if access is not None:
+        model = _replace(model, access=Access(access))
+
+    def rewrite(ideas):
+        return images.scenes(ideas, gen, model, inputs=(args.content,))
+
+    doc, placeholders, note = images.add_placeholders(doc, args.out, gen, slide_size=size,
+                                                      rewrite=rewrite)
+    painter = images.Painter(gen, placeholders, llm_base_url=model.endpoint.base_url, slide_size=size)
+    return doc, painter, note
+
+
+def _painted(plan, painter, doc, library, replan):
+    """План, у которого заготовки стали готовыми файлами в пропорции своего
+    места. Картинка не нарисовалась — план перестраивается без неё: иначе в
+    месте под иллюстрацию осталась бы картинка донора (`Z-62`)."""
+    from .plan import images
+
+    dropped: set[str] = set()
+    plan, failed = painter.paint(plan, library)
+    while failed:                       # каждый круг снимает хотя бы одну заготовку
+        dropped |= failed
+        plan, failed = painter.paint(replan(images.without(doc, dropped)), library)
+    return plan
+
+
 def _model_line(outcome, record_path) -> str:
     """Строка сводки: каким путём собран текст колоды и почему — ИКР `PLAN-9.0`
     («без модели сборка идёт прежним путём и говорит об этом словами»)."""
@@ -358,7 +398,7 @@ def cmd_build(args):
     # До ветки вариантов: один вызов модели на все варианты (`ADR-0023`,
     # «Следствия» — три вёрстки одного содержания).
     outcome, record_path = model_path(args, doc, target)
-    doc = outcome.doc
+    doc, painter, picture_note = _pictures(args, outcome.doc, analysis)
 
     # Несколько вариантов вёрстки — отдельная ветка (`ADR-0020`, `Z-26`).
     # Умолчание не меняется: без флага собирается одна колода ровно как раньше.
@@ -366,11 +406,13 @@ def cmd_build(args):
     # же командой, и молчаливая смена поведения испортила бы их незаметно.
     if int(getattr(args, "variants", 1) or 1) > 1:
         return _build_variants(args, analysis, doc, target, started,
-                               _model_line(outcome, record_path))
+                               _model_line(outcome, record_path), painter, picture_note)
 
-    plan = plan_deck(
-        doc, analysis.patterns, analysis.design_system.source.sha256, target=target
-    )
+    sha = analysis.design_system.source.sha256
+    plan = plan_deck(doc, analysis.patterns, sha, target=target)
+    plan = _painted(plan, painter, doc, analysis.patterns,
+                    lambda d: plan_deck(d, analysis.patterns, sha, target=target))
+    picture_notes = tuple(n for n in (picture_note, painter.note()) if n)
 
     os.makedirs(args.out, exist_ok=True)
     target = args.output or os.path.join(args.out, "deck.pptx")
@@ -407,6 +449,7 @@ def cmd_build(args):
         )],
         elapsed,
         plan,
+        extra_warnings=picture_notes,
     )
 
     if not args.quiet:
@@ -414,6 +457,8 @@ def cmd_build(args):
         print(f"шаблон      {os.path.basename(args.template)}")
         print(f"контент     {args.content}")
         print(_model_line(outcome, record_path))
+        for note in picture_notes:
+            print(f"картинки    {note}")
         print(f"слайдов     {report.slides}")
         for slide in plan.slides:
             head = next((f.text for f in slide.fills if f.kind in ("text", "number") and f.text), "")
@@ -441,7 +486,8 @@ def cmd_build(args):
     return 2 if problems else 0
 
 
-def _build_variants(args, analysis, doc, target, started, model_summary=""):
+def _build_variants(args, analysis, doc, target, started, model_summary="",
+                    painter=None, picture_note=None):
     """Три (или сколько попросили) варианта вёрстки одного контента.
 
     Требование ТЗ, раздел 2, п. 5, и пункт критерия 3, который проверяют
@@ -471,9 +517,16 @@ def _build_variants(args, analysis, doc, target, started, model_summary=""):
         from .verify.report import describe, write_json       # noqa: PLC0415
 
     written, worst = [], 0
+    sha = analysis.design_system.source.sha256
     for n, variant in enumerate(chosen, 1):
         path = f"{stem}-{n}{ext}"
         plan = variant.plan
+        if painter is not None:
+            # Картинка — в пропорции места, которое ей дал именно этот вариант;
+            # одинаковые размеры варианты берут из кэша художника (`Z-28`).
+            tuning = variant.policy.tuning
+            plan = _painted(plan, painter, doc, analysis.patterns,
+                            lambda d, t=tuning: plan_deck(d, analysis.patterns, sha, target, tuning=t))
         built = compose_deck(args.template, plan, analysis.patterns, path)
         verdict = None
         if do_verify:
@@ -485,8 +538,9 @@ def _build_variants(args, analysis, doc, target, started, model_summary=""):
             write_json(verdict, os.path.join(args.out, f"render-report-{n}.json"))
         problems = inspect_package(path)
         worst = max(worst, len(problems))
-        written.append((n, variant, path, built, problems, verdict))
+        written.append((n, variant, path, built, problems, verdict, plan))
     elapsed = time.perf_counter() - started
+    picture_notes = tuple(n for n in (picture_note, painter.note() if painter else None) if n)
 
     write_build_report(
         getattr(args, "report", None),
@@ -495,11 +549,11 @@ def _build_variants(args, analysis, doc, target, started, model_summary=""):
                 path, built.slides, n, problems,
                 os.path.join(args.out, f"render-report-{n}.json") if verdict is not None else None,
             )
-            for n, _v, path, built, problems, verdict in written
+            for n, _v, path, built, problems, verdict, _pl in written
         ],
         elapsed,
-        [v.plan for _n, v, _p, _b, _pr, _vd in written],
-        extra_warnings=(reason,),
+        [pl for *_rest, pl in written],
+        extra_warnings=(reason,) + picture_notes,
     )
 
     if not args.quiet:
@@ -507,10 +561,12 @@ def _build_variants(args, analysis, doc, target, started, model_summary=""):
         print(f"контент     {args.content}")
         if model_summary:
             print(model_summary)
+        for note in picture_notes:
+            print(f"картинки    {note}")
         print(f"политик     {len(policies)} ({source}), порог различия {min_distance:.0%}")
         for line in variants_report(chosen, reason):
             print(f"            {line}")
-        for n, _v, path, built, problems, verdict in written:
+        for n, _v, path, built, problems, verdict, _pl in written:
             print(f"  вариант {n}: слайдов {built.slides}, "
                   f"структурных проблем {len(problems)} -> {path}")
             if verdict is not None:
@@ -640,6 +696,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     build.add_argument("-q", "--quiet", action="store_true", help="без сводки")
     _add_model_args(build)
+    build.add_argument(
+        "--images",
+        choices=("on", "off"),
+        default=None,
+        help="рисовать ли картинки по идеям модели генератором (Z-28): on — да, "
+             "off — идеи остаются словами. По умолчанию — access из config/generator.json",
+    )
     build.add_argument(
         "--verify",
         action="store_true",
