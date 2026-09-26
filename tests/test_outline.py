@@ -13,7 +13,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 #: Запись промпта, которым снят последний замер. Сменили промпт — новый замер,
 #: новая запись и новое имя здесь; иначе этот тест падает (заморозка до Ш9).
-MEASURED_PROMPT = "2026-09-25-z57-prompt.md"
+MEASURED_PROMPT = "2026-09-26-z57-prompt-1.2.md"
 
 
 def _measured_blocks() -> list[str]:
