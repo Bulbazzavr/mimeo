@@ -29,6 +29,10 @@
       "version": "1.2",
       "sha256": "81cffe0b80cba085ba2c1db2ddfceee295c6350e73f39c58253f26a3ed7977f8"
     },
+    "runtime.json": {
+      "version": "1.0",
+      "sha256": "3c229319f3525ca1b4e9816802f454a65d4d5dc3a975087ae558d8498160918e"
+    },
     "typography.json": {
       "version": "1.0",
       "sha256": "0def0f447576bb3cacf253a1c662143a715cdebc14059ca99aaf0208515448e3"

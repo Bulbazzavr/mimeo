@@ -181,7 +181,25 @@ Tech, WorkSpace, Education — разобраны без падений, соб�
 
 ## Запуск
 
-Все команды — из корня репозитория (каталог `mimeo/`).
+**Одним файлом — `start.bat`** (Windows 10/11, видеокарта NVIDIA с 12 ГБ). При
+первом запуске он скачивает в `runtime/` всё нужное — около 19 ГБ: сервер
+модели `llama.cpp`, веса Gemma 4 12B, `stable-diffusion.cpp`, Z-Image-Turbo с
+кодировщиком и VAE, — сверяет каждый файл по `sha256`, поднимает оба сервера и
+открывает веб-интерфейс на `http://127.0.0.1:8000/`. Python 3.11+ берётся
+установленный, а если его нет — скачивается встраиваемый Python 3.11.9
+(11 МБ) в `runtime/python`. Оборвалась загрузка — запустите снова: скачанное
+сохраняется и продолжается с места обрыва. Что и откуда качается — манифест
+[`config/runtime.json`](config/runtime.json); то же руками:
+
+```
+python tools/runtime.py install     докачать и сверить модели и серверы
+python tools/runtime.py start       поднять llama-server и sd-server
+python tools/runtime.py status      что лежит и что отвечает
+python tools/runtime.py stop        остановить поднятое
+```
+
+Командная строка — из корня репозитория (каталог `mimeo/`), серверы моделей
+должны быть подняты (`start`):
 
 ```
 python -m mimeo build   шаблон.pptx examples/content-demo.md --output out/deck.pptx

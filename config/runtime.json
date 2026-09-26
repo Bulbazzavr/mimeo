@@ -1,0 +1,89 @@
+{
+  "_": "Что ставит установка одним файлом (Z-76; курс пользователя 26 сентября, вечер) и как поднимаются серверы. Читается tools/runtime.py, запускает его start.bat. Всё ложится в runtime/ внутри репозитория (вне git). Каждый файл сверяется по sha256 после скачивания; уже лежащий файл нужного размера не качается заново. Адреса и суммы сняты 26 сентября с GitHub (выпуски) и Hugging Face (API дерева файлов), а не набраны руками.",
+  "version__": "Версия ставится руками и означает 'настройки изменились'. Поднимать её обязан тот, кто правит значения в этом файле: замо́к config/versions.lock.json сверяет объявленную версию с содержимым и роняет тест, если файл поменялся, а версия нет. Правило и обоснование — ADR-0022, проверка — tools/config_version.py.",
+  "version": "1.0",
+
+  "root": "runtime",
+
+  "items": [
+    {
+      "name": "llama.cpp b11011 (Windows, CUDA 12.4) — сервер языковой модели",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11011/llama-b11011-bin-win-cuda-12.4-x64.zip",
+      "size": 254190475,
+      "sha256": "6d8c5a1cf7dc9e6f4e8b24adf01df4fd6fe53cff65202d214fecd39f9a8ab9c2",
+      "unzip_to": "llama",
+      "check": "llama/llama-server.exe"
+    },
+    {
+      "name": "библиотеки CUDA 12.4 для llama.cpp (их же берёт генератор картинок)",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11011/cudart-llama-bin-win-cuda-12.4-x64.zip",
+      "size": 391443627,
+      "sha256": "8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6",
+      "unzip_to": "llama",
+      "check": "llama/cublasLt64_12.dll"
+    },
+    {
+      "name": "stable-diffusion.cpp master-920 (Windows, CUDA 12) — сервер генератора картинок",
+      "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-920-2f88688/sd-master-2f88688-bin-win-cuda12-x64.zip",
+      "size": 333462536,
+      "sha256": "479133a03d5c861ce77e70354dbbe75dd6e8d9955d1d1c7b6b1456b4571e3039",
+      "unzip_to": "sd",
+      "check": "sd/sd-server.exe",
+      "copy_from": ["llama/cudart64_12.dll", "llama/cublas64_12.dll", "llama/cublasLt64_12.dll"],
+      "_copy_from": "Библиотеки CUDA берутся у llama.cpp, а не качаются вторым архивом на 563 МБ: с ними sd-server рисует — проверено 26 сентября на RTX 4070 Super."
+    },
+    {
+      "name": "Gemma 4 12B it QAT Q4_0 — языковая модель, строит колоду",
+      "url": "https://huggingface.co/lmstudio-community/gemma-4-12B-it-QAT-GGUF/resolve/main/gemma-4-12B-it-QAT-Q4_0.gguf",
+      "size": 6975879008,
+      "sha256": "f568ac5de71c8fcac5d5794494388ad94db9e18b4368ca897e21b30d2448eeec",
+      "path": "models/gemma-4-12B-it-QAT-Q4_0.gguf"
+    },
+    {
+      "name": "Z-Image-Turbo Q8_0 — генератор картинок (Apache 2.0)",
+      "url": "https://huggingface.co/leejet/Z-Image-Turbo-GGUF/resolve/main/z_image_turbo-Q8_0.gguf",
+      "size": 6577440704,
+      "sha256": "df1c5baa86d1398c979495a6072dbcee79444fdb884a2445582ba0769c44e9a1",
+      "path": "models/z_image_turbo-Q8_0.gguf"
+    },
+    {
+      "name": "Qwen3-4B Instruct 2507 Q8_0 — кодировщик запроса у Z-Image-Turbo",
+      "url": "https://huggingface.co/lmstudio-community/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q8_0.gguf",
+      "size": 4280404928,
+      "sha256": "575aa0743bc47b42f49908e9cf95f59094ff8f738db5faea252979a42ad30ee9",
+      "path": "models/Qwen3-4B-Instruct-2507-Q8_0.gguf"
+    },
+    {
+      "name": "VAE FLUX.1 — декодер картинки у Z-Image-Turbo (копия без входа на Hugging Face)",
+      "url": "https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors",
+      "size": 335304388,
+      "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38",
+      "path": "models/ae.safetensors"
+    }
+  ],
+
+  "servers": [
+    {
+      "name": "llama-server (Gemma)",
+      "exe": "llama/llama-server.exe",
+      "args": ["-m", "{root}/models/gemma-4-12B-it-QAT-Q4_0.gguf", "-c", "8192", "-ngl", "99",
+               "--host", "127.0.0.1", "--port", "8080", "--sleep-idle-seconds", "3"],
+      "ready": "http://127.0.0.1:8080/health",
+      "_": "Те же ключи, что в замерах (CTX-MODELS), плюс --sleep-idle-seconds 3: через три секунды простоя сервер отдаёт видеопамять генератору картинок и просыпается на следующий запрос за 4 с (ADR-0024)."
+    },
+    {
+      "name": "sd-server (Z-Image-Turbo)",
+      "exe": "sd/sd-server.exe",
+      "args": ["--diffusion-model", "{root}/models/z_image_turbo-Q8_0.gguf",
+               "--vae", "{root}/models/ae.safetensors",
+               "--llm", "{root}/models/Qwen3-4B-Instruct-2507-Q8_0.gguf",
+               "--diffusion-fa", "--offload-to-cpu", "--cfg-scale", "1.0",
+               "--listen-ip", "127.0.0.1", "--listen-port", "8081"],
+      "ready": "http://127.0.0.1:8081/sdapi/v1/options",
+      "_": "--offload-to-cpu держит веса в памяти машины: в простое сервер занимает около 0.7 ГБ видеопамяти и не мешает Gemma (замер 26 сентября)."
+    }
+  ],
+
+  "ready_timeout_sec": 180,
+  "_ready_timeout_sec": "Сколько ждать готовности каждого сервера: первый подъём читает веса с диска."
+}

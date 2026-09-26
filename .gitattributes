@@ -1,6 +1,10 @@
 # Переводы строк в репозитории всегда LF: проект собирают и на Linux.
 * text=auto eol=lf
 
+# Кроме пакетных файлов Windows: cmd с одними LF теряет метки (`goto :fail`).
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
 # Бинарное — не трогать.
 *.pptx binary
 *.potx binary

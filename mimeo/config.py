@@ -46,6 +46,10 @@ KNOWN = (
     "outline.json",
     "prompt.json",
     "prose.json",
+    # Движок его не читает — читает установка (`tools/runtime.py`, `Z-76`), — но
+    # он называет веса и серверы, которыми колода собрана: по паспорту прогона
+    # видно, какой Gemma и каким генератором (sha256 файлов в манифесте).
+    "runtime.json",
     "typography.json",
     "variants.json",
 )

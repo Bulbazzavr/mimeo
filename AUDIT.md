@@ -63,6 +63,7 @@ python tools/audit_doc.py --write
 | [`tests/test_reading_order.py`](tests/test_reading_order.py) | 7 | Порядок чтения: тезис стоит там, где зритель прочтёт его этим по счёту. |
 | [`tests/test_report_tool.py`](tests/test_report_tool.py) | 11 | `tools/report.py verify` мерит колоды модели (`PLAN-9.0`, Ш9). |
 | [`tests/test_run_config.py`](tests/test_run_config.py) | 10 | Запуск конфиг-файлом: приоритет, опечатки, понятные отказы. |
+| [`tests/test_runtime_manifest.py`](tests/test_runtime_manifest.py) | 4 | Манифест установки одним файлом (`Z-76`, `config/runtime.json`, `tools/runtime.py`). |
 | [`tests/test_slide_captions.py`](tests/test_slide_captions.py) | 17 | Подпись шаблона: оглавление и финал (`Z-58`, `PLAN-9.0`, часть Б). |
 | [`tests/test_typeface.py`](tests/test_typeface.py) | 13 | Гарнитура слота, не предназначенная для прозы. `Z-43`, `PLAN-7.3`. |
 | [`tests/test_units.py`](tests/test_units.py) | 8 | Единицы. DOM-GEOM §1, DOM-TEXT §4. |
@@ -75,7 +76,7 @@ python tools/audit_doc.py --write
 | [`tests/test_volume.py`](tests/test_volume.py) | 19 | Объём колоды: 10–15 слайдов или сколько задали. `Z-35`, план `PLAN-2.3`. |
 | [`tests/test_web_boundary.py`](tests/test_web_boundary.py) | 5 | Граница веб-слоя (`Z-29`, `PLAN-8.0`, `SPEC-WEB` раздел 2). |
 | [`tests/test_web_design.py`](tests/test_web_design.py) | 13 | Экран «что вынули из вашего шаблона» (`Z-29`, `PLAN-8.1`, часть A). |
-| **всего** | **631** | в 40 файлах |
+| **всего** | **635** | в 41 файлах |
 
 <!-- /порождается -->
 
