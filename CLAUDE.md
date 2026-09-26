@@ -429,7 +429,7 @@ eol=lf`. Прежде чем назвать причину, сосчитать �
   метки времени в ZIP фиксированы.
 - **С вечера 26 сентября этот пункт отменён курсом** (корневой `CLAUDE.md`):
   продукт работает только с видеокартой, умолчание сборки — звать модель
-  (`on`, сделать в Ш10), Ш8 не будет, «эксперт без видеокарты» — не наша забота.
+  (`on`, сделано в Ш10), Ш8 не будет, «эксперт без видеокарты» — не наша забота.
   Ниже — как было до курса.
   **Сеть есть только в PLAN, и по умолчанию выключена.** Клиент к модели
   написан 17 сентября — `mimeo/plan/client.py` (`Z-07`, `ADR-0021`). В ANALYZE,
@@ -462,7 +462,7 @@ python tools/report.py slots          # сужённые и пустые сло�
 python tools/config_version.py        # сверить версии конфигов с замком
 python tools/audit_doc.py --write     # перегенерировать таблицу тестов в AUDIT.md
 python tools/doc_check.py             # не обещают ли документы того, чего в коде нет
-python tools/deck_lock.py --check     # замок Ш0: путь без модели (--llm off передаёт сам) — те же байты, 93 колоды
+python tools/deck_lock.py --check     # замок Ш0: путь без модели (--llm off передаёт сам) — те же байты, 93 колоды; не переснимался с 24.09, после Z-62 и Z-55, вероятно, расходится
 python tools/deck_lock.py --check -- --llm cache   # промах кэша — обязано дать те же байты
 python tools/deck_lock.py --check --verify   # то же для 23 колод через PowerPoint
 python web/serve.py                   # локальный веб-интерфейс на 127.0.0.1:8000 (Z-29)
@@ -562,7 +562,7 @@ python tools/render_probe.py   <файл.pptx> -o out/render   # открыть 
 python tools/rank_dump.py      <шаблон.pptx> <контент.md>  # из чего был выбор раскладки
 python tools/report.py verify --content examples/content-mimeo.md   # переполнения, заслонения, время
 python tools/report.py verify --content examples/content-mimeo.md --templates tz/templates --variants 3 --slides 10-15   # девять колод
-python tools/report.py verify --content examples/content-mimeo.md --templates tz/templates --variants 3 --slides 10-15 --llm cache --text improve   # девять колод модели (Ш9); ответы — cache/llm/ после Ш8 или --llm-cache <каталог>
+python tools/report.py verify --content examples/content-mimeo.md --templates tz/templates --variants 3 --slides 10-15 --llm cache --text improve   # девять колод модели (Ш9); ответы — из cache/llm/ или --llm-cache <каталог>
 ```
 
 **`report.py verify` без `--llm` меряет путь без модели** — умолчание `off`, а
@@ -1081,7 +1081,7 @@ python tools/llm_cache.py fill <шаблон> <контент>     наполн�
 Studio, грузившем модель по требованию; правило осталось — вызов заодно проверяет
 ответ по контракту.
 
-**Чемпиона два, под разные дела** (`CTX-MODELS`, замеры 17–19 сентября):
+**История (до 26 сентября; с `ADR-0025` зрение — Gemma с `mmproj`). Чемпиона два, под разные дела** (`CTX-MODELS`, замеры 17–19 сентября):
 **Gemma 4 12B QAT** на текст — 89 % разметки ролей и ноль ложных «этой роли
 нет» против двенадцати у Qwen; **Qwen3.5-9B** на зрение — единственная из
 четырёх, кто различает пару «слайд до ремонта и после». **С 24 сентября
