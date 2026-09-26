@@ -154,6 +154,17 @@ def dropped_image_penalty(tuning: Tuning) -> float:
     return _PENALTY_DROPPED_IMAGE + tuning.repeat * _REPEAT_CAP
 
 
+#: Премия раскладке, где встала картинка генератора (`Z-28`, заготовка с
+#: `min_side`). Картинка — украшение: штрафа за невставку у неё нет, в полноту
+#: она не входит, премия малая. Замер 26 сентября на девятке (основной текст,
+#: три шаблона, проверка PowerPoint): со штрафом, как у картинки автора, —
+#: картинка в 7 колодах из 9, но 5 переполнений у предела читаемости на слайде с
+#: ней (VK Tech) и картинка поверх заголовка в повёрнутой рамке (WorkSpace);
+#: без премии и без довода вида — 0 переполнений и 0 картинок; премия 0.1 — 2
+#: колоды, 0.2 — 3, все на Education, 0 переполнений.
+_BONUS_GENERATED_IMAGE = 0.2
+
+
 
 #: Штраф за то, что тезисы легли не в порядке чтения (`Z-31`, `PLAN-7.6`).
 #: Умножается на долю переставленных пар: слайд, прочитанный задом наперёд,
@@ -275,7 +286,11 @@ def preferred_kinds(section: ContentSection) -> tuple[str, ...]:
 
 
 def _derived_kinds(section: ContentSection) -> tuple[str, ...]:
-    """Виды раскладок, которые просит само содержание раздела."""
+    """Виды раскладок, которые просит само содержание раздела. Заготовка
+    генератора (`Z-28`) здесь считается картинкой намеренно: раздел с идеей
+    просит «картинку с текстом». Замер 26 сентября на девятке: без этого довода
+    картинка не встала ни в одну колоду из девяти, с ним — в три колоды
+    Education, удачно, при нуле переполнений."""
     kinds = section.kinds()
     lists = [b for b in section.blocks if b.kind == "list"]
 
@@ -680,8 +695,16 @@ def match(
     disorder = inversions / pairs if pairs else 0.0
 
     # --- ранг ---
-    total_units = sum(b.units for b in section.blocks) + (1 if section.heading else 0)
-    placed_units = sum(len(f.items or ()) if f.kind == "list" else 1 for f in fills)
+    # Заготовка генератора (`Z-28`, `min_side`) — украшение: выбор раскладки она
+    # не решает — ни полнотой, ни штрафом за невставку. Встаёт, только если у
+    # лучшей по тексту раскладки есть крупное место. Замер 26 сентября: со штрафом
+    # ранг брал ради картинки тесную раскладку, и на двух колодах VK Tech текст
+    # слайда с картинкой остался переполнен у предела читаемости (5 из 5 остатков).
+    generated = {b.ref for b in section.blocks if b.kind == "image" and b.min_side}
+    total_units = sum(b.units for b in section.blocks
+                      if not (b.kind == "image" and b.min_side)) + (1 if section.heading else 0)
+    placed_units = sum(len(f.items or ()) if f.kind == "list" else 1 for f in fills
+                       if not (f.kind == "image" and f.ref in generated))
     coverage = placed_units / total_units if total_units else 1.0
 
     wanted = preferred_kinds(section)
@@ -705,7 +728,8 @@ def match(
         - _PENALTY_SLACK * (thin / max(1, len(slack)))
         - tuning.over * over
         - typeface_penalty(tuning) * len(foreign)
-        - dropped_image_penalty(tuning) * len(dropped_images)
+        - dropped_image_penalty(tuning) * sum(1 for r in dropped_images if r not in generated)
+        + _BONUS_GENERATED_IMAGE * sum(1 for f in fills if f.kind == "image" and f.ref in generated)
         - _PENALTY_DISORDER * disorder
     )
 

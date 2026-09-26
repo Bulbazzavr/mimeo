@@ -45,7 +45,7 @@ python tools/audit_doc.py --write
 | [`tests/test_docs.py`](tests/test_docs.py) | 24 | Целостность документации. |
 | [`tests/test_exclusive_donors.py`](tests/test_exclusive_donors.py) | 9 | Доноры, которые нельзя клонировать дважды. `Z-44`, `DOM-PKG §9`, `PLAN-6.1`. |
 | [`tests/test_fitting.py`](tests/test_fitting.py) | 8 | Оценка вместимости. DOM-TEXT §6, §10, ADR-0008. |
-| [`tests/test_generated_images.py`](tests/test_generated_images.py) | 8 | Картинки по идеям модели (`Z-28`, `mimeo/plan/images.py`). |
+| [`tests/test_generated_images.py`](tests/test_generated_images.py) | 9 | Картинки по идеям модели (`Z-28`, `mimeo/plan/images.py`). |
 | [`tests/test_image_ideas.py`](tests/test_image_ideas.py) | 11 | Идеи картинок модели в плане колоды (`PLAN-9.0`, Ш6; `ADR-0023`, п. 1). |
 | [`tests/test_images.py`](tests/test_images.py) | 16 | Встраивание изображений (`Z-28a`, `PLAN-7.10`). |
 | [`tests/test_mce_prefixes.py`](tests/test_mce_prefixes.py) | 5 | Пространства имён Markup Compatibility переживают пересериализацию. |
@@ -76,7 +76,7 @@ python tools/audit_doc.py --write
 | [`tests/test_volume.py`](tests/test_volume.py) | 19 | Объём колоды: 10–15 слайдов или сколько задали. `Z-35`, план `PLAN-2.3`. |
 | [`tests/test_web_boundary.py`](tests/test_web_boundary.py) | 5 | Граница веб-слоя (`Z-29`, `PLAN-8.0`, `SPEC-WEB` раздел 2). |
 | [`tests/test_web_design.py`](tests/test_web_design.py) | 13 | Экран «что вынули из вашего шаблона» (`Z-29`, `PLAN-8.1`, часть A). |
-| **всего** | **635** | в 41 файлах |
+| **всего** | **636** | в 41 файлах |
 
 <!-- /порождается -->
 

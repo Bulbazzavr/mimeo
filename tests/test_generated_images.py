@@ -162,6 +162,52 @@ def test_deck_without_model_gets_no_pictures(tmp_path):
     assert images.add_placeholders(doc, str(tmp_path), _gen(tmp_path))[1] == {}
 
 
+def test_generated_picture_does_not_buy_a_layout():
+    """Заготовка генератора — украшение: невставленная не штрафуется и в полноту
+    не входит; вставленная даёт раскладке лишь малую премию; место мельче
+    `min_side` её не принимает. Замер 26 сентября: со штрафом, как у картинки
+    автора, ранг брал ради картинки тесную раскладку — 5 переполнений на VK Tech."""
+    from dataclasses import replace
+
+    from mimeo.model import Capacity, Pattern, Slot
+    from mimeo.plan import matching
+    from tests.test_images import ILLUSTRATION, _Rect
+
+    def text(sid, y):
+        return Slot(id=sid, role="body", content_type="text", rect=_Rect(0, y, 6000000, 800000),
+                    type_role="body", required=True,
+                    capacity=Capacity(max_chars=200, max_lines=4, chars_per_line=50, target_chars=120,
+                                      max_items=None, donor_chars=None, basis="test"))
+
+    def picture(side):
+        return Slot(id="s09", role="image", content_type="image", rect=_Rect(6500000, 0, side, side),
+                    type_role=None, capacity=None, required=False, picture_kind=ILLUSTRATION)
+
+    def pattern(*slots):
+        return Pattern(id="p01", kind="image_text", donor_part="/ppt/slides/slide1.xml", donor_index=1,
+                       slots=(text("s00", 0), text("s01", 900000)) + slots, members=(1,),
+                       cohesion=None, donor_reason="тест", source="test")
+
+    body = ContentBlock(id="b1", kind="paragraph", text="Генераторы делают слайды по своим правилам")
+    placeholder = ContentBlock(id=images.GENERATED_PREFIX + "sec", kind="image",
+                               ref="out/images/sec.png", min_side=2000000)
+    section = ContentSection(id="sec", heading="Генераторы не переносят стиль", blocks=(body, placeholder))
+
+    no_place, big, small = pattern(), pattern(picture(3000000)), pattern(picture(1000000))
+    placed, dropped = matching.match(section, big), matching.match(section, no_place)
+    assert any(f.kind == "image" and f.slot_id == "s09" for f in placed.fills)
+    assert dropped.dropped_images == ("out/images/sec.png",)
+    # Встала — только премия; не встала — ни штрафа, ни потери полноты.
+    assert round(placed.score - dropped.score, 4) == matching._BONUS_GENERATED_IMAGE
+
+    author = replace(placeholder, id="b2", min_side=None)
+    with_author = replace(section, blocks=(body, author))
+    gap = matching.match(with_author, big).score - matching.match(with_author, no_place).score
+    assert gap > matching._BONUS_GENERATED_IMAGE, "картинку автора ранг по-прежнему бережёт"
+
+    assert not any(f.kind == "image" for f in matching.match(section, small).fills)
+
+
 def test_access_variable_overrides_the_config(monkeypatch):
     monkeypatch.setenv("MIMEO_IMAGES_ACCESS", "off")
     assert images.load_config().access == "off"
