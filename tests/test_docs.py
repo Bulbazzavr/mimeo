@@ -269,7 +269,9 @@ def test_state_holds_the_only_queue() -> None:
        сравнить его не с чем;
     2. каждая открытая карточка `BACKLOG` названа в очереди. Таблицу «Все
        открытые задачи» сверяли глазами, а 21 сентября четыре задачи не
-       значились ни в одной фазе.
+       значились ни в одной фазе;
+    3. строка текущей фазы в `BACKLOG` ведёт в `STATE` и задач не перечисляет —
+       вторая копия очереди не заводится снова.
     """
     queue = _state_queue()
     closed = _closed_tasks()
@@ -289,6 +291,12 @@ def test_state_holds_the_only_queue() -> None:
     cards = set(re.findall(r"^### (Z-\d+[a-z]?)\.", backlog, re.M))
     missing = sorted(z for z in cards - closed if f"`{z}`" not in queue)
     assert not missing, f"открытые карточки, которых нет в очереди STATE: {missing}"
+
+    rows = [ln for ln in backlog.splitlines() if ln.startswith("| 16–29 сентября")]
+    assert len(rows) == 1, "строка текущей фазы в таблице фаз BACKLOG не одна"
+    assert "STATE" in rows[0], "строка текущей фазы в BACKLOG не ведёт в STATE"
+    copied = re.findall(r"`Z-\d+[a-z]?`", rows[0])
+    assert not copied, f"строка фазы в BACKLOG снова перечисляет задачи: {copied}"
 
 
 def test_backlog_is_not_frozen_to_the_day_it_was_written() -> None:
