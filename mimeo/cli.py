@@ -610,7 +610,7 @@ def _add_model_args(parser: argparse.ArgumentParser) -> None:
 
     Умолчание обоих — `None`, а не значение: доступ без флага берётся из
     `config/model.json` (иначе умолчаний стало бы два), режим текста —
-    `outline.DEFAULT_MODE` до решения пользователя (`PLAN-9.0`, Ш9). `None`
+    `outline.DEFAULT_MODE` (`improve` — решение пользователя 26 сентября). `None`
     нужен и сводке: она различает «задано при запуске» и «умолчание».
     """
     parser.add_argument(
