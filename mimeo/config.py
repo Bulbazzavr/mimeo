@@ -39,6 +39,7 @@ from .model import ConfigStamp
 #: который движок не читает, не должен попадать в паспорт прогона и создавать
 #: впечатление, будто он на что-то влиял.
 KNOWN = (
+    "audit.json",
     "generator.json",
     "images.json",
     "kinds.json",

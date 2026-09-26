@@ -497,6 +497,10 @@ class PlannedSlide:
     #: генератор отдельным планом (`Z-28`). `None` — идеи у слайда нет, и тогда
     #: ключа нет и в JSON: план пути без модели не меняется ни ключом.
     image_idea: str | None = None
+    #: Картинки донора (id фигур, `p:cNvPr/@id`), несущие чужое содержимое —
+    #: диаграмму, снимок экрана, фото, — по суждению зрения модели (`Z-62`,
+    #: `plan/donor.py`). Сборка убирает эти фигуры. Пусто — ключа в JSON нет.
+    dropped_pictures: tuple[str, ...] = ()
 
     def to_json(self) -> dict:
         origin = None
@@ -516,6 +520,8 @@ class PlannedSlide:
         }
         if self.image_idea:
             out["image_idea"] = self.image_idea
+        if self.dropped_pictures:
+            out["dropped_pictures"] = list(self.dropped_pictures)
         return out
 
 

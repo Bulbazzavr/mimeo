@@ -104,6 +104,21 @@ def _painted(plan, painter, doc, library, replan):
     return plan
 
 
+def _judge(args, analysis):
+    """Зрение модели для картинок донора (`Z-62`, `plan/donor.py`): тот же
+    доступ к модели, что у колоды, — флаг `--llm` старше конфига."""
+    from dataclasses import replace as _replace
+    from .plan import donor
+
+    model = load_model_config()
+    access = getattr(args, "llm", None)
+    if access is not None:
+        model = _replace(model, access=Access(access))
+    slide = analysis.design_system.slide
+    return donor.Judge(donor.load_config(), model, args.template,
+                       slide_size=(slide.cx_emu, slide.cy_emu))
+
+
 def _model_line(outcome, record_path) -> str:
     """Строка сводки: каким путём собран текст колоды и почему — ИКР `PLAN-9.0`
     («без модели сборка идёт прежним путём и говорит об этом словами»)."""
@@ -404,15 +419,17 @@ def cmd_build(args):
     # Умолчание не меняется: без флага собирается одна колода ровно как раньше.
     # Это не вежливость к старому коду — девять сдаточных колод собираются этой
     # же командой, и молчаливая смена поведения испортила бы их незаметно.
+    judge = _judge(args, analysis)
     if int(getattr(args, "variants", 1) or 1) > 1:
         return _build_variants(args, analysis, doc, target, started,
-                               _model_line(outcome, record_path), painter, picture_note)
+                               _model_line(outcome, record_path), painter, picture_note, judge)
 
     sha = analysis.design_system.source.sha256
     plan = plan_deck(doc, analysis.patterns, sha, target=target)
     plan = _painted(plan, painter, doc, analysis.patterns,
                     lambda d: plan_deck(d, analysis.patterns, sha, target=target))
-    picture_notes = tuple(n for n in (picture_note, painter.note()) if n)
+    plan = judge.mark(plan, analysis.patterns)
+    picture_notes = tuple(n for n in (picture_note, painter.note(), judge.note()) if n)
 
     os.makedirs(args.out, exist_ok=True)
     target = args.output or os.path.join(args.out, "deck.pptx")
@@ -487,7 +504,7 @@ def cmd_build(args):
 
 
 def _build_variants(args, analysis, doc, target, started, model_summary="",
-                    painter=None, picture_note=None):
+                    painter=None, picture_note=None, judge=None):
     """Три (или сколько попросили) варианта вёрстки одного контента.
 
     Требование ТЗ, раздел 2, п. 5, и пункт критерия 3, который проверяют
@@ -527,6 +544,8 @@ def _build_variants(args, analysis, doc, target, started, model_summary="",
             tuning = variant.policy.tuning
             plan = _painted(plan, painter, doc, analysis.patterns,
                             lambda d, t=tuning: plan_deck(d, analysis.patterns, sha, target, tuning=t))
+        if judge is not None:
+            plan = judge.mark(plan, analysis.patterns)
         built = compose_deck(args.template, plan, analysis.patterns, path)
         verdict = None
         if do_verify:
@@ -540,7 +559,8 @@ def _build_variants(args, analysis, doc, target, started, model_summary="",
         worst = max(worst, len(problems))
         written.append((n, variant, path, built, problems, verdict, plan))
     elapsed = time.perf_counter() - started
-    picture_notes = tuple(n for n in (picture_note, painter.note() if painter else None) if n)
+    picture_notes = tuple(n for n in (picture_note, painter.note() if painter else None,
+                                      judge.note() if judge else None) if n)
 
     write_build_report(
         getattr(args, "report", None),

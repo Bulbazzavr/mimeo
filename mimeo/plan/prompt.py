@@ -161,11 +161,18 @@ class Request:
     #: повтор запроса колоды, если ответ не прошёл проверки (`outline.run`).
     #: Пусто — обычный запрос из двух сообщений, и ключ кэша прежний.
     history: tuple[dict, ...] = ()
+    #: Картинки к вопросу — адреса `data:` (зрение модели, `Z-62`,
+    #: `plan/donor.py`). Пусто — вопрос текстом, как у всех прочих запросов.
+    images: tuple[str, ...] = ()
 
     def as_messages(self) -> list[dict]:
+        user: object = self.user
+        if self.images:
+            user = [{"type": "image_url", "image_url": {"url": url}} for url in self.images]
+            user.append({"type": "text", "text": self.user})
         return [
             {"role": "system", "content": self.system},
-            {"role": "user", "content": self.user},
+            {"role": "user", "content": user},
             *self.history,
         ]
 

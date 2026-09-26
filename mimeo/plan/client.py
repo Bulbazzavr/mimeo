@@ -27,6 +27,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import http.client
 import json
 import os
@@ -395,6 +396,9 @@ class ModelClient:
         user = request.user
         if request.history:
             user += "\x00" + json.dumps(list(request.history), ensure_ascii=False, sort_keys=True)
+        if request.images:
+            # Картинка меняет ответ — её сумма в ключе, а не сами байты.
+            user += "\x00" + ",".join(hashlib.sha256(u.encode("ascii")).hexdigest() for u in request.images)
         return cache.key_for(
             model=self.config.endpoint.model,
             mode=request.mode.value,

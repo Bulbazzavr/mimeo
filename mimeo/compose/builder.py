@@ -207,6 +207,14 @@ def build(
                     f"слайд {planned.index}: {'таблица' if slot.content_type == 'table' else 'диаграмма'}"
                     f" донора убрана — чужие числа на слайде хуже пустого места (Z-62)"
                 )
+        # Картинка донора, которую зрение модели признало содержимым —
+        # диаграмма, снимок экрана, фото (`plan/donor.py`, `Z-62`).
+        for shape_id in getattr(planned, "dropped_pictures", ()):
+            shape = find_shape(tree, shape_id)
+            if shape is not None and remove_shape(tree, shape):
+                warnings.append(
+                    f"слайд {planned.index}: картинка донора с чужим содержимым убрана (Z-62)"
+                )
         for slot in pattern.slots:
             if slot.id in intended or slot.content_type in ("table", "chart"):
                 continue
