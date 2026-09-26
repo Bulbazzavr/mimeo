@@ -176,12 +176,13 @@ $('go').addEventListener('click', async () => {
   if (!text) return setStatus('Вставьте текст — движку нечего раскладывать.', 'error');
 
   const verify = $('verify').checked;
+  const mode = document.querySelector('input[name="text-mode"]:checked');
   $('go').disabled = true;
-  /* Индикатор нужен только для проверки вёрстки: обычная сборка идёт доли
-     секунды, а проверка — десятки. Замер в SPEC-WEB, раздел 5. */
+  /* Модель строит колоду за полминуты, при повторе — за минуту (замер Ш9:
+     33–34 с на вызов); проверка вёрстки добавляет десятки секунд. */
   setStatus(verify
-    ? 'Собираем и проверяем вёрстку в PowerPoint — это десятки секунд…'
-    : 'Собираем…', 'working');
+    ? 'Модель строит колоду, потом проверяем вёрстку в PowerPoint — это минута-две…'
+    : 'Модель строит колоду — до минуты…', 'working');
 
   try {
     const response = await fetch('/api/build', {
@@ -192,7 +193,8 @@ $('go').addEventListener('click', async () => {
         text: text,
         slides: $('slides').value.trim(),
         variants: parseInt($('variants').value, 10) || 1,
-        verify: verify
+        verify: verify,
+        text_mode: mode ? mode.value : 'improve'
       })
     });
     const data = await response.json();
@@ -208,8 +210,44 @@ $('go').addEventListener('click', async () => {
 
 /* --- показ результата --------------------------------------------------- */
 
+/* Каким путём собран текст колоды — крупно и первым: продукт работает с
+   моделью, и колода без неё — отказ, о котором человек обязан узнать, не
+   раскрывая «подробности». Слова — из outline.json через сервер. */
+const TEXT_MODE = { improve: 'текст переписан короче', keep: 'фразы автора оставлены' };
+
+function modelBlock(model) {
+  if (!model) {
+    return '<div class="verdict unknown"><h3>Неизвестно, звали ли модель</h3>'
+      + '<p>Движок не оставил записи пути модели (outline.json).</p></div>';
+  }
+  if (model.by_model) {
+    return '<div class="verdict ok"><h3>Колоду построила модель'
+      + (model.retried ? ' — со второй попытки' : '') + '</h3>'
+      + '<p>' + escape(TEXT_MODE[model.text_mode] || model.text_mode || '')
+      + '; числа и факты проверены по вашему тексту.</p></div>';
+  }
+  const why = {
+    no_answer: 'Модель не ответила. Запущен ли сервер модели?',
+    rejected: 'Модель ответила, но ответ не прошёл проверку'
+      + (model.retried ? ' и со второй попытки' : '') + '.',
+    unparsed: 'Ответ модели не разобрался.',
+    too_long: 'Текст длиннее, чем модель принимает за раз.',
+    off: 'Модель выключена.',
+    markup: 'Текст размечен заголовками — структуру задал автор, модель не нужна.'
+  }[model.status] || 'Модель колоду не построила.';
+  const lost = (model.failed || []).length
+    ? '<p>Что не прошло проверку:</p><ul>' + model.failed.map((f) =>
+        '<li>' + escape(f) + '</li>').join('') + '</ul>'
+    : '';
+  const tone = model.status === 'markup' ? 'skipped' : 'unknown';
+  return '<div class="verdict ' + tone + '"><h3>Колода собрана без модели</h3>'
+    + '<p>' + escape(why) + '</p>' + lost
+    + '<p class="hint">' + escape(model.line) + '</p></div>';
+}
+
 function render(data) {
   const decks = data.report.decks || [];
+  $('model-block').innerHTML = modelBlock(data.model);
   $('decks').innerHTML = decks.map((deck, n) => {
     const name = deck.variant === null
       ? 'Колода'

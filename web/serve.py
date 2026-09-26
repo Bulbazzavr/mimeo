@@ -274,6 +274,35 @@ def _read_json(path: str):
         return None
 
 
+#: Режимы текста модели — те же, что у `build --text` (`mimeo.plan.outline.MODES`);
+#: импортировать движок веб не вправе, совпадение стережёт тест.
+TEXT_MODES = ("keep", "improve")
+
+
+def _model_summary(run_dir: str) -> dict | None:
+    """Каким путём собран текст колоды — из `<out>/outline.json` по его схеме
+    (`contracts/outline.schema.json`), а не из печатной сводки (`Z-46`).
+
+    `failed` — что не прошло проверки в последней попытке (повтор, если был):
+    веб обязан сказать, почему колода собрана без модели и что модель
+    потеряла. `None` — файла нет: сборка до пути модели не дошла."""
+    record = _read_json(os.path.join(run_dir, "outline.json"))
+    if not isinstance(record, dict):
+        return None
+    retry = record.get("retry") if isinstance(record.get("retry"), dict) else None
+    last = (retry or {}).get("checks") or record.get("checks") or []
+    status = record.get("status")
+    return {
+        "status": status,
+        "by_model": status == "accepted",
+        "text_mode": record.get("text_mode"),
+        "retried": retry is not None,
+        "line": record.get("line") or "",
+        "failed": [] if status == "accepted" else
+                  [f"{c.get('name')}: {c.get('detail')}" for c in last if not c.get("ok")],
+    }
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "mimeo-web"
 
@@ -423,6 +452,11 @@ class Handler(BaseHTTPRequestHandler):
         slides = str(request.get("slides") or "").strip()
         if slides:
             argv += ["--slides", slides]
+        # Режим текста модели (`ADR-0023`): «доработать» — умолчание движка,
+        # но страница шлёт выбор всегда, чтобы итог не зависел от умолчания.
+        text_mode = str(request.get("text_mode") or "")
+        if text_mode in TEXT_MODES:
+            argv += ["--text", text_mode]
         if variants > 1:
             argv += ["--variants", str(variants)]
         if verify_requested:
@@ -484,6 +518,7 @@ class Handler(BaseHTTPRequestHandler):
         self._json({
             "ok": True,
             "report": report,
+            "model": _model_summary(run["dir"]),
             "verify": verify,
             "verify_requested": verify_requested,
             # Сколько вариантов просили — говорит **сервер**, а не поле формы.

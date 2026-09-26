@@ -187,3 +187,38 @@ def test_preview_width_is_generous_because_time_does_not_depend_on_it() -> None:
     1280 — разброс это шум запуска приложения, а не разрешение. Значит мельчить
     незачем: экономия была бы только на памяти, а картинку открывают целиком."""
     assert serve.PREVIEW_WIDTH >= 800
+
+
+# --- путь модели в результате (PLAN-9.0, Ш10) ---------------------------
+
+
+def test_text_modes_are_the_engine_ones() -> None:
+    """Веб движок не импортирует — режимы текста повторены, и совпадение стережёт тест."""
+    from mimeo.plan.outline import MODES
+
+    assert serve.TEXT_MODES == MODES
+
+
+def _record(tmp_path, **fields) -> str:
+    record = {"status": "accepted", "line": "on …", "text_mode": "improve",
+              "checks": [{"name": "числа", "ok": True, "detail": ""}], "retry": None}
+    record.update(fields)
+    (tmp_path / "outline.json").write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
+    return str(tmp_path)
+
+
+def test_model_summary_says_what_the_model_lost(tmp_path) -> None:
+    """Колода без модели — веб называет, что не прошло проверку, и берёт это из
+    последней попытки: повтор, если он был."""
+    lost = [{"name": "числа", "ok": False, "detail": "потеряны ['1400'], выдуманы []"}]
+    retry = {"request": "…", "key": "0" * 64, "answer_source": "model", "seconds": 30.0,
+             "answer": {}, "checks": lost}
+    got = serve._model_summary(_record(tmp_path, status="rejected", retry=retry))
+    assert got["by_model"] is False and got["retried"] is True
+    assert got["failed"] == ["числа: потеряны ['1400'], выдуманы []"]
+
+
+def test_model_summary_accepted_and_missing(tmp_path) -> None:
+    got = serve._model_summary(_record(tmp_path))
+    assert got["by_model"] is True and got["failed"] == [] and got["text_mode"] == "improve"
+    assert serve._model_summary(str(tmp_path / "нет")) is None, "нет записи — не «модель не звали»"

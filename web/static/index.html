@@ -29,6 +29,16 @@
     <p class="hint"><button type="button" class="link" id="fill-example">Подставить пример из корпуса</button></p>
 
     <h2>3. Как собирать</h2>
+    <p class="hint">Колоду по тексту строит языковая модель: сколько слайдов, в каком порядке,
+       заголовки и тезисы. Нужен запущенный сервер модели.</p>
+    <div class="row">
+      <label class="check"><input type="radio" name="text-mode" value="improve" checked>
+        Переписать короче и понятнее
+        <span class="hint">числа и факты — только ваши</span></label>
+      <label class="check"><input type="radio" name="text-mode" value="keep">
+        Оставить мои фразы
+        <span class="hint">тезисы — дословно из текста</span></label>
+    </div>
     <div class="row">
       <label>Объём
         <input type="text" id="slides" placeholder="10-15" size="8">
@@ -56,6 +66,7 @@
 
   <section class="panel" id="result" hidden>
     <h2>Результат</h2>
+    <div id="model-block"></div>
     <div id="decks"></div>
     <div id="verify-block"></div>
     <details id="diagnostics-block">
