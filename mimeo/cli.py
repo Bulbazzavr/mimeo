@@ -44,18 +44,22 @@ LLM_CHOICES = tuple(a.value for a in Access)
 TEXT_CHOICES = MODES
 
 
-def model_path(args, doc, target):
+def model_path(args, doc, target, config=None):
     """Путь модели для этой сборки (`PLAN-9.0`, Ш3; `ADR-0023`) и его запись.
 
     Один вызов на сборку — и на `--variants N` тоже: запрос от политики
     варианта не зависит, и три вёрстки берут одно содержание. Возвращает
     исход и путь к `<out>/outline.json`; документ исхода идёт в вёрстку —
     колода модели или документ пути без модели с заметкой почему.
+
+    `config` — настройки модели, если не из `config/model.json`: так
+    `tools/report.py` мерит колоды тем же вызовом, что собирает сборка, с
+    ответами из своего каталога (`PLAN-9.0`, Ш9), а не своей копией вызова.
     """
     outcome = outline.run(
         args.content, doc,
         access=getattr(args, "llm", None), text_mode=getattr(args, "text", None),
-        target=target, config=load_model_config(),
+        target=target, config=config or load_model_config(),
     )
     return outcome, outline.write_record(args.out, outcome.record)
 

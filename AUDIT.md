@@ -60,6 +60,7 @@ python tools/audit_doc.py --write
 | [`tests/test_prose.py`](tests/test_prose.py) | 48 | Сегментация сплошной прозы. Задача `Z-25`, план `PLAN-2.2`. |
 | [`tests/test_quality.py`](tests/test_quality.py) | 16 | Весы для колоды: дешёвый ярус. `PLAN-2.5`, `ADR-0019`. |
 | [`tests/test_reading_order.py`](tests/test_reading_order.py) | 7 | Порядок чтения: тезис стоит там, где зритель прочтёт его этим по счёту. |
+| [`tests/test_report_tool.py`](tests/test_report_tool.py) | 11 | `tools/report.py verify` мерит колоды модели (`PLAN-9.0`, Ш9). |
 | [`tests/test_run_config.py`](tests/test_run_config.py) | 10 | Запуск конфиг-файлом: приоритет, опечатки, понятные отказы. |
 | [`tests/test_slide_captions.py`](tests/test_slide_captions.py) | 17 | Подпись шаблона: оглавление и финал (`Z-58`, `PLAN-9.0`, часть Б). |
 | [`tests/test_typeface.py`](tests/test_typeface.py) | 13 | Гарнитура слота, не предназначенная для прозы. `Z-43`, `PLAN-7.3`. |
@@ -73,7 +74,7 @@ python tools/audit_doc.py --write
 | [`tests/test_volume.py`](tests/test_volume.py) | 19 | Объём колоды: 10–15 слайдов или сколько задали. `Z-35`, план `PLAN-2.3`. |
 | [`tests/test_web_boundary.py`](tests/test_web_boundary.py) | 5 | Граница веб-слоя (`Z-29`, `PLAN-8.0`, `SPEC-WEB` раздел 2). |
 | [`tests/test_web_design.py`](tests/test_web_design.py) | 10 | Экран «что вынули из вашего шаблона» (`Z-29`, `PLAN-8.1`, часть A). |
-| **всего** | **606** | в 38 файлах |
+| **всего** | **617** | в 39 файлах |
 
 <!-- /порождается -->
 

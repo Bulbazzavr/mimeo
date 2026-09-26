@@ -10,10 +10,12 @@
     python tools/report.py llm         цена обращения к модели: сколько вызовов на колоду
                                        и какого размера каждый (`--content путь`)
     python tools/report.py slots       сужённые и пустые слоты (`Z-48`, `Z-49`); PowerPoint не нужен
-    python tools/report.py verify      переполнения, ширина, заслонения и время настоящим PowerPoint
-                                       (`--variants 3 --slides 10-15` на tz/templates с
+    python tools/report.py verify      переполнения, ширина, заслонения, картинки и время настоящим
+                                       PowerPoint (`--variants 3 --slides 10-15` на tz/templates с
                                        `--content examples/content-mimeo.md` — девять сдаточных
-                                       колод; без `--content` возьмётся другой вход)
+                                       колод; без `--content` возьмётся другой вход). Колоды —
+                                       путём без модели; колоды модели — `--llm cache|on`,
+                                       `--text keep|improve`, `--llm-cache каталог` (`PLAN-9.0`, Ш9)
     python tools/report.py prose       что даёт вход: форма, ёмкость слотов, колода
                                        (`--content путь`, по умолчанию прозаический пример;
                                        `--raw` — без сегментации, как было до `Z-25`)
@@ -38,12 +40,15 @@ from collections import Counter
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+# Ошибки разбора флагов и отказы идут в stderr — без этого в консоли Windows
+# кириллица сообщения превращается в знаки вопроса.
+sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 from mimeo.analyze import analyze_template  # noqa: E402
 from mimeo.compose import build, inspect  # noqa: E402
 from mimeo.oxml.units import emu_to_inch as inch  # noqa: E402
 from mimeo.plan import load_content, load_markdown, plan_deck, rank  # noqa: E402
-from mimeo.cli import parse_slides  # noqa: E402
+from mimeo.cli import model_path, parse_slides  # noqa: E402
 from mimeo.plan.prompt import build_request  # noqa: E402
 
 CONTENT = "examples/content-demo.md"
@@ -257,8 +262,73 @@ def report_slots(content: str) -> None:
           "по одному только первому такой обмен выглядит улучшением.")
 
 
-def report_verify(content: str, slides: str | None, variants: int) -> None:
-    """Переполнения, заслонения и время — настоящим PowerPoint.
+#: Куда `report_verify` кладёт колоды и запись пути модели (`outline.json`).
+VERIFY_OUT = "out/verify"
+
+
+def model_doc(content: str, doc, target, llm: str = "off", text: str | None = None,
+              llm_cache: str | None = None, out_dir: str = VERIFY_OUT):
+    """Документ колоды **тем же вызовом, что у сборки** — `cli.model_path`
+    (`PLAN-9.0`, Ш9), а не своей копией: копия разошлась бы со сборкой молча.
+
+    `llm` — доступ к модели, как `build --llm`; у `report.py` умолчание `off`:
+    команды из документов меряют путь без модели и не сменят смысл, когда кэш
+    наполнится (Ш8), — тот же довод, что у замка Ш0 в Ш2. `llm_cache` — каталог
+    ответов для замера вместо `config/model.json`: ответы замера не ложатся в
+    `cache/llm/`, который коммитится один раз, в Ш8.
+
+    Возвращает исход пути модели, путь к его записи и **фактический** каталог
+    ответов: для текста из-под `tz/` клиент берёт закрытый каталог конфига
+    (`cache.root_for`) — подмена на него не действует, и шапка это покажет.
+    """
+    from dataclasses import replace                              # noqa: PLC0415
+
+    from mimeo.plan import cache                                 # noqa: PLC0415
+    from mimeo.plan.client import load_config                    # noqa: PLC0415
+
+    config = load_config()
+    if llm_cache:
+        config = replace(config, cache_root=llm_cache)
+    args = argparse.Namespace(content=content, llm=llm, text=text, out=out_dir)
+    outcome, record = model_path(args, doc, target, config)
+    answers = cache.root_for((content,), config.cache_root, config.tz_cache_root)
+    try:
+        answers = os.path.relpath(answers)
+    except ValueError:                      # другой диск на Windows
+        pass
+    return outcome, record, answers.replace(os.sep, "/")
+
+
+def _author_images(doc) -> set[str]:
+    """`sha256` картинок автора — файлов блоков `image` документа (`Z-28a`)."""
+    import hashlib                                               # noqa: PLC0415
+
+    found = set()
+    for section in doc.sections:
+        for block in section.blocks:
+            if block.kind == "image" and block.ref and os.path.isfile(block.ref):
+                with open(block.ref, "rb") as fh:
+                    found.add(hashlib.sha256(fh.read()).hexdigest())
+    return found
+
+
+def _embedded(deck: str, author: set[str]) -> int:
+    """Сколько картинок автора стоит в файле: частей `ppt/media/`, чей `sha256`
+    равен файлу автора. **Результат, а не намерение** (`Z-28a`): заливка плана с
+    ненайденным файлом картинки не даёт, свои картинки шаблона не считаются."""
+    import hashlib                                               # noqa: PLC0415
+    import zipfile                                               # noqa: PLC0415
+
+    if not author:
+        return 0
+    with zipfile.ZipFile(deck) as z:
+        return sum(1 for name in z.namelist() if name.startswith("ppt/media/")
+                   and hashlib.sha256(z.read(name)).hexdigest() in author)
+
+
+def report_verify(content: str, slides: str | None, variants: int, llm: str = "off",
+                  text: str | None = None, llm_cache: str | None = None) -> int:
+    """Переполнения, заслонения, картинки и время — настоящим PowerPoint.
 
     **Поднимает приложение на рабочем столе** (`ADR-0013`). Это та самая
     таблица, на которой стоят числа `Z-38`, `Z-47` и `Z-48`, и до 21 сентября
@@ -266,58 +336,79 @@ def report_verify(content: str, slides: str | None, variants: int) -> None:
     нечем было перепроверить.
 
     `--variants 3` на `--templates tz/templates` даёт девять сдаточных колод.
+    Колоды модели — `llm` `cache` или `on` (`model_doc`): **модель просили, а
+    колоду она не дала — код 3 до PowerPoint**, мерить нечего. Путь без модели
+    под именем модели не мерим — его меряет `off`.
     """
     from mimeo.verify import verify_deck                        # noqa: PLC0415
 
-    doc = load_content(content, target=parse_slides(slides))
-    os.makedirs("out/verify", exist_ok=True)
+    target_slides = parse_slides(slides)
+    doc = load_content(content, target=target_slides)
+    outcome, record, answers = model_doc(content, doc, target_slides, llm, text, llm_cache)
+    doc = outcome.doc
+    os.makedirs(VERIFY_OUT, exist_ok=True)
     print(f"Вход: `{content}`, вариантов {variants}"
-          + (f", объём {slides}" if slides else "") + "\n")
+          + (f", объём {slides}" if slides else ""))
+    print(f"Текст колоды: модель {outcome.line}"
+          + (f"; ответы — `{answers}`" if llm != "off" else "")
+          + f"; запись — `{record.replace(os.sep, '/')}`\n")
+    if llm != "off" and not outcome.by_model:
+        print(f"**Колоду модель не дала (`{outcome.status}`) — мерить нечего.** Колоды "
+              "пути без модели меряет `--llm off`; под именем модели их не мерим.")
+        return 3
+    author = _author_images(doc)
     # «Шире» и «донора» — из итоговой колоды, поимённые списки отчёта (`Z-52`).
     # До 22 сентября их не было здесь вовсе, а печатная сводка звала всю
     # нашу ширину «донорской»; замер по корпусу — 26 из 26 были нашими.
     print("| Шаблон | Вариант | Слайдов | Переполнений до | после | Шире | Донора "
-          "| Заслонений | Пустых | Чем встала | Вся команда, с | Петля, с |")
-    print("|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|")
-    before = after = occl = wide = donor = 0
+          "| Заслонений | Пустых | Картинок | Чем встала | Вся команда, с | Петля, с |")
+    print("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|")
+    before = after = occl = wide = donor = pictures = decks = 0
     for f in samples():
         a = analyze_template(f)
-        plans = _variant_plans(doc, a, variants)
+        plans = _variant_plans(doc, a, variants, target_slides)
         for n, plan in enumerate(plans, 1):
             started = time.perf_counter()
-            target = os.path.join("out/verify",
+            target = os.path.join(VERIFY_OUT,
                                   f"{os.path.splitext(os.path.basename(f))[0]}-{n}.pptx")
             built = build(f, plan, a.patterns, target)
-            outcome = verify_deck(f, plan, a.patterns, target, built, rounds=3)
-            rep = outcome.report
+            checked = verify_deck(f, plan, a.patterns, target, built, rounds=3)
+            rep = checked.report
+            placed = _embedded(target, author)
+            decks += 1
+            pictures += placed
             before += rep.before or 0
             after += rep.after or 0
             occl += len(rep.occluded)
             wide += len(rep.overflow_width)
             donor += len(rep.donor_overflow)
-            print(f"| `{os.path.basename(f)}` | {n} | {len(outcome.plan.slides)} "
+            print(f"| `{os.path.basename(f)}` | {n} | {len(checked.plan.slides)} "
                   f"| {rep.before} | {rep.after} | {len(rep.overflow_width)} "
                   f"| {len(rep.donor_overflow)} | {len(rep.occluded)} "
-                  f"| {_empty_required(outcome.plan, a.patterns)} | {rep.stopped} "
+                  f"| {_empty_required(checked.plan, a.patterns)} | {placed} | {rep.stopped} "
                   f"| {time.perf_counter() - started:.1f} | {rep.seconds:.1f} |")
     print(f"\n**Итого: переполнений по высоте {before} → {after}, шире места {wide}, "
-          f"в фигурах донора {donor}, заслонений {occl}.** Ремонт берёт только высоту: "
+          f"в фигурах донора {donor}, заслонений {occl}; картинок автора {pictures} на "
+          f"{decks} колод(ы), в тексте {len(author)}.** Ремонт берёт только высоту: "
           "ширина, донор и заслонения в «до/после» не входят (`Z-47`, `Z-52`).")
+    return 0
 
 
-def _variant_plans(doc, analysis, variants: int) -> list:
+def _variant_plans(doc, analysis, variants: int, target=None) -> list:
     """Один план или тройка вариантов — тем же путём, каким их строит `build`.
 
     Важно брать именно `generate` + `select`, а не свою выборку: иначе таблица
-    померила бы не то, что уходит в сдачу (`ADR-0020`).
+    померила бы не то, что уходит в сдачу (`ADR-0020`). По той же причине —
+    **с целью объёма**, как `cmd_build` и `_build_variants`: до Ш9 `PLAN-9.0` её
+    здесь не было, и колода с недобором мерилась бы без добора.
     """
     sha = analysis.design_system.source.sha256
     if variants <= 1:
-        return [plan_deck(doc, analysis.patterns, sha)]
+        return [plan_deck(doc, analysis.patterns, sha, target=target)]
     from mimeo.plan.variants import generate, load_policies, select   # noqa: PLC0415
 
     policies, min_distance, _ = load_policies()
-    chosen, _ = select(generate(doc, analysis.patterns, sha, policies, None),
+    chosen, _ = select(generate(doc, analysis.patterns, sha, policies, target),
                        variants, min_distance)
     return [v.plan for v in chosen]
 
@@ -496,8 +587,10 @@ def report_quality() -> None:
         print(f"| {part} | {label} | {a[0]} | {a[1]} | {a[2]} | {a[3]} | {a[4]} | {a[5]} |")
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     global TEMPLATES
+    from mimeo.cli import LLM_CHOICES, TEXT_CHOICES             # noqa: PLC0415
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "stage",
@@ -514,7 +607,26 @@ def main() -> int:
                              "3 на tz/templates даёт девять сдаточных колод")
     parser.add_argument("--templates", default=TEMPLATES,
                         help="каталог с шаблонами (по умолчанию samples)")
-    args = parser.parse_args()
+    # Флаги модели — только у verify (`PLAN-9.0`, Ш9). Умолчание — off, а не
+    # умолчание сборки (cache): после Ш8 голая команда из документов иначе
+    # молча стала бы мерить колоды модели.
+    parser.add_argument("--llm", choices=LLM_CHOICES, default="off",
+                        help="stage=verify: доступ к модели, как у build --llm; "
+                             "по умолчанию off — путь без модели")
+    parser.add_argument("--text", choices=TEXT_CHOICES,
+                        help="stage=verify с --llm cache|on: режим текста, как у build "
+                             "--text; без флага — умолчание сборки")
+    parser.add_argument("--llm-cache", metavar="КАТАЛОГ",
+                        help="stage=verify с --llm cache|on: каталог ответов модели вместо "
+                             "config/model.json — ответы замера не ложатся в cache/llm/")
+    args = parser.parse_args(argv)
+    modelled = args.llm != "off" or args.text is not None or args.llm_cache is not None
+    if modelled and args.stage != "verify":
+        parser.error("--llm, --text и --llm-cache работают только со stage=verify")
+    if args.llm == "off" and (args.text is not None or args.llm_cache is not None):
+        # Иначе замер молча шёл бы путём без модели при флагах, которые
+        # обещают модель, — «проверка, которая не может провалиться».
+        parser.error("--text и --llm-cache без --llm cache|on не действуют")
     TEMPLATES = args.templates
     if args.stage == "prose":
         report_prose(args.content, args.raw)
@@ -532,8 +644,8 @@ def main() -> int:
         report_slots(args.content)
         return 0
     if args.stage == "verify":
-        report_verify(args.content, args.slides, args.variants)
-        return 0
+        return report_verify(args.content, args.slides, args.variants,
+                             args.llm, args.text, args.llm_cache)
     {"analyze": report_analyze, "plan": report_plan, "compose": report_compose}[args.stage]()
     return 0
 
