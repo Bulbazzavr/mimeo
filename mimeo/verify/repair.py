@@ -47,7 +47,7 @@ import math
 from dataclasses import dataclass
 
 from ..model import DeckPlan, Fill, PatternLibrary, PlannedSlide, Slot
-from .detect import Defect, Inspection
+from .detect import BROKEN_WORD, Defect, Inspection
 from .metrics import Measurement, ShapeMetric
 
 #: Метим ниже порога: запас гасит ступенчатость переноса строк и сходимость
@@ -210,7 +210,7 @@ def repair_plan(
         current = scale_of.get((slide_index, slot.id), 100)
         defect = defect_of.get((slide_index, slot.id))
         ratio = defect.ratio if defect else metric.height_ratio
-        want = _step(current, defect.ratio, target) if defect else current
+        want = _wanted(current, defect, target) if defect else current
         return _Member(
             slot=slot,
             defect=defect,
@@ -268,7 +268,7 @@ def repair_plan(
         # увеличение, снова переполнился, и петля закачалась бы. Ограничение
         # действует и на присвоение предела — оно тоже не имеет права поднять
         # шкалу обратно.
-        step = _step(current, defect.ratio, target)
+        step = _wanted(current, defect, target)
         at_floor = step <= lowest
         if at_floor:
             step = min(current, lowest)
@@ -302,6 +302,22 @@ def _step(current: int, ratio: float, target: float) -> int:
     """Шкала, при которой текст должен влезть. Никогда не больше нынешней."""
     step = int(round(current / math.sqrt(max(ratio, 1e-6) / target)))
     return min(step, current)
+
+
+#: Цель для разорванного слова (`Z-56`): слово в 0.97 ширины строки. Запас
+#: меньше, чем у высоты, — ширина слова падает ровно как кегль, без ступенек
+#: переноса, — но не ноль: ширину отдают округлённой до сотых пункта.
+WORD_TARGET = 0.97
+
+
+def _wanted(current: int, defect: Defect, target: float) -> int:
+    """Шкала против дефекта. Высота падает примерно как квадрат шкалы — шаг
+    через корень; ширина слова — как сама шкала, шаг линейный, и не меньше
+    одного процента, иначе петля топталась бы на месте."""
+    if defect.kind == BROKEN_WORD:
+        step = int(current * WORD_TARGET / max(defect.ratio, 1e-6))
+        return min(step, current - 1)
+    return _step(current, defect.ratio, target)
 
 
 def _with_scales(plan: DeckPlan, wanted: dict[tuple[int, str], int]) -> DeckPlan:

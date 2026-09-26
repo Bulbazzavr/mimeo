@@ -79,6 +79,13 @@ class ShapeMetric:
     #: Поворот фигуры, градусы, как отдаёт COM (0…360). У повёрнутой надписи
     #: «вниз» — не вниз слайда, и мерка по чужому тексту её пропускает.
     rotation: float = 0.0
+    #: Слов, разорванных посередине строки (`Z-56`): строка кончается буквой
+    #: без пробела, следующая начинается строчной. `broken_width` — ширина
+    #: самого широкого из них целиком, пункты: хвост плюс начало на следующей
+    #: строке. Мерка ширины (`width_ratio`) их не видит по построению: после
+    #: разрыва строка влезает.
+    broken_words: int = 0
+    broken_width: float = 0.0
 
     @property
     def usable_height(self) -> float:
@@ -316,6 +323,8 @@ def _collect(stdout: str, paths: list[str]) -> tuple[Measurement, ...]:
                     bound_left=_coord(d.get("bl")),
                     bound_top=_coord(d.get("bt")),
                     rotation=_num(d.get("rot", "0")),
+                    broken_words=int(d.get("brk", "0") or 0),
+                    broken_width=_num(d.get("ww", "0")),
                 )
             )
         elif line.startswith("box "):

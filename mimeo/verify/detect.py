@@ -42,6 +42,10 @@ DONOR_OVERFLOW = "donor_overflow"
 #: всё равно тянется до правого края бокса — то есть по-прежнему уходит под
 #: картинку. Меньше кегль — меньше строк, а не у́же строка.
 OCCLUDED = "occluded"
+#: Слово шире строки, и PowerPoint рвёт его посередине, без дефиса (`Z-56`):
+#: «сортировк / и». Мерки высоты и ширины его не видят — после разрыва всё
+#: влезает. Чинится шкалой шрифта: ширина слова падает как кегль.
+BROKEN_WORD = "broken_word"
 
 
 @dataclass(frozen=True)
@@ -76,6 +80,7 @@ class Defect:
             OVERFLOW_HEIGHT: "текст выше места",
             OVERFLOW_WIDTH: "текст шире места",
             DONOR_OVERFLOW: "переполнена фигура донора",
+            BROKEN_WORD: "слово шире строки и разорвано",
         }.get(self.kind, self.kind)
         return f"{where}, {who}: {what} в {self.ratio:.2f} раза"
 
@@ -289,6 +294,20 @@ def _ours(
                 shape_id=shape.shape_id,
                 role=role,
                 ratio=round(ratio, 3),
+                repairable=True,
+            )
+        )
+    elif shape.broken_words:
+        # После высоты: ужатие по высоте нередко снимает и разрыв. До ширины:
+        # разорванная строка влезает, и мерка ширины молчит (`Z-56`).
+        found.append(
+            Defect(
+                kind=BROKEN_WORD,
+                slide_index=plan_index,
+                slot_id=slot_id,
+                shape_id=shape.shape_id,
+                role=role,
+                ratio=round(max(shape.broken_width / shape.usable_width, 1.0), 3),
                 repairable=True,
             )
         )

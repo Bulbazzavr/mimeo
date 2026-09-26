@@ -179,6 +179,41 @@ try {
                         $bl = ''; $bt = ''; $rot = ''
                         try { $bl = Num $tr.BoundLeft; $bt = Num $tr.BoundTop } catch {}
                         try { $rot = Num $sh.Rotation } catch {}
+                        # Слово, разорванное посередине строки (`Z-56`): строка
+                        # кончается буквой — без пробела и без знака абзаца, —
+                        # а следующая начинается строчной. Бокс уже самого
+                        # длинного слова, и PowerPoint режет его без дефиса.
+                        # Ширина слова — хвост в конце строки плюс начало на
+                        # следующей: по ней ремонт ужимает кегль. Отдельным
+                        # `try`: отказ здесь не выбрасывает фигуру из замера.
+                        $brk = 0; $ww = 0.0; $lines = $null
+                        try {
+                            $lines = $tr.Lines()
+                            $nl = $lines.Count
+                            $pt = ''; $ps = 0
+                            for ($k = 1; $k -le $nl; $k++) {
+                                $ln = $tr.Lines($k, 1)
+                                $ct = [string]$ln.Text; $cs = [int]$ln.Start
+                                Release $ln; $ln = $null
+                                if ($pt.Length -gt 0 -and $ct.Length -gt 0 -and
+                                    [char]::IsLetter($pt[$pt.Length - 1]) -and [char]::IsLower($ct[0])) {
+                                    $brk++
+                                    $cut = $pt.LastIndexOfAny([char[]]" `t`v")
+                                    $sp = $ct.IndexOfAny([char[]]" `t`r`n`v")
+                                    if ($sp -lt 0) { $sp = $ct.Length }
+                                    $r1 = $tr.Characters($ps + $cut + 1, $pt.Length - $cut - 1)
+                                    $r2 = $tr.Characters($cs, $sp)
+                                    $w = [double]$r1.BoundWidth + [double]$r2.BoundWidth
+                                    Release $r1; Release $r2; $r1 = $null; $r2 = $null
+                                    if ($w -gt $ww) { $ww = $w }
+                                }
+                                $pt = $ct; $ps = $cs
+                            }
+                        } catch {
+                            Write-Output ("skipped=lines " + (Clean $_.Exception.Message))
+                        } finally {
+                            Release $lines; $lines = $null
+                        }
                         $vals = @(
                             "slide=$i"
                             "id=" + $sh.Id
@@ -209,6 +244,8 @@ try {
                             "bl=" + $bl
                             "bt=" + $bt
                             "rot=" + $rot
+                            "brk=" + $brk
+                            "ww=" + (Num $ww)
                         )
                         Write-Output ("shape " + ($vals -join ' '))
                     }
