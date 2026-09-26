@@ -485,7 +485,7 @@ def test_fits_no_longer_claims_that_everything_fits():
     text = lines_of(run([40.0], widths=[300.0])[0])
     assert "встала: ремонту больше нечего чинить" in text
     assert "всё влезло" not in text
-    assert "переполнено по высоте 0 → 0" in text
+    assert "переполнений и разрывов слов 0 → 0" in text
 
 
 def test_long_lists_are_cut_and_the_tail_is_counted():

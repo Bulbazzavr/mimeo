@@ -389,10 +389,11 @@ def report_verify(content: str, slides: str | None, variants: int, llm: str = "o
                   f"| {len(rep.donor_overflow)} | {len(rep.occluded)} "
                   f"| {_empty_required(checked.plan, a.patterns)} | {placed} | {rep.stopped} "
                   f"| {time.perf_counter() - started:.1f} | {rep.seconds:.1f} |")
-    print(f"\n**Итого: переполнений по высоте {before} → {after}, шире места {wide}, "
+    print(f"\n**Итого: переполнений по высоте и разрывов слов {before} → {after}, шире места {wide}, "
           f"в фигурах донора {donor}, заслонений {occl}; картинок автора {pictures} на "
-          f"{decks} колод(ы), в тексте {len(author)}.** Ремонт берёт только высоту: "
-          "ширина, донор и заслонения в «до/после» не входят (`Z-47`, `Z-52`).")
+          f"{decks} колод(ы), в тексте {len(author)}.** Ремонт берёт высоту и, с 26 сентября, "
+          "разорванное слово (`Z-56`): ширина, донор и заслонения в «до/после» не входят "
+          "(`Z-47`, `Z-52`).")
     return 0
 
 
