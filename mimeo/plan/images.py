@@ -42,6 +42,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass, field, fields, replace
 
+from ..model import Fill
 from . import cache as llm_cache
 
 CONFIG_NAME = "generator.json"
@@ -271,12 +272,23 @@ class Painter:
     llm_base_url: str | None = None
     #: Размер слайда в EMU: по нему судится, не мелко ли место (`min_place_side`).
     slide_size: tuple[int, int] | None = None
+    #: Сюжеты → сцены без текста (`scenes` с настройками модели): для рамок под
+    #: фото (`Z-55`, `frames`). Без него рамки не заполняются.
+    rewrite: object = None
+    #: Каталог готовых картинок сборки (`<out>/images`).
+    folder: str | None = None
     drawn: int = 0
     cached: int = 0
     seconds: float = 0.0
     failures: list[str] = field(default_factory=list)
     too_small: set[str] = field(default_factory=set)
-    _slept: bool = False
+    #: Рамки под фото (`Z-55`): заполнено по вариантам и почему не заполнялись.
+    framed: int = 0
+    frames_small: int = 0
+    frames_note: str | None = None
+    frames_scenes: str = ""
+    _scenes: dict[str, str] = field(default_factory=dict)
+    _reach: str | None = "?"
 
     def _cache_path(self, key: str) -> str:
         root = self.gen.cache_root
@@ -284,18 +296,23 @@ class Painter:
             root = os.path.join(llm_cache.repo_root(), root)
         return os.path.join(root, key + ".png")
 
-    def _key(self, prompt: str, width: int, height: int) -> str:
+    def _key(self, prompt: str, width: int, height: int, seed: int | None = None) -> str:
         blob = json.dumps({"model": self.gen.model, "prompt": prompt, "width": width, "height": height,
-                           "steps": self.gen.steps, "cfg": self.gen.cfg_scale, "seed": self.gen.seed},
+                           "steps": self.gen.steps, "cfg": self.gen.cfg_scale,
+                           "seed": self.gen.seed if seed is None else seed},
                           ensure_ascii=False, sort_keys=True)
         return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
     def _wait_llm_sleep(self) -> None:
         """Ждём, пока `llama-server` отдаст видеопамять (`/props` → `is_sleeping`).
-        Другой сервер этого поля не знает — ждать нечего."""
-        if self._slept or not self.llm_base_url:
+        Другой сервер этого поля не знает — ждать нечего.
+
+        Спрашиваем перед **каждой** картинкой, а не перед первой: между ними
+        модель просыпается — сцены рамок (`Z-55`), зрение `Z-62` между
+        вариантами, — и генератор встал бы рядом с ней в 12 ГБ. Спящий сервер
+        отвечает сразу: вопрос стоит один запрос."""
+        if not self.llm_base_url:
             return
-        self._slept = True
         root = self.llm_base_url.rstrip("/")
         if root.endswith("/v1"):
             root = root[:-3]
@@ -313,11 +330,12 @@ class Painter:
                 return
             time.sleep(0.5)
 
-    def _draw(self, prompt: str, width: int, height: int) -> bytes:
+    def _draw(self, prompt: str, width: int, height: int, seed: int | None = None) -> bytes:
         self._wait_llm_sleep()
         url = self.gen.base_url.rstrip("/") + "/sdapi/v1/txt2img"
         body = {"prompt": prompt, "width": width, "height": height, "steps": self.gen.steps,
-                "cfg_scale": self.gen.cfg_scale, "seed": self.gen.seed, "batch_size": 1}
+                "cfg_scale": self.gen.cfg_scale, "seed": self.gen.seed if seed is None else seed,
+                "batch_size": 1}
         request = urllib.request.Request(
             url, data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
             headers={"Content-Type": "application/json"}, method="POST")
@@ -330,17 +348,17 @@ class Painter:
             raise ValueError("генератор вернул не PNG")
         return png
 
-    def picture(self, idea: str, width: int, height: int, target: str) -> bool:
+    def picture(self, idea: str, width: int, height: int, target: str, seed: int | None = None) -> bool:
         """Файл `target` с картинкой по идее: из кэша или от генератора."""
         prompt = idea.rstrip(" .") + self.gen.prompt_suffix
-        cached = self._cache_path(self._key(prompt, width, height))
+        cached = self._cache_path(self._key(prompt, width, height, seed))
         os.makedirs(os.path.dirname(target), exist_ok=True)
         if os.path.isfile(cached):
             shutil.copyfile(cached, target)
             self.cached += 1
             return True
         try:
-            png = self._draw(prompt, width, height)
+            png = self._draw(prompt, width, height, seed)
         except (urllib.error.URLError, OSError, ValueError, KeyError, IndexError) as exc:
             reason = getattr(exc, "reason", exc)
             self.failures.append(f"«{idea}» {width}x{height}: {reason}")
@@ -389,10 +407,126 @@ class Painter:
             slides.append(replace(slide, fills=tuple(fills)))
         return replace(plan, slides=tuple(slides)), failed
 
+    # --- рамки под фото (`Z-55`) ---------------------------------------------
+
+    def _frame_jobs(self, plan, library, doc) -> list[tuple[int, object, object, int]]:
+        """Пустые рамки плана: (номер слайда в плане, слот, раздел, часть раздела).
+
+        Рамка — место под фото с подсказкой дизайнера (`analyze/picture.py`,
+        `find_frames`). Заготовка встаёт в неё ещё в плане; остальные пустуют."""
+        from ..analyze.picture import FRAME
+
+        patterns = {p.id: p for p in library.patterns}
+        sections = {s.id: s for s in doc.sections}
+        jobs = []
+        for n, slide in enumerate(plan.slides):
+            pattern = patterns.get(slide.pattern_id)
+            section = sections.get(slide.origin_section)
+            if pattern is None or section is None:
+                continue
+            used = {f.slot_id for f in slide.fills}
+            for slot in pattern.slots:
+                if slot.picture_kind == FRAME and slot.id not in used and slot.rect.cy:
+                    jobs.append((n, slot, section, slide.origin_part or 1))
+        return jobs
+
+    def _subject(self, section) -> str:
+        """Сюжет рамки: идея модели, если тип слайда её допускает
+        (`config/outline.json`, `image_ideas.kinds`), иначе заголовок слайда —
+        вывод, который модель уже написала (AB3). Сцену без текста из него
+        сделает та же модель: заголовок «Движок работает на стандартной
+        библиотеке» запросом картинки дал бы выдуманные буквы (`ADR-0024`)."""
+        from .outline import idea_rules
+
+        if section.image_idea.strip() and section.kind in idea_rules().kinds:
+            return section.image_idea.strip()
+        return (section.heading or "").strip()
+
+    def _ready(self, doc, jobs) -> bool:
+        """Можно ли рисовать рамки; нельзя — причина в `frames_note`, один раз."""
+        if not jobs:
+            return False
+        why = None
+        if doc.planner != "mixed":
+            why = "колоду строила не модель — сюжетов нет"
+        elif self.gen.access != "on":
+            why = f"генератор выключен ({self.gen.access_source})"
+        elif self.rewrite is None or self.folder is None:
+            why = "сцены писать некому"
+        else:
+            if self._reach == "?":
+                self._reach = reachable(self.gen)
+            why = self._reach
+        if why and not self.frames_note:
+            self.frames_note = f"Рамки под фото не заполнены: {why} (Z-55)."
+        return why is None
+
+    def _big_enough(self, slot) -> bool:
+        """Рамка не мельче `min_place_side`: миниатюра хуже пустой рамки."""
+        floor = self.gen.min_place_side * min(self.slide_size) if self.slide_size else 0
+        return min(slot.rect.cx, slot.rect.cy) >= floor
+
+    def prepare_frames(self, plans, library, doc) -> None:
+        """Сцены для пустых рамок всех вариантов — одним вызовом модели: каждый
+        лишний вызов будит её, и генератор ждёт, пока она снова уснёт. Рамки
+        мельче порога сцен не получают — рисовать их не будут."""
+        subjects: list[str] = []
+        jobs = [j for plan in plans for j in self._frame_jobs(plan, library, doc)
+                if self._big_enough(j[1])]
+        if not self._ready(doc, jobs):
+            return
+        for _n, _slot, section, _part in jobs:
+            subject = self._subject(section)
+            if subject and subject not in self._scenes and subject not in subjects:
+                subjects.append(subject)
+        if not subjects:
+            return
+        got, how = self.rewrite(subjects)
+        if got is None:
+            if not self.frames_note:
+                self.frames_note = (f"Рамки под фото не заполнены: сцены без текста не написаны "
+                                    f"({how}) — заголовок запросом картинки дал бы выдуманные буквы (Z-55).")
+            return
+        self._scenes.update(zip(subjects, got))
+        # Что нарисовано и почему — в отчёт: сцену пишет модель, и видеть её
+        # решение должен человек (замер 26 сентября: «колоду» она прочла как карты).
+        self.frames_scenes += "".join(f" «{a}» → «{b}» ({how})." for a, b in zip(subjects, got))
+
+    def frames(self, plan, library, doc):
+        """Пустые рамки под фото — картинкой по сцене слайда, в пропорции рамки.
+
+        Возвращает план с заливками рамок. Рамка мельче `min_place_side` или
+        картинка не нарисовалась — рамка остаётся как была: это не повод
+        перестраивать план, ранг и так считал её пустой (`matching.empty_places`).
+        Части одного раздела на рамках получают разный `seed` — иначе на двух
+        слайдах подряд стояла бы одна и та же картинка."""
+        jobs = self._frame_jobs(plan, library, doc)
+        if not self._ready(doc, jobs):
+            return plan
+        self.prepare_frames([plan], library, doc)
+        added: dict[int, list] = {}
+        for n, slot, section, part in jobs:
+            if not self._big_enough(slot):
+                self.frames_small += 1
+                continue
+            scene = self._scenes.get(self._subject(section))
+            if not scene:
+                continue
+            width, height = size_for(slot.rect.cx / slot.rect.cy, self.gen)
+            target = os.path.join(self.folder, f"{section.id}-frame{part}-{width}x{height}.png")
+            if self.picture(scene, width, height, target, seed=self.gen.seed + part - 1):
+                self.framed += 1
+                added.setdefault(n, []).append(Fill(slot_id=slot.id, kind="image", ref=target))
+        if not added:
+            return plan
+        slides = tuple(replace(s, fills=tuple(s.fills) + tuple(added.get(n, ())))
+                       for n, s in enumerate(plan.slides))
+        return replace(plan, slides=slides)
+
     def note(self) -> str | None:
         """Строка для предупреждений плана: сколько нарисовано и чем."""
-        if not (self.drawn or self.cached or self.failures or self.too_small):
-            return None
+        if not (self.drawn or self.cached or self.failures or self.too_small or self.frames_small):
+            return self.frames_note
         parts = []
         if self.drawn:
             parts.append(f"нарисовано {self.drawn} за {self.seconds:.1f} с")
@@ -409,4 +543,13 @@ class Painter:
             line += (f" Не поставлено там, где место под иллюстрацию мельче "
                      f"{self.gen.min_place_side:.0%} стороны слайда: {names} — слайд перестроен без "
                      "картинки.")
+        if self.framed:
+            line += (f" В рамки под фото шаблона — {self.framed} из {self.drawn + self.cached} "
+                     "(по всем вариантам): сцену по идее или заголовку слайда написала модель (Z-55). "
+                     "Сцены рамок:" + self.frames_scenes)
+        if self.frames_small:
+            line += (f" Рамок мельче {self.gen.min_place_side:.0%} стороны слайда осталось пустыми "
+                     f"{self.frames_small}.")
+        if self.frames_note:
+            line += " " + self.frames_note
         return line

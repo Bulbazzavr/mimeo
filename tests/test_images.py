@@ -15,7 +15,7 @@ import pytest
 
 from mimeo.analyze import analyze_template
 from mimeo.analyze.picture import (
-    BACKDROP, BACKGROUND, ICON, ILLUSTRATION, _overlap, classify,
+    BACKDROP, BACKGROUND, FRAME, ICON, ILLUSTRATION, _overlap, classify,
 )
 from mimeo.compose import build
 from mimeo.plan import load_content, plan_deck
@@ -120,7 +120,9 @@ def test_most_image_slots_are_not_for_our_illustration():
     kinds = [s.picture_kind for p in a.patterns.patterns for s in p.slots
              if s.content_type == "image"]
     assert kinds, "у этого шаблона слоты под картинку есть"
-    assert set(kinds) <= {ILLUSTRATION, ICON, BACKDROP, BACKGROUND}
+    # Пять рамок под фото с подсказкой «Вставить фото» (`Z-55`) — отдельный вид.
+    assert set(kinds) <= {ILLUSTRATION, ICON, BACKDROP, BACKGROUND, FRAME}
+    assert kinds.count(FRAME) == 5
     assert kinds.count(ILLUSTRATION) < len(kinds), (
         "если годными признаны все, признак ничего не отсекает"
     )

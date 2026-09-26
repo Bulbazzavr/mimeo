@@ -21,7 +21,7 @@ from .captions import config_path as caption_config_path
 from .captions import load_config as load_caption_config
 from .deck import Deck, Rect
 from .fitting import estimate
-from .picture import classify_slots
+from .picture import FRAME, classify_slots, find_frames
 from .picture import config_path as picture_config_path
 from .picture import load_config as load_picture_config
 from .occlusion import occluding_rects, visible_rect
@@ -393,6 +393,7 @@ def _slots(
     image_bytes: Callable[[str | None], bytes | None] | None = None,
     unhandled: list[tuple[str, str]] | None = None,
     opaque: dict[tuple, OpaqueRegion] | None = None,
+    pictures=None,
 ) -> tuple[Slot, ...]:
     """Слоты — это то, что стадия PLAN наполняет.
 
@@ -412,23 +413,37 @@ def _slots(
     # вырождается в «?», и такие молча склеились бы. Списки здесь — виды на
     # один и тот же `slide.shapes`, копий никто не делает.
     order = {id(s): n for n, s in enumerate(slide.shapes)} if slide else {}
+    # Рамка под фото и подсказка дизайнера в ней (`Z-55`, `analyze/picture.py`):
+    # рамка — место под картинку, хоть и фигура без текста; подсказка — не
+    # место под текст, но остаётся слотом, чтобы сборка стёрла «Вставить фото».
+    size = getattr(design_system, "slide", None)
+    frames = find_frames(shapes, size.cx_emu, size.cy_emu, pictures) if size else []
+    frame_ids = {id(f) for f, _ in frames}
+    hint_ids = {id(h) for _, h in frames}
     out: list[Slot] = []
     seen_text = False
     n = 0
     for shape in shapes:
         if shape.rect is None:
             continue
-        role, content_type = _slot_role(shape, body_size, not seen_text)
-        if content_type == "none":
-            continue
+        if id(shape) in frame_ids:
+            role, content_type = "image", "image"
+        elif id(shape) in hint_ids:
+            role, content_type = "decor", "none"
+        else:
+            role, content_type = _slot_role(shape, body_size, not seen_text)
+            if content_type == "none":
+                continue
         n += 1
         if content_type in ("text", "list", "number"):
             seen_text = True
+        frame = id(shape) in frame_ids
 
         # Видимая полоса: что от бокса остаётся, когда сверху лежит
         # непрозрачное. Ёмкость считается по ней, а не по боксу (`Z-48`).
+        # У рамки ёмкости нет, и заслонители её в `opaque` не добавляются.
         visible = shape.rect
-        if slide is not None and image_bytes is not None and id(shape) in order:
+        if slide is not None and image_bytes is not None and id(shape) in order and not frame:
             mine = order[id(shape)]
             above = [s for s in slide.shapes if order.get(id(s), -1) > mine]
             blockers = occluding_rects(shape, above, image_bytes, unhandled)
@@ -441,7 +456,8 @@ def _slots(
                         shape_id=shape_id, rect=rect
                     )
 
-        run = _dominant_run(shape)
+        # У рамки в `txBody` бывает пустой прогон — ёмкость ей не нужна.
+        run = None if frame else _dominant_run(shape)
         # Вид гарнитуры считается по фигуре, а не по прогону (`DOM-TEXT §8`):
         # гарнитура берётся у доминирующего прогона, текст — весь, какой есть.
         # Без прогона остаётся `None` — «судить не по чему», а не `prose`.
@@ -475,7 +491,10 @@ def _slots(
                 type_role=type_role,
                 typeface_kind=typeface_kind,
                 capacity=capacity,
-                required=content_type in ("text", "list", "number"),
+                # Рамка под фото обязательна: пустая белая карточка на слайде
+                # видна так же, как пустой текстовый слот (`Z-55`).
+                required=frame or content_type in ("text", "list", "number"),
+                picture_kind=FRAME if frame else None,
                 visible=visible,
             )
         )
@@ -612,6 +631,7 @@ def build_pattern_library(
     # Один раз на шаблон, а не на каждую раскладку: файл один и тот же.
     typo = load_typeface_config()
     captions = load_caption_config()
+    pictures = load_picture_config()
 
     # Байты картинки по имени части, с кэшем: одна и та же картинка стоит на
     # разных слайдах и разбирать её дважды незачем (`PLAN-7.8`, дыра 4).
@@ -681,7 +701,8 @@ def build_pattern_library(
                 donor_index=donor_index,
                 slots=_slots(donor_shapes, design_system, body, typo,
                              slide=slides[donor_index], image_bytes=image_bytes,
-                             unhandled=opacity_unhandled, opaque=opaque),
+                             unhandled=opacity_unhandled, opaque=opaque,
+                             pictures=pictures),
                 members=tuple(members),
                 cohesion=cohesion,
                 donor_reason=reason,

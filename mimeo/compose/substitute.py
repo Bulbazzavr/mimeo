@@ -156,7 +156,8 @@ def set_items(shape: ET.Element, items: tuple[str, ...]) -> bool:
 def replace_picture(
     writer: PackageWriter, slide_part: str, shape: ET.Element, image_path: str, index: int
 ) -> str | None:
-    """Подменяет картинку в `p:pic`. Возвращает текст предупреждения или None.
+    """Подменяет картинку в `p:pic`, а у рамки под фото (`p:sp`, `Z-55`) —
+    заливку фигуры. Возвращает текст предупреждения или None.
 
     Это единственное место, где копии связей донора недостаточно: нужна новая
     часть в `/ppt/media/`, её тип содержимого и новая связь слайда.
@@ -170,7 +171,8 @@ def replace_picture(
     (`WORKLOG/2026-09-21-z28a-baseline.md`, дефект A).
     """
     blip = shape.find(f"{qn('p:blipFill')}/{qn('a:blip')}")
-    if blip is None:
+    frame = blip is None and shape.tag == qn("p:sp") and shape.find(qn("p:spPr")) is not None
+    if blip is None and not frame:
         return f"в фигуре нет картинки, подмена {os.path.basename(image_path)} пропущена"
     if not os.path.isfile(image_path):
         return f"файл {image_path} не найден, оставлена картинка донора"
@@ -179,6 +181,8 @@ def replace_picture(
     content_type = _IMAGE_TYPES.get(extension)
     if content_type is None:
         return f"неизвестный тип картинки {extension}, оставлена картинка донора"
+    if frame:
+        blip = _fill_with_picture(shape.find(qn("p:spPr")))
 
     part = f"/ppt/media/mimeo{index}{extension}"
     with open(image_path, "rb") as fh:
@@ -190,3 +194,31 @@ def replace_picture(
     writer.put_rels(slide_part, rels)
     blip.set(qn("r:embed"), rid)
     return None
+
+
+#: Заливки фигуры в `p:spPr` — ровно одна из них (CT_ShapeProperties, группа
+#: EG_FillProperties) стоит после геометрии.
+_FILLS = ("a:noFill", "a:solidFill", "a:gradFill", "a:blipFill", "a:pattFill", "a:grpFill")
+
+
+def _fill_with_picture(sp_pr: ET.Element) -> ET.Element:
+    """Рамка под фото (`Z-55`): картинка встаёт заливкой самой фигуры.
+
+    Так остаются геометрия, скругление, обводка и тень, какими их задал
+    дизайнер, — это та же фигура донора, только залитая картинкой. Картинку
+    генератор рисует в пропорции рамки (`plan/images.py`), поэтому растяжение
+    `a:stretch` её не искажает. Возвращает `a:blip`, которому осталось
+    назначить связь."""
+    old = [c for c in sp_pr if c.tag in {qn(t) for t in _FILLS}]
+    at = list(sp_pr).index(old[0]) if old else None
+    for child in old:
+        sp_pr.remove(child)
+    if at is None:
+        after = [i for i, c in enumerate(sp_pr)
+                 if c.tag in (qn("a:xfrm"), qn("a:custGeom"), qn("a:prstGeom"))]
+        at = after[-1] + 1 if after else 0
+    fill = ET.Element(qn("a:blipFill"), {"rotWithShape": "1"})
+    blip = ET.SubElement(fill, qn("a:blip"))
+    ET.SubElement(ET.SubElement(fill, qn("a:stretch")), qn("a:fillRect"))
+    sp_pr.insert(at, fill)
+    return blip

@@ -17,6 +17,7 @@ from __future__ import annotations
 import functools
 from dataclasses import dataclass
 
+from ..analyze.picture import FRAME
 from ..analyze.picture import _overlap as _rect_overlap
 from ..analyze.picture import load_config as load_picture_config
 from ..model import Fill, Pattern, Slot
@@ -375,12 +376,40 @@ def _hard_limit(slot: Slot) -> float:
     значении. Заводить задачу «подобрать значение между 1 и 2.5» второй раз
     не надо: между ними ничего нет.
     """
-    return 1.0 if slot.occluded else _OVERFLOW_HARD
+    if slot.occluded:
+        return 1.0
+    cap = _limit(slot)
+    if cap and cap <= _CAPTION_CHARS and slot.role != "title":
+        return _CAPTION_HARD
+    return _OVERFLOW_HARD
+
+
+#: Мелкое место под подпись — не заголовок, ёмкость до `_CAPTION_CHARS` знаков —
+#: принимает текст лишь чуть длиннее ёмкости (`Z-55`, `Z-56`). Ремонт кеглем там
+#: не спасает: межстрочный шаблона задан под одну-две строки подписи (0.62
+#: кегля), и перенесённая фраза ложится строками друг на друга, а слово рвётся
+#: посередине. Растр Ш9: на VK Tech фраза в 23–43 знака в белой карточке с местом
+#: на 18 (`p09` `s03`, `p10` `s04`, 0.95 × 0.31 дюйма) — на 21 слайде из 39 у
+#: колод модели.
+_CAPTION_CHARS = 20
+_CAPTION_HARD = 1.0
 
 
 def _fits(slot: Slot, text: str) -> bool:
     """Годится ли слот вообще. Умеренное переполнение — годится."""
     return _overflow(slot, text) <= _hard_limit(slot) - 1.0
+
+
+def empty_places(pattern: Pattern, used) -> list[Slot]:
+    """Обязательные места раскладки, оставшиеся пустыми: текстовые слоты и рамка
+    под фото (`Z-55`).
+
+    Рамка пуста, пока в неё не встала заготовка: картинку в неё дорисует
+    генератор после плана, но выключенный генератор оставит белую карточку.
+    Считается так же, как до `Z-55` считалась подсказка «Вставить фото» в ней, —
+    ранг и планы прежние. Прочие слоты картинок необязательны."""
+    return [s for s in pattern.slots if s.required and s.id not in used
+            and (s.content_type != "image" or s.picture_kind == FRAME)]
 
 
 def _max_items(slot: Slot) -> int | None:
@@ -589,7 +618,12 @@ def match(
             # текст всё равно надо куда-то положить. Здесь класть необязательно
             # — картинка не потеряется, она просто не встанет, и об этом
             # скажет предупреждение плана.
-            slots = [s for s in slots if s.picture_kind == _ILLUSTRATION]
+            #
+            # Рамка под фото (`Z-55`) — только для заготовки генератора: та
+            # рисуется в пропорции места, а картинка автора легла бы в рамку
+            # заливкой фигуры и растянулась.
+            kinds = (_ILLUSTRATION, FRAME) if block.min_side else (_ILLUSTRATION,)
+            slots = [s for s in slots if s.picture_kind in kinds]
             if block.min_side:
                 # Заготовка генератора (`Z-28`): только место не мельче порога.
                 slots = [s for s in slots if min(s.rect.cx, s.rect.cy) >= block.min_side]
@@ -723,9 +757,7 @@ def match(
     else:
         affinity = 0.0
 
-    empty_required = sum(
-        1 for s in pattern.slots if s.required and s.id not in used and s.content_type != "image"
-    )
+    empty_required = len(empty_places(pattern, used))
     thin = sum(1 for ratio in slack if ratio < tuning.slack)
     over = sum(overflows) / len(overflows) if overflows else 0.0
     donor_data = sum(1 for s in pattern.slots if s.content_type in ("table", "chart"))

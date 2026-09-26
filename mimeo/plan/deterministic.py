@@ -17,10 +17,11 @@ import os
 from dataclasses import replace
 
 from .. import config as cfg
+from ..analyze.picture import FRAME
 from ..model import DeckPlan, Pattern, PatternLibrary, PlannedSlide, PlanSource
 from .content import ContentBlock, ContentDoc, ContentSection
 from .matching import _REPEAT_CAP as MATCHING_REPEAT_CAP
-from .matching import DEFAULT_TUNING, Match, Tuning, rank
+from .matching import DEFAULT_TUNING, Match, Tuning, empty_places, rank
 
 #: На сколько частей максимум дробится один раздел. Дальше честнее признать, что
 #: контент не лёг, чем размазать его по десятку слайдов.
@@ -305,10 +306,7 @@ def _whole_agenda(match: Match, patterns: tuple[Pattern, ...]) -> bool:
     pattern = next((p for p in patterns if p.id == match.pattern_id), None)
     if pattern is None:
         return False
-    filled = {f.slot_id for f in match.fills}
-    return not any(
-        s.required and s.content_type != "image" and s.id not in filled for s in pattern.slots
-    )
+    return not empty_places(pattern, {f.slot_id for f in match.fills})
 
 
 def _drop_unplaceable_agenda(
@@ -556,10 +554,15 @@ def plan_deck(
             pattern = next((p for p in patterns if p.id == m.pattern_id), None)
             if pattern is not None:
                 filled = {f.slot_id for f in m.fills}
-                blank = sum(1 for s in pattern.slots if s.id not in filled)
+                # Подсказка дизайнера («Вставить фото», `Z-55`) — не место:
+                # пустой она и должна быть. Рамку под фото заливает генератор
+                # после плана, и что осталось пустым, скажет он (`images.Painter`).
+                places = [s for s in pattern.slots
+                          if s.content_type != "none" and s.picture_kind != FRAME]
+                blank = sum(1 for s in places if s.id not in filled)
                 if blank:
                     blank_used.append(
-                        (len(slides), m.pattern_id, blank, len(pattern.slots))
+                        (len(slides), m.pattern_id, blank, len(places))
                     )
             slides.append(
                 PlannedSlide(

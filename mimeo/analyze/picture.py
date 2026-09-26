@@ -27,12 +27,14 @@ from __future__ import annotations
 
 import json
 import os
+import re
 
 #: Виды слота под картинку.
 ILLUSTRATION = "illustration"   # место под иллюстрацию — единственное, куда мы кладём
 ICON = "icon"                   # мельче порога: пиктограмма, буллит, логотип
 BACKDROP = "backdrop"           # подложка карточки: под ней лежит текстовый слот
 BACKGROUND = "background"       # фон во весь слайд — это стиль шаблона
+FRAME = "frame"                 # рамка под фото с подсказкой дизайнера (`Z-55`)
 
 #: Запасные значения, если конфиг не прочитался. Совпадают с файлом: движок
 #: обязан работать и без `config/`, но молчать об этом не должен.
@@ -41,7 +43,10 @@ _FALLBACK = {
     "backdrop_overlap": 0.5,
     "background_area": 0.6,
     "aspect_tolerance": 0.3,
+    "frame_hint_center": 0.2,
+    "frame_hint_chars": 30,
 }
+_FALLBACK_HINTS = ("фото", "изображен", "картинк", "иллюстрац", "image", "photo", "picture")
 
 _TEXTY = ("text", "list", "number")
 
@@ -59,11 +64,15 @@ class PictureConfig:
     значения — это второе, выданное за первое.
     """
 
-    def __init__(self, values: dict, loaded: bool, version: str = "") -> None:
+    def __init__(self, values: dict, loaded: bool, version: str = "",
+                 hints: tuple[str, ...] = _FALLBACK_HINTS) -> None:
         self.min_side_ratio = float(values["min_side_ratio"])
         self.backdrop_overlap = float(values["backdrop_overlap"])
         self.background_area = float(values["background_area"])
         self.aspect_tolerance = float(values["aspect_tolerance"])
+        self.frame_hint_center = float(values["frame_hint_center"])
+        self.frame_hint_chars = int(values["frame_hint_chars"])
+        self.frame_hints = tuple(re.compile(h, re.IGNORECASE) for h in hints)
         self.loaded = loaded
         self.version = version
 
@@ -79,7 +88,13 @@ def load_config(path: str | None = None) -> PictureConfig:
     for key in _FALLBACK:
         if isinstance(raw.get(key), (int, float)):
             values[key] = raw[key]
-    return PictureConfig(values, loaded=True, version=str(raw.get("version", "")))
+    hints = raw.get("frame_hints")
+    ok = isinstance(hints, list) and hints and all(isinstance(h, str) for h in hints)
+    try:
+        return PictureConfig(values, loaded=True, version=str(raw.get("version", "")),
+                             hints=tuple(hints) if ok else _FALLBACK_HINTS)
+    except re.error:
+        return PictureConfig(values, loaded=False, version=str(raw.get("version", "")))
 
 
 def _overlap(inner, outer) -> float:
@@ -129,11 +144,62 @@ def classify(rect, text_rects, slide_cx: int, slide_cy: int,
 
 def classify_slots(slots, slide_cx: int, slide_cy: int,
                    cfg: PictureConfig | None = None) -> dict[str, str]:
-    """Вид для каждого слота `image` раскладки. Ключ — `Slot.id`."""
+    """Вид для каждого слота `image` раскладки. Ключ — `Slot.id`.
+
+    Рамку под фото (`find_frames`) вид не переспрашивает: геометрия звала бы её
+    подложкой — подсказка лежит в ней целиком."""
     cfg = cfg or load_config()
     text_rects = [s.rect for s in slots if s.content_type in _TEXTY]
     return {
         s.id: classify(s.rect, text_rects, slide_cx, slide_cy, cfg)
         for s in slots
-        if s.content_type == "image"
+        if s.content_type == "image" and s.picture_kind != FRAME
     }
+
+
+def find_frames(shapes, slide_cx: int, slide_cy: int,
+                cfg: PictureConfig | None = None) -> list[tuple[object, object]]:
+    """Рамки под фото с подсказкой дизайнера: пары (рамка, подсказка) — `Z-55`.
+
+    Рамка — фигура без текста с видимой заливкой, не картинка, не таблица и не
+    диаграмма, крупнее иконки и мельче фона. Подсказка — короткий текст со
+    словом из `frame_hints`, центр которого стоит у центра рамки. На выданном
+    VK Tech это белая карточка 4.08 × 2.29 дюйма с «Вставить фото» посередине:
+    движок писал туда тезис, межстрочный подсказки — 52 % кегля, и фраза
+    ложилась строками друг на друга, а сама карточка оставалась пустой.
+
+    **Текст решает, геометрия подтверждает.** По 14 шаблонам «короткая надпись
+    в центре фигуры без текста» — 77 случаев, подсказок под фото 6: кнопки,
+    номера в кружках и плашки выглядят так же (замер 26 сентября). Рамок у
+    подсказки бывает несколько (карточка в тени карточки) — берётся наименьшая.
+    """
+    cfg = cfg or load_config()
+    side = min(slide_cx, slide_cy)
+    frames = [
+        s for s in shapes
+        if s.rect is not None and not s.has_text and not s.image_part
+        and not s.has_chart and not s.has_table and s.kind == "sp"
+        and s.fill_kind not in (None, "none")
+        and min(s.rect.cx, s.rect.cy) >= cfg.min_side_ratio * side
+        and s.rect.cx * s.rect.cy <= cfg.background_area * slide_cx * slide_cy
+    ]
+    pairs: list[tuple[object, object]] = []
+    taken: set[int] = set()
+    for hint in shapes:
+        if hint.rect is None or not hint.has_text or len(hint.text) > cfg.frame_hint_chars:
+            continue
+        if not any(p.search(hint.text) for p in cfg.frame_hints):
+            continue
+        hx, hy = hint.rect.x + hint.rect.cx / 2, hint.rect.y + hint.rect.cy / 2
+        around = [
+            f for f in frames
+            if id(f) not in taken
+            and abs(hx - (f.rect.x + f.rect.cx / 2)) <= cfg.frame_hint_center * f.rect.cx
+            and abs(hy - (f.rect.y + f.rect.cy / 2)) <= cfg.frame_hint_center * f.rect.cy
+        ]
+        if not around:
+            continue
+        frame = min(around, key=lambda f: f.rect.cx * f.rect.cy)
+        taken.add(id(frame))
+        pairs.append((frame, hint))
+    return pairs

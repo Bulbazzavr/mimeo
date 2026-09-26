@@ -86,14 +86,16 @@ def _pictures(args, doc, analysis):
 
     doc, placeholders, note = images.add_placeholders(doc, args.out, gen, slide_size=size,
                                                       rewrite=rewrite)
-    painter = images.Painter(gen, placeholders, llm_base_url=model.endpoint.base_url, slide_size=size)
+    painter = images.Painter(gen, placeholders, llm_base_url=model.endpoint.base_url, slide_size=size,
+                             rewrite=rewrite, folder=os.path.join(args.out, images.FOLDER))
     return doc, painter, note
 
 
 def _painted(plan, painter, doc, library, replan):
     """План, у которого заготовки стали готовыми файлами в пропорции своего
     места. Картинка не нарисовалась — план перестраивается без неё: иначе в
-    месте под иллюстрацию осталась бы картинка донора (`Z-62`)."""
+    месте под иллюстрацию осталась бы картинка донора (`Z-62`). Пустые рамки
+    под фото шаблона после этого заливает генератор (`Z-55`)."""
     from .plan import images
 
     dropped: set[str] = set()
@@ -101,7 +103,7 @@ def _painted(plan, painter, doc, library, replan):
     while failed:                       # каждый круг снимает хотя бы одну заготовку
         dropped |= failed
         plan, failed = painter.paint(replan(images.without(doc, dropped)), library)
-    return plan
+    return painter.frames(plan, library, doc)
 
 
 def _judge(args, analysis):
@@ -535,6 +537,9 @@ def _build_variants(args, analysis, doc, target, started, model_summary="",
 
     written, worst = [], 0
     sha = analysis.design_system.source.sha256
+    if painter is not None:
+        # Сцены для рамок под фото всех вариантов — одним вызовом модели (`Z-55`).
+        painter.prepare_frames([v.plan for v in chosen], analysis.patterns, doc)
     for n, variant in enumerate(chosen, 1):
         path = f"{stem}-{n}{ext}"
         plan = variant.plan

@@ -204,7 +204,9 @@ def _blank_slots(plan, patterns) -> int:
         if pattern is None:
             continue
         filled = {f.slot_id for f in slide.fills}
-        blank += sum(1 for s in pattern.slots if s.id not in filled)
+        # Подсказка дизайнера («Вставить фото», `Z-55`) — не место: её текст
+        # сборка стирает, и пустоты зритель там не видит.
+        blank += sum(1 for s in pattern.slots if s.id not in filled and s.content_type != "none")
     return blank
 
 

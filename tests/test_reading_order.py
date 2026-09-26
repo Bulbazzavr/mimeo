@@ -156,12 +156,14 @@ def test_disorder_is_zero_when_theses_follow_reading_order():
 
 def test_disorder_grows_when_capacity_pushes_a_thesis_forward():
     """Ёмкости по чтению идут 10, 10, 400 — длинный тезис перепрыгивает вперёд,
-    короткие садятся за ним. Ровно случай `p09` шаблона VK Tech."""
+    короткие садятся за ним. Так было на `p09` шаблона VK Tech, пока подсказку
+    «Вставить фото» считали слотом. Короткие тезисы — не длиннее ёмкости: с
+    `Z-55` мелкое место принимает текст не длиннее себя."""
     section = ContentSection(
         id="sec01", heading=None,
         blocks=(ContentBlock(id="b01", kind="list",
                              items=("это очень длинный тезис на много знаков подряд",
-                                    "коротко", "тоже коротко"),
+                                    "коротко", "кратко"),
                              text="…"),),
     )
     p = pattern([slot("s01", 0, 0, 10), slot("s02", 3000000, 0, 10),
@@ -179,7 +181,7 @@ def test_the_ordered_layout_outranks_the_jumbled_one():
         id="sec01", heading=None,
         blocks=(ContentBlock(id="b01", kind="list",
                              items=("это очень длинный тезис на много знаков подряд",
-                                    "коротко", "тоже коротко"),
+                                    "коротко", "кратко"),
                              text="…"),),
     )
     jumbled = pattern([slot("s01", 0, 0, 10), slot("s02", 3000000, 0, 10),

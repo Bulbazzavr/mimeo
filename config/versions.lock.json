@@ -10,8 +10,8 @@
       "sha256": "793afdbd66cc6f60583e9c5bf89a509f6d6e2c1c5f7b5eef29a9f75e1bc21933"
     },
     "images.json": {
-      "version": "1.1",
-      "sha256": "5a22ab82895e2b74442c95eaed191d41d2d83a7b04577cee9bf3fca3e4378df1"
+      "version": "1.2",
+      "sha256": "9cc4ee41645b020ec7c152003e38f87d3d454157e8e3fb01e92d276a651c9881"
     },
     "kinds.json": {
       "version": "1.1",
