@@ -245,57 +245,50 @@ def test_engine_has_no_third_party_imports() -> None:
     assert not outside, f"сторонние импорты в движке: {sorted(outside)}"
 
 
-def test_state_and_backlog_agree_on_the_next_task() -> None:
-    """Точки входа обязаны называть ОДНУ следующую задачу.
-
-    19 сентября они разошлись: таблица фаз в `BACKLOG` вела на `Z-37`, а список
-    в `STATE` — на `Z-41`. Новая сессия следует инструкции «начни с таблицы фаз»
-    и взяла бы не ту задачу, пропустив единственный дефект, который портит
-    сдаточный артефакт.
-
-    Это второй случай расхождения сводки с карточкой за три дня, и первый
-    нашёлся только чтением. Поэтому проверка автоматическая: сводка устаревает
-    раньше всего остального, а замечают её последней.
-    """
-    backlog = _read(os.path.join(DOCS, "BACKLOG.md"))
+def _state_queue() -> str:
+    """Раздел «Что следующее» в `STATE` — единственная очередь задач."""
     state = _read(os.path.join(DOCS, "STATE.md"))
+    assert "## Что следующее" in state, "в STATE нет раздела «Что следующее»"
+    return state.split("## Что следующее", 1)[1].split("\n## ", 1)[0]
 
-    rows = [ln for ln in backlog.splitlines() if ln.startswith("| 16–29 сентября")]
-    assert len(rows) == 1, "строка активной фазы в таблице фаз не одна"
-    queue = re.findall(r"`(Z-\d+)`", rows[0].split("**Первым идёт")[0])
-    done = set(re.findall(r"~~`(Z-\d+)`", rows[0]))
-    backlog_next = next(z for z in queue if z not in done)
 
-    block = state.split("**Ближайшая работа")[1].split("`Z-29` — единственная")[0]
-    state_next = None
-    for item in re.split(r"\n(?=\d+\. )", block):
-        head = item.strip().split(chr(10))[0] if item.strip() else ""
-        if not head or not head[0].isdigit():
-            continue
-        if "~~" in head:                       # пункт целиком про сделанное
-            continue
-        found = re.findall(r"`(Z-\d+)`", item)
-        if found:
-            state_next = found[0]
-            break
+def test_state_holds_the_only_queue() -> None:
+    """Очередь задач одна — в начале `STATE`; `BACKLOG` держит карточки.
 
-    assert backlog_next == state_next, (
-        f"точки входа расходятся: BACKLOG ведёт на {backlog_next}, "
-        f"STATE на {state_next}. Новая сессия возьмёт не ту задачу."
+    До 26 сентября очередь жила в двух местах — строкой фазы в `BACKLOG` и
+    списком в `STATE`, — и этот тест сверял, что обе называют одну следующую
+    задачу: 19 сентября они разошлись, `Z-37` против `Z-41`. Согласие копий не
+    спасало от их устаревания: в тот же день обе дружно вели на сделанную
+    `Z-26`, а 26 сентября статус одной задачи повторялся в десятке мест, и три
+    вычитки подряд находили расхождения. Решение пользователя 26 сентября:
+    статус — в одном месте. Проверок поэтому две:
+
+    1. первая задача очереди не закрыта в своей карточке — одна устаревшая
+       сводка опаснее двух расходящихся: её не с чем сравнить. Отложенную
+       первой тест не поймает: место задачи в очереди живёт только здесь, и
+       сравнить его не с чем;
+    2. каждая открытая карточка `BACKLOG` названа в очереди. Таблицу «Все
+       открытые задачи» сверяли глазами, а 21 сентября четыре задачи не
+       значились ни в одной фазе.
+    """
+    queue = _state_queue()
+    closed = _closed_tasks()
+    backlog = _read(os.path.join(DOCS, "BACKLOG.md"))
+
+    upcoming = queue.split("**Ближайшая работа", 1)
+    assert len(upcoming) == 2, "в «Что следующее» нет «Ближайшей работы»"
+    first = re.search(r"`(Z-\d+[a-z]?)`", upcoming[1])
+    assert first, "«Ближайшая работа» не называет ни одной задачи"
+    card = re.search("^### " + re.escape(first.group(1)) + r"\.[^\n]*", backlog, re.M)
+    assert card, f"{first.group(1)}: карточки в BACKLOG нет вовсе"
+    assert first.group(1) not in closed, (
+        f"очередь начинается с {first.group(1)}, а её карточка помечена "
+        f"закрытой: «{card.group(0)}»"
     )
 
-    # Согласия мало: две устаревшие копии согласны прекрасно. 19 сентября обе
-    # точки входа дружно вели на `Z-26`, сделанную в тот же день, и проверка
-    # была зелёной. Поэтому отдельно: названная задача не должна быть помечена
-    # сделанной в своей же карточке.
-    card = re.search("^### " + re.escape(backlog_next) + r"\.[^" + chr(10) + r"]*", backlog, re.M)
-    assert card, f"{backlog_next}: карточки в BACKLOG нет вовсе"
-    head = card.group(0).lower()
-    assert not any(w in head for w in ("сделано", "сделана", "отменена", "отложен")), (
-        f"точки входа ведут на {backlog_next}, а её карточка помечена как "
-        f"закрытая: «{card.group(0)}». Проверка на согласие этого не видит — "
-        f"две устаревшие сводки согласны между собой."
-    )
+    cards = set(re.findall(r"^### (Z-\d+[a-z]?)\.", backlog, re.M))
+    missing = sorted(z for z in cards - closed if f"`{z}`" not in queue)
+    assert not missing, f"открытые карточки, которых нет в очереди STATE: {missing}"
 
 
 def test_backlog_is_not_frozen_to_the_day_it_was_written() -> None:
@@ -431,20 +424,20 @@ def test_tests_named_in_audit_exist() -> None:
 
 
 def _closed_tasks() -> set[str]:
-    """Задачи, чьи карточки в `BACKLOG` помечены закрытыми."""
+    """Задачи, чьи карточки в `BACKLOG` помечены закрытыми (сделана, отменена или
+    поглощена другой)."""
     backlog = _read(os.path.join(DOCS, "BACKLOG.md"))
     closed = set()
-    for head in re.findall(r"^### (Z-\d+)\.[^\n]*", backlog, re.MULTILINE):
+    for head in re.findall(r"^### (Z-\d+[a-z]?)\.[^\n]*", backlog, re.MULTILINE):
         card = re.search("^### " + re.escape(head) + r"\.[^\n]*", backlog, re.MULTILINE).group(0)
-        if any(w in card.lower() for w in ("сделано", "сделана", "отменена")):
+        if any(w in card.lower() for w in ("сделано", "сделана", "отменена", "поглощена")):
             closed.add(head)
     return closed
 
 
 def test_state_does_not_point_at_a_closed_task() -> None:
-    """`STATE` называет «что дальше» **в двух местах** — нумерованным списком и
-    короткой цепочкой со стрелками. Тест на согласие точек входа читает только
-    первое.
+    """`STATE` называет задачи не только в таблицах очереди, но и в тексте — и
+    бывало, цепочкой со стрелками. Тест на очередь её не читает.
 
     19 сентября это разошлось: список вёл на `Z-43`, а цепочка всё ещё звала
     делать `Z-30` + `Z-33`, закрытые в тот же день. Оба места по отдельности
