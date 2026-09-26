@@ -18,7 +18,7 @@
     },
     "line": {"type": "string", "description": "Та же строка, что печатает сводка после «модель»: каким путём собрана колода и почему."},
     "access": {"enum": ["off", "cache", "on"]},
-    "access_source": {"type": "string", "description": "«задано при запуске» — флаг или конфиг прогона; иначе умолчание config/model.json."},
+    "access_source": {"type": "string", "description": "«задано при запуске» — флаг или конфиг прогона; «переменная MIMEO_LLM_ACCESS»; иначе умолчание config/model.json."},
     "text_mode": {"enum": ["keep", "improve"]},
     "text_mode_source": {"type": "string"},
     "frames": {
@@ -53,6 +53,32 @@
           "name": {"type": "string"},
           "ok": {"type": "boolean"},
           "detail": {"type": "string"}
+        }
+      }
+    },
+    "retry": {
+      "type": ["object", "null"],
+      "description": "Повтор запроса, если первый ответ не прошёл проверки или не разобрался: модели ушли её прошлый ответ и перечень нарушений (request). Поля answer_source, seconds, answer, checks — как у первой попытки выше; answer null — повтор остался без ответа. null — повтора не было. Необязательное поле (правило 3 контрактов), 26 сентября.",
+      "additionalProperties": false,
+      "required": ["request", "key", "answer_source", "seconds", "answer", "checks"],
+      "properties": {
+        "request": {"type": "string"},
+        "key": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "answer_source": {"enum": ["cache", "model", null]},
+        "seconds": {"type": ["number", "null"]},
+        "answer": {"type": ["object", "string", "null"]},
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "ok", "detail"],
+            "properties": {
+              "name": {"type": "string"},
+              "ok": {"type": "boolean"},
+              "detail": {"type": "string"}
+            }
+          }
         }
       }
     },

@@ -157,11 +157,16 @@ class Request:
     name: str = "slide_plan"
     tool: str = "place_slide"
     purpose: str = "Разложить кусок контента по слотам выбранной раскладки."
+    #: Реплики после текста автора: прошлый ответ модели и что в нём исправить —
+    #: повтор запроса колоды, если ответ не прошёл проверки (`outline.run`).
+    #: Пусто — обычный запрос из двух сообщений, и ключ кэша прежний.
+    history: tuple[dict, ...] = ()
 
     def as_messages(self) -> list[dict]:
         return [
             {"role": "system", "content": self.system},
             {"role": "user", "content": self.user},
+            *self.history,
         ]
 
 

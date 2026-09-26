@@ -185,21 +185,50 @@ def test_config_comments_do_not_leak_into_the_request(tmp_path):
     assert config.extra_body == {"chat_template_kwargs": {"enable_thinking": False}}
 
 
-def test_missing_config_is_not_an_error(tmp_path):
+def test_local_model_is_reached_past_a_proxy(monkeypatch):
+    """Прокси в окружении без исключения для 127.0.0.1 — свой сервер модели всё
+    равно зовётся напрямую. Замер 26 сентября: веб из приложения получал 502 от
+    прокси и собирал колоду без модели."""
+    for name in ("NO_PROXY", "no_proxy"):
+        monkeypatch.delenv(name, raising=False)
+    for name in ("HTTP_PROXY", "http_proxy"):
+        monkeypatch.setenv(name, "http://127.0.0.1:9")
+    with FakeModel("ok") as fake:
+        data = post_chat(fake.base_url + "/chat/completions", {"messages": []}, timeout=5)
+    assert data["choices"] and len(fake.requests) == 1
+
+
+def test_missing_config_is_not_an_error(tmp_path, monkeypatch):
     """Файла нет — работают встроенные значения, и это ВИДНО по `loaded`."""
+    monkeypatch.delenv("MIMEO_LLM_ACCESS", raising=False)
     config = load_config(str(tmp_path / "нет-такого.json"))
     assert config.loaded is False
-    assert config.access is Access.CACHE          # по умолчанию сети нет
+    assert config.access is Access.ON             # то же, что в config/model.json
     assert "127.0.0.1" in config.endpoint.base_url
 
 
-def test_shipped_config_is_readable_and_offline_by_default():
-    """Коммиченный `config/model.json` обязан читаться и не ходить в сеть."""
+def test_shipped_config_is_readable_and_calls_the_model_by_default(monkeypatch):
+    """Коммиченный `config/model.json` обязан читаться и звать модель: курс
+    пользователя с вечера 26 сентября — продукт работает с видеокартой и моделью."""
+    monkeypatch.delenv("MIMEO_LLM_ACCESS", raising=False)
     config = load_config()
     assert config.loaded is True
-    assert config.access is Access.CACHE
+    assert config.access is Access.ON
+    assert config.access_source == "умолчание config/model.json"
     assert "localhost" not in config.endpoint.base_url    # замер 6: вдвое дороже
     assert config.extra_body["chat_template_kwargs"]["enable_thinking"] is False
+
+
+@pytest.mark.parametrize("value, access", [("off", Access.OFF), ("cache", Access.CACHE),
+                                           ("мусор", Access.ON), ("", Access.ON)])
+def test_access_variable_overrides_the_config(value, access, monkeypatch):
+    """`MIMEO_LLM_ACCESS` старше конфига и называет себя источником; неверное
+    значение не принимается — работает конфиг."""
+    monkeypatch.setenv("MIMEO_LLM_ACCESS", value)
+    config = load_config()
+    assert config.access is access
+    by_env = access is not Access.ON
+    assert (config.access_source == "переменная MIMEO_LLM_ACCESS") is by_env
 
 
 # --- что приходит назад ------------------------------------------------

@@ -77,11 +77,11 @@ def test_cache_miss_is_said_in_words(tmp_path):
     """Промах кэша — путь без модели, и сборка говорит это, а не молчит."""
     text = tmp_path / "c.md"
     text.write_text("Сплошной текст про движок.", encoding="utf-8")
-    config = client.ClientConfig(cache_root=str(tmp_path / "cache"))
+    config = client.ClientConfig(access=client.Access.CACHE, cache_root=str(tmp_path / "cache"))
     got = outline.run(str(text), _doc("сплошной текст"), config=config)
     assert got.status == "no_answer"
     assert "cache (умолчание config/model.json)" in got.line and "без модели" in got.line
-    assert "текст keep (умолчание)" in got.line, "умолчание режима названо, а не подразумевается"
+    assert "текст improve (умолчание)" in got.line, "умолчание режима названо, а не подразумевается"
 
 
 def test_default_access_comes_from_config(monkeypatch, tmp_path):

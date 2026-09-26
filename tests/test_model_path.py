@@ -203,9 +203,36 @@ def test_every_refusal_builds_the_plan_without_the_model(kind, prose, multi_temp
         assert requests == [], "модель не звали"
     if kind == "invented":
         assert "«числа»" in got.line
+    if kind in ("invented", "unparsed"):
+        assert len(requests) == 2 and got.record["retry"]["answer"] is not None, "повтор — один"
     sha = a.design_system.source.sha256
     assert plan_deck(got.doc, a.patterns, sha).slides == plan_deck(fallback, a.patterns, sha).slides
     assert got.doc.notes[-1].startswith("Модель ")
+
+
+def test_rejected_answer_is_retried_with_what_failed(prose, tmp_path):
+    """Отказ проверок — один повтор: модели уходят её ответ и перечень
+    нарушений; годный повтор строит колоду, и кэш повторяет оба ответа."""
+    bad = _answer()
+    bad["slides"][3]["theses"] = ["Раскладок в живых шаблонах много"]    # потеряны 5 и 49
+    fallback = load_content(prose)
+    with FakeModel("текст:" + json.dumps(bad, ensure_ascii=False), "ok", answer=_answer()) as fake:
+        got = outline.run(prose, fallback, config=_config(tmp_path, fake.base_url))
+    assert got.status == "accepted" and len(fake.requests) == 2
+    retry = fake.requests[1]["messages"]
+    assert [m["role"] for m in retry] == ["system", "user", "assistant", "user"]
+    assert json.loads(retry[2]["content"]) == bad, "модели — её же прошлый ответ"
+    assert "числа" in retry[3]["content"] and "'49'" in retry[3]["content"]
+    assert "со второй попытки" in got.line and "«числа»" in got.line
+    record = got.record
+    _validate(record)
+    assert not all(c["ok"] for c in record["checks"]), "первая попытка записана как была"
+    assert all(c["ok"] for c in record["retry"]["checks"]) and record["deck"]
+    assert record["retry"]["key"] != record["key"]
+
+    again = outline.run(prose, fallback, config=_config(tmp_path, access=client.Access.CACHE))
+    assert again.status == "accepted" and again.record["retry"]["answer_source"] == "cache"
+    assert again.doc.sections == got.doc.sections
 
 
 def test_markdown_needs_no_request(tmp_path):

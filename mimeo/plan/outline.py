@@ -469,10 +469,11 @@ def accepted(checks: tuple[Check, ...]) -> bool:
 #: `WORKLOG/2026-09-25-z57-sh3-baseline.md`, § 3).
 TZ_FRAMES = (10, 15)
 
-#: Режим текста по умолчанию — **до решения пользователя** (`PLAN-9.0`, Ш9).
-#: «Оставить» осторожнее: отказ проверок ведёт на путь без модели, а лозунг в
-#: «доработать» код не ловит (`ADR-0023`, «Что уточнил замер»).
-DEFAULT_MODE = "keep"
+#: Режим текста по умолчанию — «доработать»: решение пользователя 26 сентября,
+#: вечер, — и для сдаточных колод, и для веба. ТЗ спрашивает заголовок-вывод и
+#: пункт не длиннее 15 слов (Приложение 1); на девятке Ш9 после ремонта
+#: переполнений 0 против 5 у «оставить» (`WORKLOG/2026-09-26-z57-sh9-result.md`).
+DEFAULT_MODE = "improve"
 
 #: Имя схемы — как в замере Ш1б (`out/z57/sh1b_probe.py`); на ответ не влияет.
 _NAME, _TOOL = "deck", "build_deck"
@@ -485,8 +486,10 @@ RECORD_NAME = "outline.json"
 RECORD_VERSION = "1.0"
 
 
-def request(text: str, mode: str, frames: tuple[int, int], transport=None, label: str = "колода"):
+def request(text: str, mode: str, frames: tuple[int, int], transport=None, label: str = "колода",
+            history: tuple[dict, ...] = ()):
     """Запрос колоды: системный промпт режима с рамками и текст автора целиком.
+    `history` — прошлый ответ и поправки, если это повтор (`retry_history`).
 
     Текст — **файл как есть**, а не `ContentDoc.origin`: тот собран из одних
     абзацев, и у `numbers` без списка месяцев в нём нет «41 200»
@@ -505,8 +508,43 @@ def request(text: str, mode: str, frames: tuple[int, int], transport=None, label
     return Request(
         mode=transport, system=system_prompt(mode, frames[0], frames[1]), user=user,
         schema=RESPONSE_SCHEMA, section_id=label, candidates=(),
-        name=_NAME, tool=_TOOL, purpose=_PURPOSE,
+        name=_NAME, tool=_TOOL, purpose=_PURPOSE, history=tuple(history),
     )
+
+
+#: Что сказать модели при повторе, по имени проверки: проверка называет
+#: нарушение (`Check.detail`), а это — что с ним сделать.
+_FIX = {
+    "числа": "каждое число из текста поставь в заголовок или тезис слайда, где о нём речь; "
+             "чисел, которых нет в тексте, не пиши",
+    "картинки": "каждый путь к картинке из текста — ровно на один слайд, в поле images, "
+                "а не в заголовок или тезис",
+    "латиница": "латинских слов, которых нет в тексте, не пиши",
+    "обращения": "обращений к исполнителю и просьб о самой презентации на слайдах быть не должно",
+    "объём": "уложись в рамки числа слайдов",
+    "типы": "тип слайда — только из словаря, оглавление — не больше одного",
+    "название": "название на обложке — словами автора",
+    "клише финала": "благодарностей и лозунгов от себя не пиши",
+    "дословность": "тезисы — дословные фразы или части фраз автора",
+    "форма": "ответ — JSON по схеме",
+}
+
+
+def retry_history(answer_text: str, checks: tuple[Check, ...]) -> tuple[dict, ...]:
+    """Повтор запроса: прошлый ответ модели и что в нём не прошло проверки.
+
+    Замер 26 сентября: тестовый текст веба отвергался в обоих режимах —
+    модель теряла числа (1400, 180, 55, 620, 640, 85), и сборка уходила путём
+    без модели. Повтор с перечнем нарушений даёт модели поправить свою же
+    колоду, а не строить её заново; судят его те же проверки."""
+    lines = []
+    for c in checks:
+        if not c.ok:
+            fix = _FIX.get(c.name, "исправь")
+            lines.append(f"- {c.name}: {c.detail} — {fix}.")
+    fix = ("Твой ответ не прошёл проверку:\n" + "\n".join(lines) +
+           "\nИсправь колоду и верни её целиком тем же JSON; остальное не меняй.")
+    return ({"role": "assistant", "content": answer_text}, {"role": "user", "content": fix})
 
 
 def too_long(system: str, user: str, endpoint) -> str | None:
@@ -619,7 +657,7 @@ def run(path: str, fallback, *, access: str | None = None, text_mode: str | None
 
     config = config or model_client.load_config()
     access_value = access or config.access.value
-    access_src = _source(access is not None, "умолчание config/model.json")
+    access_src = _source(access is not None, config.access_source)
     mode = text_mode or DEFAULT_MODE
     mode_src = _source(text_mode is not None, "умолчание")
     frames = tuple(target) if target else TZ_FRAMES
@@ -644,6 +682,7 @@ def run(path: str, fallback, *, access: str | None = None, text_mode: str | None
         "seconds": None,
         "answer": None,
         "checks": [],
+        "retry": None,
         "deck": None,
     }
 
@@ -674,29 +713,63 @@ def run(path: str, fallback, *, access: str | None = None, text_mode: str | None
     if reason:
         return done("too_long", head + f"{reason} — собрано путём без модели")
 
-    answer = client.complete(req)
-    if not answer:
-        return done("no_answer", head + f"{answer.note} — собрано путём без модели")
-    record["answer_source"] = answer.source
-    record["seconds"] = round(answer.elapsed, 1) if answer.source == "model" else None
-    got = "ответ из кэша" if answer.source == "cache" else f"ответ модели за {answer.elapsed:.1f} с"
-    parsed = extract_json(answer.text)
-    if parsed is None:
-        record["answer"] = answer.text
-        return done("unparsed", head + f"{got} не разобрался как JSON — собрано путём без модели")
-    record["answer"] = parsed
+    def ask(r) -> tuple:
+        """Один вызов: (ответ, слова «откуда», разобранный JSON, проверки, итог)."""
+        answer = client.complete(r)
+        if not answer:
+            return answer, "", None, (), "no_answer"
+        got = "ответ из кэша" if answer.source == "cache" else f"ответ модели за {answer.elapsed:.1f} с"
+        parsed = extract_json(answer.text)
+        if parsed is None:
+            return answer, got, None, (Check("форма", False, "ответ не разобрался как JSON"),), "unparsed"
+        checks = check_outline(text, parsed, mode, frames[1], prose_cfg, closing_captions)
+        return answer, got, parsed, checks, "accepted" if accepted(checks) else "rejected"
 
-    checks = check_outline(text, parsed, mode, frames[1], prose_cfg, closing_captions)
-    record["checks"] = [{"name": c.name, "ok": c.ok, "detail": c.detail} for c in checks]
-    if not accepted(checks):
-        failed = ", ".join(f"«{c.name}»" for c in checks if not c.ok)
-        return done("rejected", head + f"{got} отвергнут проверками {failed} — "
-                    "собрано путём без модели")
+    def attempt(answer, parsed, checks) -> dict:
+        return {"answer_source": answer.source,
+                "seconds": round(answer.elapsed, 1) if answer.source == "model" else None,
+                "answer": parsed if parsed is not None else answer.text,
+                "checks": [{"name": c.name, "ok": c.ok, "detail": c.detail} for c in checks]}
+
+    def failed(checks) -> str:
+        return ", ".join(f"«{c.name}»" for c in checks if not c.ok)
+
+    answer, got, parsed, checks, status = ask(req)
+    if status == "no_answer":
+        return done("no_answer", head + f"{answer.note} — собрано путём без модели")
+    first = attempt(answer, parsed, checks)
+    record.update(answer_source=first["answer_source"], seconds=first["seconds"],
+                  answer=first["answer"], checks=first["checks"] if parsed is not None else [])
+    verdict = ("не разобрался как JSON" if status == "unparsed"
+               else f"отвергнут проверками {failed(checks)}")
+    said = f"{got} {verdict}"
+
+    if status != "accepted":
+        # Повтор — один: прошлый ответ и перечень нарушений (`retry_history`).
+        # Судят его те же проверки; не прошёл — путь без модели, как раньше.
+        history = retry_history(answer.text, checks)
+        again = request(text, mode, frames, config.mode,
+                        label=f"колода {os.path.basename(path)} {mode} повтор", history=history)
+        answer2, got2, parsed2, checks2, status2 = ask(again)
+        record["retry"] = {"request": history[1]["content"], "key": client.key(again)}
+        if status2 == "no_answer":
+            record["retry"].update(answer_source=None, seconds=None, answer=None, checks=[])
+            return done(status, head + f"{said}; повтор не удался: {answer2.note} — "
+                        "собрано путём без модели")
+        record["retry"].update(attempt(answer2, parsed2, checks2))
+        if status2 != "accepted":
+            said2 = ("не разобрался как JSON" if status2 == "unparsed"
+                     else f"отвергнут проверками {failed(checks2)}")
+            return done(status2, head + f"{said}; повтор — {got2} — {said2} — "
+                        "собрано путём без модели")
+        answer, parsed = answer2, parsed2
+        said = f"со второй попытки: первый — {got} — {verdict}, повтор — {got2}"
 
     doc, _notes, deck = to_doc(parsed, text, path, fallback.name, prose_cfg)
     record["deck"] = deck
     kept = "записан в кэш, " if answer.source == "model" else ""
-    return done("accepted", head + f"колоду построила модель — {got}, {kept}проверки пройдены; "
+    where = said if record["retry"] else got
+    return done("accepted", head + f"колоду построила модель — {where}, {kept}проверки пройдены; "
                 f"слайдов в ответе {len(parsed['slides'])}", doc)
 
 

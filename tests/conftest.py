@@ -1,8 +1,17 @@
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from tests.fixtures.build_fixture import build, build_multi
+
+# С вечера 26 сентября сборка по умолчанию зовёт модель (`config/model.json`,
+# `access: on`). Тесты модель не зовут: при поднятом сервере сборка прозы без
+# `--llm` пошла бы в него и записала ответ в `cache/llm/`. Переменная старше
+# конфига (`mimeo.plan.client.ACCESS_ENV`); тест, которому нужно умолчание
+# конфига, снимает её сам.
+os.environ["MIMEO_LLM_ACCESS"] = "off"
 
 
 @pytest.fixture(scope="session")

@@ -10,9 +10,12 @@
 колоды — `outline.check_outline`, прежнего контракта — `validate.py`) и решений
 о том, что куда влезет (это код, `ADR-0009`).
 
-**По умолчанию сети нет вовсе** (`ADR-0021`). Режим `cache` читает коммиченные
-ответы и никуда не ходит: эксперт без видеокарты обязан получить наш результат,
-а не тихо другой. Сеть включает только `on`.
+**С вечера 26 сентября по умолчанию модель зовётся** — `on` (курс пользователя:
+продукт работает только с видеокартой и моделью, корневой `CLAUDE.md`). Прежнее
+умолчание `cache` (`ADR-0021`: «эксперт без видеокарты обязан получить наш
+результат») этим снято; `cache` и `off` остались флагами. Переменная окружения
+`MIMEO_LLM_ACCESS` задаёт доступ поверх конфига — ею тесты держат `off`, чтобы
+при поднятом сервере не звать модель (`tests/conftest.py`).
 
 **Отказ обязан быть слышен.** Модель не ответила или ответа нет в кэше — план
 собирается как раньше, но `notes` возвращает строку об этом. Молчаливый откат
@@ -29,8 +32,9 @@ import json
 import os
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 
 from . import cache
@@ -41,8 +45,8 @@ class Access(str, Enum):
     """Что клиенту разрешено. Порядок — от закрытого к открытому."""
 
     OFF = "off"       # кэш не читается, сети нет: чистый детерминированный путь
-    CACHE = "cache"   # кэш читается, сети нет — по умолчанию
-    ON = "on"         # при промахе зовём модель и пополняем кэш
+    CACHE = "cache"   # кэш читается, сети нет
+    ON = "on"         # при промахе зовём модель и пополняем кэш — по умолчанию
 
 
 @dataclass(frozen=True)
@@ -87,7 +91,9 @@ class ClientConfig:
     встроенные значения» — правило `CLAUDE.md` про измеритель, который обязан
     отличать «проверено и чисто» от «проверить не смог»."""
 
-    access: Access = Access.CACHE
+    access: Access = Access.ON
+    #: Откуда доступ, словами — для сводки и `outline.json`.
+    access_source: str = "умолчание config/model.json"
     endpoint: Endpoint = field(default_factory=Endpoint)
     mode: Mode = Mode.JSON_SCHEMA
     params: dict = field(default_factory=lambda: {"temperature": 0, "seed": 0})
@@ -141,6 +147,20 @@ def _strip_comments(value):
     return value
 
 
+#: Доступ поверх конфига: `off`, `cache` или `on`. Флаг `--llm` старше неё.
+ACCESS_ENV = "MIMEO_LLM_ACCESS"
+
+
+def _env_access(config: ClientConfig) -> ClientConfig:
+    """Переменная `MIMEO_LLM_ACCESS`, если задана верно, — поверх конфига."""
+    value = os.environ.get(ACCESS_ENV, "").strip()
+    try:
+        access = Access(value)
+    except ValueError:
+        return config
+    return replace(config, access=access, access_source=f"переменная {ACCESS_ENV}")
+
+
 def load_config(path: str | None = None) -> ClientConfig:
     """Читает `config/model.json`. Отсутствие файла — не ошибка."""
     path = path or config_path()
@@ -148,9 +168,9 @@ def load_config(path: str | None = None) -> ClientConfig:
         with open(path, encoding="utf-8") as fh:
             raw = json.load(fh)
     except (OSError, ValueError):
-        return ClientConfig()
+        return _env_access(ClientConfig())
     if not isinstance(raw, dict):
-        return ClientConfig()
+        return _env_access(ClientConfig())
 
     default = ClientConfig()
     ep = _strip_comments(raw.get("endpoint") or {})
@@ -164,7 +184,7 @@ def load_config(path: str | None = None) -> ClientConfig:
         chars_per_token=float(ep.get("chars_per_token") or default.endpoint.chars_per_token),
     )
     store = _strip_comments(raw.get("cache") or {})
-    return ClientConfig(
+    return _env_access(ClientConfig(
         access=_enum(Access, raw.get("access"), default.access),
         endpoint=endpoint,
         mode=_enum(Mode, raw.get("contract"), default.mode),
@@ -174,7 +194,7 @@ def load_config(path: str | None = None) -> ClientConfig:
         tz_cache_root=str(store.get("tz_root") or default.tz_cache_root),
         loaded=True,
         source=path,
-    )
+    ))
 
 
 def _enum(cls, value, fallback):
@@ -272,6 +292,20 @@ def content_of(data: dict) -> str:
 API_KEY_ENV = "MIMEO_LLM_API_KEY"
 
 
+#: Сервер модели на этой же машине — всегда напрямую. Замер 26 сентября: веб,
+#: запущенный из приложения, получил прокси из окружения без исключения для
+#: 127.0.0.1, и `urllib` понёс запрос к своему `llama-server` в прокси — 502 Bad
+#: Gateway, колода без модели. У эксперта с корпоративным прокси было бы то же.
+_LOOPBACK = ("127.0.0.1", "localhost", "::1")
+
+
+def _opener(url: str) -> urllib.request.OpenerDirector:
+    host = (urllib.parse.urlsplit(url).hostname or "").lower()
+    if host in _LOOPBACK:
+        return urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    return urllib.request.build_opener()
+
+
 def post_chat(url: str, body: dict, timeout: float) -> dict:
     """Один запрос. Всё, чем транспорт может отказать, превращается в `ModelError`.
 
@@ -294,7 +328,7 @@ def post_chat(url: str, body: dict, timeout: float) -> dict:
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with _opener(url).open(request, timeout=timeout) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         detail = ""
@@ -356,11 +390,16 @@ class ModelClient:
         return self._spent
 
     def key(self, request: Request) -> str:
+        # Повтор запроса несёт прошлый ответ и поправки — они меняют ответ и
+        # обязаны быть в ключе. У обычного запроса истории нет, ключ прежний.
+        user = request.user
+        if request.history:
+            user += "\x00" + json.dumps(list(request.history), ensure_ascii=False, sort_keys=True)
         return cache.key_for(
             model=self.config.endpoint.model,
             mode=request.mode.value,
             system=request.system,
-            user=request.user,
+            user=user,
             schema=request.schema,
             params=self.config.params,
             extra_body=self.config.extra_body,
