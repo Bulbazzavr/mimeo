@@ -72,6 +72,18 @@ def find_shape(root: ET.Element, shape_id: str) -> ET.Element | None:
     return None
 
 
+def remove_shape(root: ET.Element, shape: ET.Element) -> bool:
+    """Убирает фигуру из дерева слайда, где бы она ни лежала — и в группе.
+    Связь на часть (диаграмму) остаётся неиспользованной: это допустимо в
+    OOXML, а удалять саму часть значит трогать то, что может делить колода."""
+    for parent in root.iter():
+        for child in list(parent):
+            if child is shape:
+                parent.remove(child)
+                return True
+    return False
+
+
 @dataclass(frozen=True)
 class DonorPayload:
     """Донор, вычитанный в память.

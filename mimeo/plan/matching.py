@@ -54,6 +54,14 @@ _BONUS_ANY_KIND = 0.18
 _PENALTY_EMPTY_SLOT = 0.15
 _PENALTY_SLACK = 0.10
 
+#: Место под таблицу или диаграмму — чужие числа на слайде, чем бы его ни
+#: заполнили: данные таблиц и диаграмм движок не подменяет (`Z-12`), а сборка
+#: такую фигуру убирает (`compose/builder.py`), оставляя дыру. Штраф крупнее,
+#: чем за пустое место: числа донора хуже пустой карточки (`Z-62`; Приложение 1
+#: ТЗ, вопрос 4 — «все цифры и факты — из исходных материалов?»). Девятка
+#: 26 сентября: таблица «Акцент 15 10» на двух колодах Education.
+_PENALTY_DONOR_DATA = 0.5
+
 #: Ниже этой доли от ориентира слот считается заполненным «на донышке».
 _SLACK_RATIO = 0.25
 
@@ -720,11 +728,13 @@ def match(
     )
     thin = sum(1 for ratio in slack if ratio < tuning.slack)
     over = sum(overflows) / len(overflows) if overflows else 0.0
+    donor_data = sum(1 for s in pattern.slots if s.content_type in ("table", "chart"))
 
     score = (
         coverage
         + affinity
         - _PENALTY_EMPTY_SLOT * empty_required
+        - _PENALTY_DONOR_DATA * donor_data
         - _PENALTY_SLACK * (thin / max(1, len(slack)))
         - tuning.over * over
         - typeface_penalty(tuning) * len(foreign)

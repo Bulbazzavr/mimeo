@@ -43,6 +43,7 @@ python tools/audit_doc.py --write
 | [`tests/test_content.py`](tests/test_content.py) | 9 | Нормализация контента. Шаг Ш1 плана `PLAN-2.0`. |
 | [`tests/test_deck_lock.py`](tests/test_deck_lock.py) | 9 | Замок Ш0: сверка колод без модели с эталоном (`PLAN-9.0`, `tools/deck_lock.py`). |
 | [`tests/test_docs.py`](tests/test_docs.py) | 24 | Целостность документации. |
+| [`tests/test_donor_data.py`](tests/test_donor_data.py) | 2 | Таблица и диаграмма донора на слайд не попадают (`Z-62`). |
 | [`tests/test_exclusive_donors.py`](tests/test_exclusive_donors.py) | 9 | Доноры, которые нельзя клонировать дважды. `Z-44`, `DOM-PKG §9`, `PLAN-6.1`. |
 | [`tests/test_fitting.py`](tests/test_fitting.py) | 8 | Оценка вместимости. DOM-TEXT §6, §10, ADR-0008. |
 | [`tests/test_generated_images.py`](tests/test_generated_images.py) | 9 | Картинки по идеям модели (`Z-28`, `mimeo/plan/images.py`). |
@@ -76,7 +77,7 @@ python tools/audit_doc.py --write
 | [`tests/test_volume.py`](tests/test_volume.py) | 19 | Объём колоды: 10–15 слайдов или сколько задали. `Z-35`, план `PLAN-2.3`. |
 | [`tests/test_web_boundary.py`](tests/test_web_boundary.py) | 5 | Граница веб-слоя (`Z-29`, `PLAN-8.0`, `SPEC-WEB` раздел 2). |
 | [`tests/test_web_design.py`](tests/test_web_design.py) | 13 | Экран «что вынули из вашего шаблона» (`Z-29`, `PLAN-8.1`, часть A). |
-| **всего** | **636** | в 41 файлах |
+| **всего** | **638** | в 42 файлах |
 
 <!-- /порождается -->
 

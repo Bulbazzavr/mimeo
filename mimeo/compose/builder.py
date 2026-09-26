@@ -17,6 +17,7 @@ from .clone import (
     iter_shapes,
     place_clone,
     read_donor,
+    remove_shape,
     slide_from_layout,
 )
 from .package import CT_SLIDE, RT_SLIDE, PackageWriter
@@ -171,10 +172,7 @@ def build(
                     warnings.append(f"слайд {planned.index}: {problem}")
                 ok = problem is None
             elif fill.kind in ("chart", "table"):
-                warnings.append(
-                    f"слайд {planned.index}: данные {fill.kind} не подменяются, "
-                    f"осталось содержимое донора"
-                )
+                # Подмены данных нет (`Z-12`): фигуру уберёт проход ниже.
                 ok = False
             else:
                 ok = set_text(shape, fill.text or "")
@@ -196,8 +194,21 @@ def build(
         # подстановке: там содержимое донора оставлено сознательно, и об этом
         # уже есть предупреждение.
         intended = {f.slot_id for f in planned.fills}
+        # Таблица и диаграмма донора — чужие числа (`Z-62`): данных таблиц и
+        # диаграмм движок не подменяет (`Z-12`), поэтому фигура уходит со
+        # слайда целиком, заполнял её план или нет. Ранг такие раскладки
+        # обходит (`_PENALTY_DONOR_DATA`); здесь — страховка, и она слышна.
         for slot in pattern.slots:
-            if slot.id in intended:
+            if slot.content_type not in ("table", "chart"):
+                continue
+            shape = find_shape(tree, slot.shape_id)
+            if shape is not None and remove_shape(tree, shape):
+                warnings.append(
+                    f"слайд {planned.index}: {'таблица' if slot.content_type == 'table' else 'диаграмма'}"
+                    f" донора убрана — чужие числа на слайде хуже пустого места (Z-62)"
+                )
+        for slot in pattern.slots:
+            if slot.id in intended or slot.content_type in ("table", "chart"):
                 continue
             shape = find_shape(tree, slot.shape_id)
             if shape is None:
