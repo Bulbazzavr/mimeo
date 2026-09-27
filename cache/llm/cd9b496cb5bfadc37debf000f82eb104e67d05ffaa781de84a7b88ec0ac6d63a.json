@@ -1,8 +1,0 @@
-{
- "version": 1,
- "key": "cd9b496cb5bfadc37debf000f82eb104e67d05ffaa781de84a7b88ec0ac6d63a",
- "model": "qwen3.5-9b",
- "mode": "json_schema",
- "label": "sec01t03",
- "response": "{\n  \"pattern_id\": \"p05\",\n  \"fills\": [\n    {\n      \"slot_id\": \"s01\",\n      \"kind\": \"text\",\n      \"text\": \"Подписка на 1990 рублей в месяц даёт бесплатную доставку и фиксированную скидку. Сейчас подписчиков 34 тысячи, удержание через полгода 61%.\"\n    },\n    {\n      \"slot_id\": \"s02\",\n      \"kind\": \"text\",\n      \"text\": \"Наша модель\"\n    }\n  ]\n}"
-}

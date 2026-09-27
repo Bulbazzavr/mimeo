@@ -223,7 +223,12 @@ def donor_pictures(plan, library, template: str, cfg: AuditConfig,
 
 @dataclass
 class Judge:
-    """Суждения зрения об картинках одной сборки: одна картинка — один вопрос."""
+    """Суждения зрения об картинках одной сборки: одна картинка — один вопрос.
+
+    Клиент к модели — **один на сборку**, и отказ сервера он помнит вместе с
+    остальными вызовами сборки (`client.Outage`): лежащий сервер узнаётся
+    первой картинкой, а не каждой. Бюджет времени на модель у всех картинок
+    тоже общий."""
 
     cfg: AuditConfig
     model_config: object
@@ -234,12 +239,20 @@ class Judge:
     cached: int = 0
     unreadable: int = 0
     failure: str | None = None
+    outage: object = None
+    _client: object = None
 
     def __post_init__(self):
         self.verdicts = {}
 
-    def verdict(self, data: bytes) -> str | None:
+    def client(self):
         from .client import ModelClient
+
+        if self._client is None:
+            self._client = ModelClient(self.model_config, inputs=(self.template,), outage=self.outage)
+        return self._client
+
+    def verdict(self, data: bytes) -> str | None:
         from .prompt import Mode, Request
         from .validate import extract_json
 
@@ -258,7 +271,7 @@ class Judge:
                           name="picture", tool="judge_picture",
                           purpose="Решить, содержимое ли картинка донора или оформление.",
                           images=(url,))
-        answer = ModelClient(self.model_config, inputs=(self.template,)).complete(request)
+        answer = self.client().complete(request)
         if not answer:
             self.failure = answer.note
             self.verdicts[sha] = None

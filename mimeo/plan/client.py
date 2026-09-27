@@ -358,6 +358,21 @@ def post_chat(url: str, body: dict, timeout: float) -> dict:
         raise ModelError("сеть", f"ошибка ввода-вывода: {exc}") from exc
 
 
+class Outage:
+    """Отказ сервера модели — один на сборку, общий для всех её клиентов.
+
+    Сборка зовёт модель из трёх мест: колода (`outline.run`), сцены картинок
+    (`images.scenes`) и зрение о картинках донора (`donor.Judge`). Пока каждый
+    клиент помнил отказ только свой, лежащий сервер спрашивался заново каждой
+    картинкой донора — 2 с на отказ подключения, — а зависший держал каждую до
+    таймаута (вычитка 26 сентября, `DOC-REVIEW`; `ADR-0021` обещал обратное).
+    Теперь сеть или таймаут в любом из трёх мест выключают остальные вызовы
+    сборки; ответы из кэша по-прежнему берутся."""
+
+    def __init__(self) -> None:
+        self.error: ModelError | None = None
+
+
 class ModelClient:
     """Кэш, сеть и бюджет вокруг одного запроса.
 
@@ -365,14 +380,16 @@ class ModelClient:
 
     * **первая неудача выключает остальные вызовы.** Отказ подключения стоит
       2.0 с (замер 6), секций 7–9 — это 18 с впустую на колоду (так было при
-      запросе на раздел, `ADR-0010`; с `ADR-0023` запрос один на колоду);
+      запросе на раздел, `ADR-0010`; с `ADR-0023` запрос один на колоду).
+      Помнит её `Outage`: общий на сборку, если его передали, иначе свой;
     * **бюджет прогона.** Щедрый таймаут на девяти секциях иначе превращается в
       зависание при потолке ТЗ в 300 с;
     * **счётчики.** Сколько взято из кэша, сколько промахнулось, сколько
       пропущено, — чтобы `notes` отличал «модели не было» от «модель ответила».
     """
 
-    def __init__(self, config: ClientConfig | None = None, inputs=(), clock=time.monotonic):
+    def __init__(self, config: ClientConfig | None = None, inputs=(), clock=time.monotonic,
+                 outage: Outage | None = None):
         self.config = config or ClientConfig()
         self.cache_root = cache.root_for(
             inputs, self.config.cache_root, self.config.tz_cache_root
@@ -384,7 +401,15 @@ class ModelClient:
         self.calls = 0
         self.written = 0
         self.skipped = 0
-        self.failure: ModelError | None = None
+        self.outage = outage if outage is not None else Outage()
+
+    @property
+    def failure(self) -> ModelError | None:
+        return self.outage.error
+
+    @failure.setter
+    def failure(self, error: ModelError | None) -> None:
+        self.outage.error = error
 
     @property
     def spent(self) -> float:

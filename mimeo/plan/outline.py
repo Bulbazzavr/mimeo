@@ -645,12 +645,13 @@ def _source(chosen: bool, default: str) -> str:
 
 def run(path: str, fallback, *, access: str | None = None, text_mode: str | None = None,
         target: tuple[int, int] | None = None, config=None, prose_cfg=None,
-        closing_captions=None) -> Outcome:
+        closing_captions=None, outage=None) -> Outcome:
     """Путь модели для одной сборки: решить, звать ли, спросить, проверить.
 
     `fallback` — документ `load_content`: он же признак прозы (`origin`) и он
     же колода, если модель не дала годного ответа. `access` и `text_mode` —
-    флаги (`None` — не заданы); `target` — `--slides`.
+    флаги (`None` — не заданы); `target` — `--slides`; `outage` — отказ
+    сервера, общий на сборку (`client.Outage`).
     """
     from . import client as model_client
     from .validate import extract_json
@@ -707,7 +708,7 @@ def run(path: str, fallback, *, access: str | None = None, text_mode: str | None
 
     req = request(text, mode, frames, config.mode, label=f"колода {os.path.basename(path)} {mode}")
     client = model_client.ModelClient(
-        replace(config, access=model_client.Access(access_value)), inputs=(path,))
+        replace(config, access=model_client.Access(access_value)), inputs=(path,), outage=outage)
     record["key"] = client.key(req)
     reason = too_long(req.system, req.user, config.endpoint)
     if reason:

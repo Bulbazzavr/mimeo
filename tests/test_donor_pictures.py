@@ -88,6 +88,61 @@ def test_content_picture_is_marked_and_decor_is_kept(tmp_path, monkeypatch):
     assert "содержимое — 1" in judge.note()
 
 
+def _three_pictures(monkeypatch) -> None:
+    pictures = {(0, str(n)): _rgba_png([[(n, 0, 0, 255)]]) for n in (7, 8, 9)}
+    monkeypatch.setattr(donor, "donor_pictures", lambda *a, **k: pictures)
+
+
+def _dead_server(monkeypatch) -> list[str]:
+    """Сервер лежит: каждый вызов транспорта — отказ сети, и он же считается."""
+    calls: list[str] = []
+
+    def dead(url, body, timeout):
+        calls.append(url)
+        raise client.ModelError("сеть", "нет связи с сервером")
+
+    monkeypatch.setattr(client, "post_chat", dead)
+    return calls
+
+
+def _dead_config(tmp_path) -> client.ClientConfig:
+    return client.ClientConfig(access=client.Access.ON, extra_body={},
+                               endpoint=client.Endpoint(base_url="http://127.0.0.1:9/v1"),
+                               cache_root=str(tmp_path / "llm"), tz_cache_root=str(tmp_path / "tz"))
+
+
+def test_dead_server_is_asked_once_not_for_every_picture(tmp_path, monkeypatch):
+    """Вычитка 26 сентября: новый клиент на каждую картинку — лежащий сервер
+    спрашивался заново каждой (2 с на отказ), зависший держал каждую до
+    таймаута. Клиент один на сборку и отказ помнит."""
+    _three_pictures(monkeypatch)
+    calls = _dead_server(monkeypatch)
+    judge = donor.Judge(donor.load_config(), _dead_config(tmp_path), "t.pptx")
+    plan = judge.mark(_plan(), library=None)
+    assert len(calls) == 1, f"три картинки — один стук в лежащий сервер, а было {len(calls)}"
+    assert plan.slides[0].dropped_pictures == (), "модель не ответила — картинки остаются"
+    assert "Модель не ответила" in judge.note()
+
+
+def test_outage_on_the_deck_spares_the_pictures(tmp_path, monkeypatch):
+    """Отказ общий на сборку: сервер лёг на запросе колоды — зрение о картинках
+    донора не стучится вовсе (`client.Outage`)."""
+    from mimeo.plan.prompt import Mode, Request
+
+    _three_pictures(monkeypatch)
+    calls = _dead_server(monkeypatch)
+    outage = client.Outage()
+    config = _dead_config(tmp_path)
+    deck = client.ModelClient(config, outage=outage).complete(Request(
+        mode=Mode.JSON_SCHEMA, system="s", user="u", schema={"type": "object"},
+        section_id="колода", candidates=()))
+    assert not deck and len(calls) == 1
+    judge = donor.Judge(donor.load_config(), config, "t.pptx", outage=outage)
+    judge.mark(_plan(), library=None)
+    assert len(calls) == 1, "после отказа на колоде картинки не спрашивают сервер заново"
+    assert "модель уже отказала" in judge.note()
+
+
 def test_model_off_asks_nothing(tmp_path, monkeypatch):
     monkeypatch.setattr(donor, "donor_pictures", lambda *a, **k: {(0, "7"): b"\x89PNG"})
     with FakeModel() as fake:

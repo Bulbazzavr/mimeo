@@ -150,14 +150,16 @@ SCENE_SCHEMA = {
 }
 
 
-def scenes(ideas: list[str], gen: GeneratorConfig, model_config, inputs=()) -> tuple[list[str] | None, str]:
+def scenes(ideas: list[str], gen: GeneratorConfig, model_config, inputs=(),
+           outage=None) -> tuple[list[str] | None, str]:
     """Сюжеты без текста — второй короткий вызов языковой модели (`Z-28`).
 
     Замер 26 сентября: текст на картинке рисуется, когда он есть в самой идее
     («двигает блоки текста на слайде», «читает сообщение на телефоне»), и
     отрицания в запросе картинки его не гасят. Переписать сюжет — смысл, а
     смысл делает модель. Возвращает (сцены или `None`, откуда или почему нет);
-    ответ идёт в кэш ответов модели, как и колода."""
+    ответ идёт в кэш ответов модели, как и колода. `outage` — отказ сервера,
+    общий на сборку (`client.Outage`)."""
     from .client import ModelClient
     from .prompt import Mode, Request
     from .validate import extract_json
@@ -170,7 +172,7 @@ def scenes(ideas: list[str], gen: GeneratorConfig, model_config, inputs=()) -> t
     request = Request(mode=model_config.mode, system=gen.scene_system, user=user, schema=SCENE_SCHEMA,
                       section_id="сцены картинок", candidates=(), name="scenes", tool="rewrite_scenes",
                       purpose="Переписать сюжеты рисунков без текста.")
-    answer = ModelClient(model_config, inputs=inputs).complete(request)
+    answer = ModelClient(model_config, inputs=inputs, outage=outage).complete(request)
     if not answer:
         return None, answer.note or "ответа нет"
     parsed = extract_json(answer.text)

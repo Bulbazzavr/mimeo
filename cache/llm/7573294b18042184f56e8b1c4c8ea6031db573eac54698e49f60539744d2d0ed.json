@@ -1,8 +1,0 @@
-{
- "version": 1,
- "key": "7573294b18042184f56e8b1c4c8ea6031db573eac54698e49f60539744d2d0ed",
- "model": "qwen3.5-9b",
- "mode": "json_schema",
- "label": "sec01t04",
- "response": "{\n  \"pattern_id\": \"p05\",\n  \"fills\": [\n    {\n      \"slot_id\": \"s01\",\n      \"kind\": \"text\",\n      \"text\": \"Четырнадцать человек. Основатели раньше строили логистику в X5 и в Ozon, технический директор пришёл из сервиса быстрой доставки.\"\n    },\n    {\n      \"slot_id\": \"s02\",\n      \"kind\": \"text\",\n      \"text\": \"Команду\"\n    }\n  ]\n}"
-}

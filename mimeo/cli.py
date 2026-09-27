@@ -16,7 +16,7 @@ from .model import DeckPlan, DesignSystem, PatternLibrary
 from .compose import build as compose_deck
 from .compose import inspect as inspect_package
 from .plan import load_content, outline, plan_deck
-from .plan.client import Access
+from .plan.client import Access, Outage
 from .plan.client import load_config as load_model_config
 from .plan.outline import MODES
 from .opc.package import PackageError
@@ -44,7 +44,7 @@ LLM_CHOICES = tuple(a.value for a in Access)
 TEXT_CHOICES = MODES
 
 
-def model_path(args, doc, target, config=None):
+def model_path(args, doc, target, config=None, outage=None):
     """Путь модели для этой сборки (`PLAN-9.0`, Ш3; `ADR-0023`) и его запись.
 
     Один вызов на сборку — и на `--variants N` тоже: запрос от политики
@@ -55,16 +55,17 @@ def model_path(args, doc, target, config=None):
     `config` — настройки модели, если не из `config/model.json`: так
     `tools/report.py` мерит колоды тем же вызовом, что собирает сборка, с
     ответами из своего каталога (`PLAN-9.0`, Ш9), а не своей копией вызова.
+    `outage` — отказ сервера модели, общий на сборку (`client.Outage`).
     """
     outcome = outline.run(
         args.content, doc,
         access=getattr(args, "llm", None), text_mode=getattr(args, "text", None),
-        target=target, config=config or load_model_config(),
+        target=target, config=config or load_model_config(), outage=outage,
     )
     return outcome, outline.write_record(args.out, outcome.record)
 
 
-def _pictures(args, doc, analysis):
+def _pictures(args, doc, analysis, outage=None):
     """Картинки по идеям модели (`Z-28`): заготовки в документ до плана и тот,
     кто их нарисует после. Возвращает (документ, художник, заметка)."""
     from dataclasses import replace as _replace
@@ -82,7 +83,7 @@ def _pictures(args, doc, analysis):
         model = _replace(model, access=Access(access))
 
     def rewrite(ideas):
-        return images.scenes(ideas, gen, model, inputs=(args.content,))
+        return images.scenes(ideas, gen, model, inputs=(args.content,), outage=outage)
 
     doc, placeholders, note = images.add_placeholders(doc, args.out, gen, slide_size=size,
                                                       rewrite=rewrite)
@@ -106,9 +107,10 @@ def _painted(plan, painter, doc, library, replan):
     return painter.frames(plan, library, doc)
 
 
-def _judge(args, analysis):
+def _judge(args, analysis, outage=None):
     """Зрение модели для картинок донора (`Z-62`, `plan/donor.py`): тот же
-    доступ к модели, что у колоды, — флаг `--llm` старше конфига."""
+    доступ к модели, что у колоды, — флаг `--llm` старше конфига, — и тот же
+    отказ сервера: лёг на колоде — картинки не стучатся заново."""
     from dataclasses import replace as _replace
     from .plan import donor
 
@@ -118,7 +120,7 @@ def _judge(args, analysis):
         model = _replace(model, access=Access(access))
     slide = analysis.design_system.slide
     return donor.Judge(donor.load_config(), model, args.template,
-                       slide_size=(slide.cx_emu, slide.cy_emu))
+                       slide_size=(slide.cx_emu, slide.cy_emu), outage=outage)
 
 
 def _model_line(outcome, record_path) -> str:
@@ -412,16 +414,19 @@ def cmd_build(args):
     analysis = analyze_template(args.template)
     target = parse_slides(getattr(args, "slides", None))
     doc = load_content(args.content, target=target)
+    # Отказ сервера модели — один на сборку: колода, сцены и зрение о
+    # картинках донора его разделяют (`client.Outage`).
+    outage = Outage()
     # До ветки вариантов: один вызов модели на все варианты (`ADR-0023`,
     # «Следствия» — три вёрстки одного содержания).
-    outcome, record_path = model_path(args, doc, target)
-    doc, painter, picture_note = _pictures(args, outcome.doc, analysis)
+    outcome, record_path = model_path(args, doc, target, outage=outage)
+    doc, painter, picture_note = _pictures(args, outcome.doc, analysis, outage)
 
     # Несколько вариантов вёрстки — отдельная ветка (`ADR-0020`, `Z-26`).
     # Умолчание не меняется: без флага собирается одна колода ровно как раньше.
     # Это не вежливость к старому коду — девять сдаточных колод собираются этой
     # же командой, и молчаливая смена поведения испортила бы их незаметно.
-    judge = _judge(args, analysis)
+    judge = _judge(args, analysis, outage)
     if int(getattr(args, "variants", 1) or 1) > 1:
         return _build_variants(args, analysis, doc, target, started,
                                _model_line(outcome, record_path), painter, picture_note, judge)
