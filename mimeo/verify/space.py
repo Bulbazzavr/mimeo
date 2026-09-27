@@ -68,11 +68,18 @@ from __future__ import annotations
 
 from .metrics import Box, Measurement, ShapeMetric
 
-#: msoAnchor: текст прижат к верху — растёт вниз.
+#: MsoVerticalAnchor: текст прижат к верху — растёт вниз.
 ANCHOR_TOP = 1
-#: Текст прижат к низу — растёт вверх. **Номер неверен:** в COM 3 — середина,
-#: низ — 4. Оставлен как есть до `Z-54`: поправка меняет решения в обе стороны.
-ANCHOR_BOTTOM = 3
+#: Середина — растёт в обе стороны поровну.
+ANCHOR_MIDDLE = 3
+#: Текст прижат к низу — растёт вверх. До 27 сентября здесь стояло 3, и
+#: середина мерилась как низ (`Z-54`); проверено положением набранного текста:
+#: у 3 он посередине бокса у 478 надписей, у 4 — по низу у 165
+#: (`WORKLOG/2026-09-23-z53-baseline.md`, § 8.1).
+ANCHOR_BOTTOM = 4
+#: 2 и 5 — верх и низ по базовой линии: растут так же, как 1 и 4.
+GROWS_DOWN = (ANCHOR_TOP, 2)
+GROWS_UP = (ANCHOR_BOTTOM, 5)
 
 #: Допуск на округление координат в пунктах. Зонд округляет до сотых.
 SLACK = 0.5
@@ -198,13 +205,17 @@ def available_height(metric: ShapeMetric, measurement: Measurement) -> float:
     blockers = _blockers(box, measurement.boxes)
     page_height = measurement.page[1]
 
-    if metric.anchor == ANCHOR_TOP:
+    if metric.anchor in GROWS_DOWN:
         extra = free_below(box, blockers, page_height)
-    elif metric.anchor == ANCHOR_BOTTOM:
+    elif metric.anchor in GROWS_UP:
         extra = free_above(box, blockers)
     else:
-        # Центр, «по ширине», «распределён»: текст расходится в обе стороны.
-        extra = free_above(box, blockers) + free_below(box, blockers, page_height)
+        # Середина: текст расходится в обе стороны поровну, и запас — вдвое
+        # меньшая из сторон, а не их сумма. Сумма пускала заголовок WorkSpace
+        # на плашку под ним: сверху пусто, снизу 35 пт, а растёт он и вниз на
+        # половину прироста (`Z-54`, растр девятки 27 сентября).
+        extra = 2 * min(free_above(box, blockers),
+                        free_below(box, blockers, page_height))
 
     room = metric.usable_height + max(0.0, extra)
     # Чужой набранный текст в нашем боксе — тоже граница (`Z-53`). Только

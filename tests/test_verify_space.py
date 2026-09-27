@@ -76,7 +76,7 @@ def test_a_neighbour_just_below_leaves_no_room_at_all():
 
 def test_bottom_anchored_text_looks_upwards():
     """Текст прижат к низу — растёт вверх, и мешает сосед сверху, а не снизу."""
-    m = shape(top=300.0, anchor=3)
+    m = shape(top=300.0, anchor=4)
     above = neighbour(y=0.0, h=290.0)
     assert height_ratio(m, scene(m, above)) > 1.0, "сосед сверху обязан мешать"
     below = neighbour(y=360.0)
@@ -85,9 +85,20 @@ def test_bottom_anchored_text_looks_upwards():
 
 def test_centred_text_needs_room_on_both_sides():
     """Центральный якорь: место ищется и сверху, и снизу."""
-    m = shape(top=200.0, anchor=2)
+    m = shape(top=200.0, anchor=3)
     crowded = scene(m, neighbour(y=190.0, h=10.0), neighbour(y=250.0, shape_id="23"))
     assert height_ratio(m, crowded) > 1.0
+
+
+def test_centred_text_grows_both_ways_equally():
+    """Середина растёт вниз на половину прироста: пустое место сверху не
+    выручает, если снизу его мало. Сумма сторон (до `Z-54`) давала 50 + 150 +
+    20 = 220 пт и молчала; заголовок WorkSpace так лёг на плашку под собой
+    (растр девятки 27 сентября)."""
+    m = shape(top=150.0, anchor=3)
+    below = scene(m, neighbour(y=220.0))
+    assert available_height(m, below) == 90.0      # 50 бокса + 2 × 20 снизу
+    assert height_ratio(m, below) > 1.0
 
 
 # --- что помехой не считается -----------------------------------------
@@ -215,7 +226,7 @@ def test_a_hidden_backing_does_not_constrain():
 
 def test_bottom_anchored_text_is_bounded_by_the_backing_top():
     """Зеркальный случай: текст растёт вверх, границей служит верх плашки."""
-    m = shape(top=300.0, height=50.0, text=120.0, anchor=3)
+    m = shape(top=300.0, height=50.0, text=120.0, anchor=4)
     scn = scene(m, backing(280.0, 100.0), neighbour(0.0, h=10.0))
     assert available_height(m, scn) == 70.0        # 50 бокса + 20 до верха плашки
 

@@ -90,6 +90,35 @@ try {
                     try { $z = [int]$sh.ZOrderPosition } catch {}
                     $stack.Push(@($sh, ([long]$z * 1000000), [long]1000))
                 }
+                # Фигуры макета и образца — логотип, колонтитул, декор — зритель
+                # видит на слайде наравне с его собственными, а зонд до
+                # 27 сентября их не видел: крупный текст WorkSpace рос на
+                # логотип макета и за край слайда, а мерка звала место под ним
+                # свободным (`Z-75`). Они идут только боксами — помехой росту
+                # текста: `z` ниже любой фигуры слайда и непрозрачность 0, так
+                # что заслонять наш текст они не могут. Заполнители макета на
+                # слайде не рисуются — пропускаются. Приставка у `id`: номера
+                # фигур макета, образца и слайда пересекаются.
+                $layers = @()
+                try {
+                    $lay = $slide.CustomLayout
+                    $layers += ,@('L', $lay.Shapes)
+                    if ($slide.DisplayMasterShapes -eq -1 -and $lay.DisplayMasterShapes -eq -1) {
+                        $layers += ,@('M', $slide.Master.Shapes)
+                    }
+                } catch {}
+                foreach ($layer in $layers) {
+                    foreach ($ls in $layer[1]) {
+                        try {
+                            if ([int]$ls.Type -eq 14) { continue }
+                            if ($ls.Visible -ne -1) { continue }
+                            Write-Output ("box slide=$i id=" + $layer[0] + $ls.Id +
+                                          " x=" + (Num $ls.Left) + " y=" + (Num $ls.Top) +
+                                          " w=" + (Num $ls.Width) + " h=" + (Num $ls.Height) +
+                                          " vis=1 z=-1 opq=0 t=" + [int]$ls.Type)
+                        } catch {}
+                    }
+                }
                 Release $shapes; Release $slide; Release $slides
                 $shapes = $null; $slide = $null; $slides = $null
                 while ($stack.Count -gt 0) {

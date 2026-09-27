@@ -446,6 +446,13 @@ def chart_xml(data: ChartData, sz: int, fill_el: ET.Element | None) -> bytes:
                 f'<c:crossBetween val="between"/></c:valAx>')
     legend_xml = (f'<c:legend><c:legendPos val="b"/><c:overlay val="0"/>{_txpr(sz, text)}</c:legend>'
                   if legend else "")
+    # Цвета текста у хозяина нет (место картинки) — подписи идут цветом `tx1`,
+    # и под ними должен лежать его парный фон `bg1`, а не то, что оказалось
+    # под местом. Растр девятки 27 сентября: WorkSpace, диаграмма на месте
+    # фото поверх белой карточки — подписи `tx1` на чёрном фоне слайда не
+    # видны вовсе. Хозяин с текстом свой цвет уже подобрал к своему фону.
+    backdrop = ('<a:solidFill><a:schemeClr val="bg1"/></a:solidFill>'
+                if fill_el is None or not len(fill_el) else "<a:noFill/>")
     xml = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n'
         f'<c:chartSpace xmlns:c="{NS["c"]}" xmlns:a="{NS["a"]}" xmlns:r="{NS["r"]}">'
@@ -453,7 +460,7 @@ def chart_xml(data: ChartData, sz: int, fill_el: ET.Element | None) -> bytes:
         f'<c:chart><c:autoTitleDeleted val="1"/><c:plotArea><c:layout/>{plot}{axes}'
         '<c:spPr><a:noFill/><a:ln><a:noFill/></a:ln></c:spPr></c:plotArea>'
         f'{legend_xml}<c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/></c:chart>'
-        '<c:spPr><a:noFill/><a:ln><a:noFill/></a:ln></c:spPr>'
+        f'<c:spPr>{backdrop}<a:ln><a:noFill/></a:ln></c:spPr>'
         f"{_txpr(sz, text)}"
         '<c:externalData r:id="rId1"><c:autoUpdate val="0"/></c:externalData>'
         "</c:chartSpace>"
