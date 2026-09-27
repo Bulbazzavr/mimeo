@@ -779,13 +779,24 @@ def to_doc(answer: dict, text: str, path: str, name: str, prose_cfg=None) -> tup
     from .visual import TableData, from_slide
 
     prose_cfg = prose_cfg or load_prose()
-    slides = answer["slides"]
+    slides = list(answer["slides"])
+    # Финал — последним. Порядок финала — форма, и держит его код: картинка,
+    # приложенная автором в конце текста, вставала слайдом после «Запрос на
+    # доступ» на всех девяти сдаточных колодах 27 сентября. Содержание слайдов
+    # не меняется, только место финала.
+    closing = [s for s in slides if s.get("kind") == "closing"]
+    moved = bool(closing) and slides[-1].get("kind") != "closing"
+    if moved:
+        slides = [s for s in slides if s.get("kind") != "closing"] + closing
     title = slides[0]["heading"] if _is_title(0, slides[0]) else None
     headings = [s["heading"] for i, s in enumerate(slides)
                 if s["kind"] != "agenda" and not _is_title(i, s)]
     bases = (os.path.dirname(os.path.abspath(path)), os.getcwd())
     ids = _Numbering()
     sections, notes, deck = [], [], []
+    if moved:
+        notes.append("Финал колоды модели перенесён в конец: после него стояли слайды "
+                     "(«слайд после финала», Z-34).")
     for i, s in enumerate(slides):
         sid = f"m{i + 1:02d}"
         idea = s.get("image_idea") if isinstance(s.get("image_idea"), str) else ""

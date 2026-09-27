@@ -2,8 +2,8 @@
   "_": "Замок версий конфигов: каким был каждый файл, когда объявляли его version. Пишется tools/config_version.py --write, сверяется --check и тестом tests/test_config_version.py. Расхождение sha256 при неизменной version означает забытую версию — см. ADR-0022 и PLAN-7.0.",
   "configs": {
     "audit.json": {
-      "version": "1.4",
-      "sha256": "4be664ce0402d0c60c9b2657266f5c398b39306d32a69f59081ef111c04ebdb3"
+      "version": "1.5",
+      "sha256": "7b6afc7d0f6c43865ace037ba8c045ab9142522cf5d3073b74aa44ff9d1e12bf"
     },
     "generator.json": {
       "version": "1.2",

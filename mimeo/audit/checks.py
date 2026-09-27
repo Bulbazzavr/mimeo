@@ -125,10 +125,37 @@ def _norm(text: str) -> str:
     return " ".join(re.sub(r"[^\wё ]", " ", text.lower()).split())
 
 
-def run(slides: tuple[SlideView, ...], verify: dict | None, measurement=None) -> list[dict]:
+#: Рамки объёма ТЗ (раздел 2): 10–15 слайдов — те же, что `outline.TZ_FRAMES`.
+TZ_MAX_SLIDES = 15
+
+
+def run(slides: tuple[SlideView, ...], verify: dict | None, measurement=None,
+        max_slides: int = TZ_MAX_SLIDES) -> list[dict]:
     """Находки кодом. Каждая — словарь полей находки без `id`. `measurement`
-    — замер PowerPoint готовой колоды (`verify.metrics`) или `None`."""
+    — замер PowerPoint готовой колоды (`verify.metrics`) или `None`;
+    `max_slides` — верхняя рамка объёма (`--slides` или ТЗ)."""
     found: list[dict] = []
+    # Объём сверх рамки: раздел, не вставший в раскладку целиком, расходится
+    # на два слайда, и 15 слайдов модели становятся 16 (VK Tech, 27 сентября).
+    # Резать текст код не будет — объединить слайды просит модель.
+    if slides and len(slides) > max_slides:
+        last = slides[-1]
+        found.append({"slide": last.position, "title": "", "check": "volume",
+                      "kind": "deterministic", "fix": "model",
+                      "detail": f"в собранной колоде {len(slides)} слайдов при рамке до "
+                                f"{max_slides}: слайдов в твоём ответе должно стать на "
+                                f"{len(slides) - max_slides} меньше — объедини два соседних "
+                                f"слайда об одном, не теряя чисел"})
+    # Слайд после финала: картинка, приложенная в конце текста, уезжает за
+    # «Спасибо» — на всех девяти колодах 27 сентября.
+    closing = next((v for v in slides if v.kind == "closing"), None)
+    if closing is not None:
+        for v in slides:
+            if v.position > closing.position:
+                found.append({"slide": v.position, "title": v.title, "check": "after_closing",
+                              "kind": "deterministic", "fix": "model",
+                              "detail": f"слайд стоит после финала «{closing.title}» — "
+                                        f"перенеси его к своей теме, финал — последним"})
     by_position = {v.position: v for v in slides}
     for position, check, _shape, detail in collisions(measurement):
         v = by_position.get(position)
@@ -154,7 +181,17 @@ def run(slides: tuple[SlideView, ...], verify: dict | None, measurement=None) ->
         key = _norm(v.title)
         if key and v.kind not in FRAME_KINDS:
             if key in titles:
-                add(v, "duplicate", f"заголовок повторяет слайд {titles[key].position}", "model")
+                first = titles[key]
+                if first.position == v.position - 1:
+                    # Подряд с одним заголовком — раздел не встал в раскладку
+                    # целиком и разошёлся на два слайда (VK Tech, 27 сентября:
+                    # тезис в 23 слова рядом с таблицей). «Повторяет слайд 10»
+                    # модель не поняла; ей нужно сказать, что сделать.
+                    add(v, "duplicate", f"слайд не уместился на один слайд шаблона и разошёлся "
+                                        f"на два ({first.position} и {v.position}) — сократи "
+                                        f"его тезисы до одной короткой фразы", "model")
+                else:
+                    add(v, "duplicate", f"заголовок повторяет слайд {first.position}", "model")
             else:
                 titles[key] = v
 

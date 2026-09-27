@@ -36,6 +36,8 @@ CHECKS = (
     ("long_item", "deterministic", f"пункт длиннее {checks.MAX_WORDS} слов"),
     ("empty", "deterministic", "слайд с одним заголовком"),
     ("duplicate", "deterministic", "два слайда с одним заголовком"),
+    ("volume", "deterministic", f"слайдов больше рамки ТЗ — до {checks.TZ_MAX_SLIDES}"),
+    ("after_closing", "deterministic", "слайд стоит после финала"),
     ("overflow", "deterministic", "текст не влез и после ремонта (VERIFY)"),
     ("too_wide", "deterministic", "надпись шире своего места (VERIFY)"),
     ("occluded", "deterministic", "текст закрыт фигурой шаблона (VERIFY)"),
@@ -75,7 +77,8 @@ class AuditReport:
 
 def audit_deck(deck: str, plan, library, slides_written, verify: dict | None,
                model_config, inputs: tuple[str, ...], out_dir: str, variant: int | None = None,
-               outage=None, use_model: bool = True) -> AuditReport:
+               outage=None, use_model: bool = True,
+               max_slides: int = checks.TZ_MAX_SLIDES) -> AuditReport:
     """Аудит одной собранной колоды. `verify` — отчёт VERIFY словарём или
     `None` (не запускался); `out_dir` — куда класть картинки слайдов."""
     import time
@@ -97,7 +100,7 @@ def audit_deck(deck: str, plan, library, slides_written, verify: dict | None,
             measurement = None
     except MeasurerUnavailable as exc:
         notes.append(f"замера PowerPoint нет ({exc}) — наезд надписей не проверен")
-    found = checks.run(views, verify, measurement)
+    found = checks.run(views, verify, measurement, max_slides)
     if verify is not None:
         defects = verify.get("defects") or {}
         report.verify = {"before": defects.get("before"), "after": defects.get("after")}

@@ -35,6 +35,29 @@ function Release($obj) {
     try { [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($obj) } catch {}
 }
 
+# Установленные гарнитуры — по реестру шрифтов системы и пользователя: имя
+# значения без хвоста «(TrueType)». Гарнитура «установлена», если есть
+# начертание с её именем целиком или с ним и пробелом дальше («Play Bold»);
+# просто общее начало не годится — «Play» не должен найтись как «Playbill».
+$FALLBACK_FONT = 'Arial'
+$installedFonts = @{}
+foreach ($root in @('HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts',
+                    'HKCU:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts')) {
+    try {
+        foreach ($p in (Get-ItemProperty -Path $root -ErrorAction Stop).PSObject.Properties) {
+            if ($p.Name -like 'PS*') { continue }
+            $installedFonts[(($p.Name -replace '\s*\(.*\)\s*$', '').ToLower())] = 1
+        }
+    } catch {}
+}
+function Installed($name) {
+    $n = ([string]$name).ToLower()
+    foreach ($k in $installedFonts.Keys) {
+        if ($k -eq $n -or $k.StartsWith($n + ' ') -or $k.StartsWith($n + ' &') -or $k.Contains(' & ' + $n)) { return $true }
+    }
+    return $false
+}
+
 # PowerPoint — одноэкземплярный COM-сервер: New-Object подключится к уже
 # открытому у пользователя приложению, и Quit() закроет его документы.
 $pre = @(Get-Process -Name POWERPNT -ErrorAction SilentlyContinue)
@@ -69,6 +92,23 @@ try {
             continue
         }
         try {
+            # Шрифт колоды, которого нет в системе, — мерить заменой, которой
+            # PowerPoint его РИСУЕТ. Замер 27 сентября: у всех трёх выданных
+            # шаблонов гарнитура Play встроена в файл, но не установлена;
+            # объектная модель раскладывает текст по метрикам встроенного Play
+            # (3 строки), а отрисовка — экспорт слайда и PDF — рисует Arial
+            # (4 строки), и крупный текст WorkSpace уходил за край слайда при
+            # отчёте «влезло». С заменой на Arial замер дал ровно строки растра.
+            # Колода открыта только для чтения: замена живёт в памяти сеанса.
+            foreach ($f in @($pres.Fonts)) {
+                try {
+                    $fn = [string]$f.Name
+                    if ($fn -and -not (Installed $fn)) {
+                        $pres.Fonts.Replace($fn, $FALLBACK_FONT)
+                        Write-Output ("fontsub from=" + ($fn -replace '\s', '_') + " to=" + $FALLBACK_FONT)
+                    }
+                } catch {}
+            }
             Write-Output ("slides=" + $pres.Slides.Count)
             # Край слайда — такая же граница, как соседняя фигура (`PLAN-4.2`).
             Write-Output ("page w=" + (Num $pres.PageSetup.SlideWidth) +

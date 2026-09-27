@@ -517,3 +517,17 @@ def test_tz_frames_are_the_cli_ones():
 def test_empty_doc_is_markup():
     got = outline.run("c.md", ContentDoc(name="c.md"))
     assert got.status == "markup" and got.doc.notes[-1].startswith("Модель не нужна")
+
+def test_closing_goes_last():
+    """Картинка, приложенная в конце текста, вставала слайдом после финала на
+    всех девяти сдаточных колодах 27 сентября: финал ставит последним код."""
+    answer = {"slides": [_slide("Тема", "cover"), _slide("Рост", "text", ["выручка растёт"]),
+                         _slide("Спасибо", "closing", ["вопросы"]),
+                         _slide("Схема стадий", "text", ["четыре стадии"])],
+              "missing_roles": []}
+    doc, notes, deck = outline.to_doc(answer, "", "t.md", "t")
+    assert [d["heading"] for d in deck][-2:] == ["Схема стадий", "Спасибо"]
+    assert any("Финал" in n for n in notes)
+    kept = {"slides": answer["slides"][:3], "missing_roles": []}
+    _, notes2, deck2 = outline.to_doc(kept, "", "t.md", "t")
+    assert [d["heading"] for d in deck2][-1] == "Спасибо" and not any("Финал" in n for n in notes2)

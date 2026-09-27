@@ -188,12 +188,18 @@ def test_a_homeless_picture_does_not_take_the_section_with_it():
     """`Match.fits` судит по `leftover`, и пока картинка попадала туда, на
     шаблоне без слотов-иллюстраций непригодными становились **все** раскладки:
     раздел пропадал целиком вместе с текстом — минус 484 и 468 знаков на
-    `60042` и `prostoj-shablon`."""
+    `60042` и `prostoj-shablon`.
+
+    Текст — редакция `content-mimeo.md` 26 сентября, фикстурой: 27 сентября
+    абзац «чего не умеем» переписан, путь без модели режет его на пять пунктов,
+    и раздел с двумя картинками и этим списком на `60042` не встаёт целиком ни в
+    одну раскладку — это другой класс (раздел крупнее раскладок бедного
+    шаблона), а не пропажа из-за картинки, которую держит этот тест."""
     poor = os.path.join(ROOT, "samples", "60042.pptx")
     if not os.path.exists(poor):
         pytest.skip("шаблоны не коммитятся: tools/fetch_samples.py")
     a = analyze_template(poor)
-    doc = load_content(os.path.join(ROOT, "examples", "content-mimeo.md"))
+    doc = load_content(os.path.join(ROOT, "tests", "fixtures", "content-mimeo-2609.md"))
     plan = plan_deck(doc, a.patterns, a.design_system.source.sha256)
     assert not plan.unplaced, f"разделы пропали целиком: {plan.unplaced}"
     said = [w for w in plan.warnings if "Картинок не вставлено" in w]

@@ -106,6 +106,26 @@ def test_slide_numbers_follow_the_file_not_the_plan():
     assert [(v.position, v.title) for v in views] == [(1, "А"), (2, "В")]
 
 
+def test_deck_longer_than_the_frame_asks_the_model_to_merge():
+    """VK Tech, 27 сентября: раздел разошёлся на два слайда, 15 стали 16."""
+    plan = deck(*(planned(k, f"Вывод {k}", body="т") for k in range(16)))
+    found = [f for f in checks.run(checks.views(plan, LIB), None) if f["check"] == "volume"]
+    assert len(found) == 1 and found[0]["fix"] == "model" and "16" in found[0]["detail"]
+    assert fix.revise_lines(found)[0].startswith("вся колода: ")
+    short = deck(*(planned(k, f"Вывод {k}", body="т") for k in range(15)))
+    assert not [f for f in checks.run(checks.views(short, LIB), None) if f["check"] == "volume"]
+
+
+def test_slide_after_the_closing_is_a_finding():
+    lib = PatternLibrary(source=PatternSource("t.pptx", "0" * 64),
+                         patterns=(pattern("p"), pattern("z", "closing")))
+    plan = deck(planned(0, "Рост", body="т"), planned(1, "Спасибо", pid="z"),
+                planned(2, "Схема стадий", body="т"))
+    found = [f for f in checks.run(checks.views(plan, lib), None) if f["check"] == "after_closing"]
+    assert [(f["slide"], f["title"]) for f in found] == [(3, "Схема стадий")]
+    assert "«Спасибо»" in found[0]["detail"]
+
+
 # --- наезд надписей и край слайда ---------------------------------------
 
 

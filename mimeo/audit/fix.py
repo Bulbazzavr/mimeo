@@ -52,7 +52,8 @@ def revise_lines(picked: list[dict]) -> tuple[str, ...]:
     for f in picked:
         if f.get("fix") != "model":
             continue
-        line = f"слайд «{f.get('title') or f.get('slide')}»: {f.get('detail')}"
+        where = f"слайд «{f['title']}»" if f.get("title") else "вся колода"
+        line = f"{where}: {f.get('detail')}"
         if line not in seen:
             seen.add(line)
             lines.append(line)

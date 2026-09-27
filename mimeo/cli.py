@@ -443,9 +443,10 @@ def _audited(args, path, plan, library, built, verdict_path, variant, outage):
         with open(verdict_path, encoding="utf-8") as fh:
             verify = json.load(fh)
     name = f"audit-{variant}" if variant else "audit"
+    target = parse_slides(getattr(args, "slides", None))
     report = audit.audit_deck(path, plan, library, built.slides_written, verify, model,
                               (args.template,), os.path.join(args.out, name), variant=variant,
-                              outage=outage)
+                              outage=outage, max_slides=target[1] if target else 15)
     target = audit.write_json(report, os.path.join(args.out, name + ".json"))
     return target, audit.describe(report)
 
