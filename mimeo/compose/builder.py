@@ -22,7 +22,7 @@ from .clone import (
 )
 from .icon import replace_with_icon
 from .package import CT_SLIDE, RT_SLIDE, PackageWriter
-from .substitute import replace_picture, set_font_scale, set_items, set_text
+from .substitute import allow_wrap, replace_picture, set_font_scale, set_items, set_text
 from .visual import place as place_visual
 from .visual import slide_height
 
@@ -198,6 +198,12 @@ def build(
             if ok:
                 substituted += 1
                 touched.add(slot.shape_id)
+                # Надпись без переноса, а наш текст длиннее её строки — перенос
+                # включается, иначе строка уйдёт за край слайда (`DOM-TEXT §15`).
+                if fill.kind in ("text", "number", "list") and slot.capacity is not None:
+                    lines = (fill.items or ()) if fill.kind == "list" else (fill.text or "",)
+                    allow_wrap(shape, max((len(t) for t in lines), default=0),
+                               slot.capacity.chars_per_line)
                 # Шкалу кегля назначила стадия VERIFY; решение лежит в плане,
                 # здесь только применение (`ADR-0005`, `PLAN-4.0` шаг 4).
                 if fill.font_scale is not None and set_font_scale(shape, fill.font_scale):

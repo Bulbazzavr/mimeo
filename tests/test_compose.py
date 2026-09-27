@@ -253,3 +253,24 @@ def test_quote_and_angle_brackets_are_escaped_too():
 
     ct = ContentTypes({"png": "image/png"}, {"/ppt/media/a&b.png": "image/png"})
     ET.fromstring(ct.to_bytes())
+
+
+def test_long_text_in_a_no_wrap_box_gets_wrapping_short_text_does_not():
+    """`DOM-TEXT §15`: надпись шаблона без переноса (`wrap="none"`) под короткое
+    слово; наш заголовок длиннее её строки — перенос включается, иначе строка
+    уходит за край слайда. Короткий текст фигуру не меняет."""
+    from xml.etree import ElementTree as ET
+
+    from mimeo.compose.substitute import allow_wrap
+    from mimeo.oxml.ns import NS, qn
+
+    def box():
+        return ET.fromstring(
+            f'<p:sp xmlns:p="{NS["p"]}" xmlns:a="{NS["a"]}"><p:txBody>'
+            '<a:bodyPr wrap="none"/><a:p><a:r><a:t>WE</a:t></a:r></a:p></p:txBody></p:sp>')
+
+    short, long_ = box(), box()
+    assert not allow_wrap(short, 12, 19)
+    assert short.find(f".//{qn('a:bodyPr')}").get("wrap") == "none"
+    assert allow_wrap(long_, 40, 19)
+    assert long_.find(f".//{qn('a:bodyPr')}").get("wrap") == "square"

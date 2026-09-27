@@ -135,6 +135,27 @@ def set_font_scale(shape: ET.Element, percent: int) -> bool:
     return True
 
 
+def allow_wrap(shape: ET.Element, longest: int, chars_per_line: int | None) -> bool:
+    """Включает перенос строк у фигуры с `wrap="none"`, если наш текст не
+    встаёт в её строку (`longest` знаков против `chars_per_line`).
+
+    Дизайнер выключает перенос у надписи под короткое слово — «BUSINESS»,
+    «05». Наш заголовок длиннее, и без переноса PowerPoint тянет его одной
+    строкой за край слайда, а ремонт кеглем ширину не лечит (`DOM-TEXT §15`;
+    найдено 27 сентября на незнакомом шаблоне из `samples/`, проверка
+    программы целиком). С переносом текст остаётся в ширине места, а высоту
+    ужимает проверка вёрстки. Текст, встающий в строку, не трогаем: у него
+    перенос ничего не меняет. Возвращает, включён ли перенос."""
+    body = _body(shape)
+    props = body.find(qn("a:bodyPr")) if body is not None else None
+    if props is None or props.get("wrap") != "none" or not chars_per_line:
+        return False
+    if longest <= chars_per_line:
+        return False
+    props.set("wrap", "square")
+    return True
+
+
 def set_items(shape: ET.Element, items: tuple[str, ...]) -> bool:
     """Список: абзац-носитель клонируется по числу пунктов."""
     body = _body(shape)

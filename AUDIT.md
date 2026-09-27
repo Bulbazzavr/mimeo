@@ -43,7 +43,7 @@ python tools/audit_doc.py --write
 | [`tests/test_broken_words.py`](tests/test_broken_words.py) | 6 | Слово, разорванное посередине строки (`Z-56`). |
 | [`tests/test_build_report.py`](tests/test_build_report.py) | 7 | Машинночитаемый итог сборки (`Z-46`, `PLAN-8.0`). |
 | [`tests/test_color.py`](tests/test_color.py) | 11 | Разрешение цвета. DOM-COLOR. |
-| [`tests/test_compose.py`](tests/test_compose.py) | 18 | Сборка колоды. ADR-0011, ADR-0012. |
+| [`tests/test_compose.py`](tests/test_compose.py) | 19 | Сборка колоды. ADR-0011, ADR-0012. |
 | [`tests/test_config_version.py`](tests/test_config_version.py) | 8 | Замок версий конфигов: он обязан уметь падать. |
 | [`tests/test_content.py`](tests/test_content.py) | 9 | Нормализация контента. Шаг Ш1 плана `PLAN-2.0`. |
 | [`tests/test_deck_lock.py`](tests/test_deck_lock.py) | 9 | Замок Ш0: сверка колод без модели с эталоном (`PLAN-9.0`, `tools/deck_lock.py`). |
@@ -90,7 +90,7 @@ python tools/audit_doc.py --write
 | [`tests/test_web_boundary.py`](tests/test_web_boundary.py) | 5 | Граница веб-слоя (`Z-29`, `PLAN-8.0`, `SPEC-WEB` раздел 2). |
 | [`tests/test_web_content.py`](tests/test_web_content.py) | 3 | Контент-пакет в вебе: текст файлом и картинки к нему (`Z-73`). |
 | [`tests/test_web_design.py`](tests/test_web_design.py) | 13 | Экран «что вынули из вашего шаблона» (`Z-29`, `PLAN-8.1`, часть A). |
-| **всего** | **737** | в 52 файлах |
+| **всего** | **738** | в 52 файлах |
 
 <!-- /порождается -->
 
