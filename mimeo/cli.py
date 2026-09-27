@@ -409,13 +409,14 @@ def _slash(path):
     return path.replace("\\", "/") if isinstance(path, str) else path
 
 
-def _deck_entry(path, slides, variant, problems, render_report, audit=None):
+def _deck_entry(path, slides, variant, problems, render_report, audit=None, pictures=()):
     """Одна колода в отчёте.
 
     `render_report` — путь или **`None`**, и `None` значит «стадия VERIFY не
     запускалась», а не «дефектов нет». Это главное правило проекта, и здесь оно
     держится типом: пустой строкой такое не выразить, а нулём тем более. Так же
     `audit` — путь к отчёту аудита (`Z-34`) или `None`: аудит не запускался.
+    `pictures` — картинки генератора на слайдах колоды с их промптами.
     """
     return {
         "path": _slash(path),
@@ -424,7 +425,17 @@ def _deck_entry(path, slides, variant, problems, render_report, audit=None):
         "structural_problems": len(problems),
         "render_report": _slash(render_report),
         "audit": _slash(audit),
+        "pictures": list(pictures),
     }
+
+
+def _placed(plan, built, painter) -> list[dict]:
+    """Картинки генератора в собранной колоде: слайд и промпт (`images.placed`)."""
+    if painter is None:
+        return []
+    from .plan import images
+
+    return images.placed(plan, built.slides_written, painter.prompts)
 
 
 def _fix_picks(args):
@@ -609,6 +620,7 @@ def cmd_build(args):
             target, report.slides, None, problems,
             os.path.join(args.out, "render-report.json") if verify is not None else None,
             audit_path,
+            _placed(plan, report, painter),
         )],
         elapsed,
         plan,
@@ -741,8 +753,9 @@ def _build_variants(args, analysis, doc, target, started, model_summary="",
                 path, built.slides, n, problems,
                 os.path.join(args.out, f"render-report-{n}.json") if verdict is not None else None,
                 audits.get(n, (None,))[0],
+                _placed(pl, built, painter),
             )
-            for n, _v, path, built, problems, verdict, _pl in written
+            for n, _v, path, built, problems, verdict, pl in written
         ],
         elapsed,
         [pl for *_rest, pl in written],

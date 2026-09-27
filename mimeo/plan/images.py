@@ -252,6 +252,22 @@ def without(doc, refs) -> object:
     ])
 
 
+def placed(plan, slides_written, prompts: dict[str, str]) -> list[dict]:
+    """Нарисованные генератором картинки колоды: номер слайда в файле
+    (1-based, по `slides_written` — сборка могла пропустить слайд) и промпт,
+    с которым картинку нарисовали. Для отчёта сборки: в саму колоду промпт не
+    идёт — на слайде он был бы служебным текстом (Приложение 1 ТЗ, вопрос 7)."""
+    order = list(slides_written) or [s.index for s in plan.slides]
+    by_index = {s.index: s for s in plan.slides}
+    out = []
+    for position, index in enumerate(order, 1):
+        slide = by_index.get(index)
+        for fill in slide.fills if slide is not None else ():
+            if fill.kind == "image" and fill.ref in prompts:
+                out.append({"slide": position, "prompt": prompts[fill.ref]})
+    return out
+
+
 def size_for(aspect: float, gen: GeneratorConfig) -> tuple[int, int]:
     """Размер картинки в пропорции места: площадь около `megapixels`, стороны
     кратны `multiple` и не выходят за `min_side`–`max_side`."""
@@ -291,6 +307,9 @@ class Painter:
     frames_small: int = 0
     frames_note: str | None = None
     frames_scenes: str = ""
+    #: Готовый файл → промпт, с которым его нарисовал генератор: человеку видно,
+    #: что просили у генератора для каждой картинки (`placed`, отчёт сборки).
+    prompts: dict[str, str] = field(default_factory=dict)
     _scenes: dict[str, str] = field(default_factory=dict)
     _reach: str | None = "?"
 
@@ -360,6 +379,7 @@ class Painter:
         if os.path.isfile(cached):
             shutil.copyfile(cached, target)
             self.cached += 1
+            self.prompts[target] = prompt
             return True
         try:
             png = self._draw(prompt, width, height, seed)
@@ -372,6 +392,7 @@ class Painter:
             fh.write(png)
         shutil.copyfile(cached, target)
         self.drawn += 1
+        self.prompts[target] = prompt
         return True
 
     def paint(self, plan, library) -> tuple[object, set[str]]:

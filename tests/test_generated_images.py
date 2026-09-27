@@ -286,10 +286,15 @@ def test_picture_is_drawn_for_its_place_and_lands_in_the_deck(monkeypatch, tmp_p
             assert fh.read() in ours, "нарисованная картинка — в колоде"
         assert any(w.startswith("Картинки по идеям модели") and "нарисовано 1" in w
                    for w in report["diagnostics"]["warnings"])
+        # Промпт картинки — в отчёте, у своего слайда: веб показывает его человеку.
+        pictures = report["decks"][0]["pictures"]
+        assert [p["prompt"] for p in pictures] == [asked["prompt"]]
+        assert pictures[0]["slide"] >= 2, "обложка идеи не получает"
 
         again, report = _build(monkeypatch, tmp_path, fake, sd.base_url, name="again")
         assert len(sd.requests) == 1, "повторная сборка — из кэша, генератор не зовётся"
         assert any("из кэша 1" in w for w in report["diagnostics"]["warnings"])
+        assert report["decks"][0]["pictures"] == pictures, "картинка из кэша — с тем же промптом"
 
 
 @pytest.mark.skipif(not os.path.exists(VK), reason="материалы ТЗ не коммитятся")

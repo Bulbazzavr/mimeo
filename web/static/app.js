@@ -267,6 +267,7 @@ $('go').addEventListener('click', async () => {
         slides: $('slides').value.trim(),
         variants: parseInt($('variants').value, 10) || 1,
         verify: verify,
+        images: $('images').checked,
         text_mode: mode ? mode.value : 'improve',
         purpose: $('purpose').value
       })
@@ -319,6 +320,16 @@ function modelBlock(model) {
     + '<p class="hint">' + escape(model.line) + '</p></div>';
 }
 
+/* Что просили у генератора для каждой картинки колоды — рядом с колодой, а не
+   на слайде: на слайде промпт был бы служебным текстом. */
+function promptsBlock(pictures) {
+  if (!pictures || !pictures.length) return '';
+  return '<details class="prompts"><summary>Картинки генератора: '
+    + pictures.length + ' — с чем их рисовали</summary><ul>'
+    + pictures.map((p) => '<li><b>Слайд ' + p.slide + '.</b> ' + escape(p.prompt) + '</li>').join('')
+    + '</ul></details>';
+}
+
 function render(data) {
   const decks = data.report.decks || [];
   $('model-block').innerHTML = modelBlock(data.model);
@@ -337,6 +348,7 @@ function render(data) {
       + '<a href="/api/export?token=' + encodeURIComponent(token) + '&n=' + n + '&format=html">.html</a>'
       + '<a href="/api/export?token=' + encodeURIComponent(token) + '&n=' + n + '&format=pdf">.pdf</a>'
       + '</div>'
+      + promptsBlock(deck.pictures)
       + '<div class="strip" id="strip-' + n + '"></div>';
   }).join('');
 

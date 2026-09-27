@@ -544,6 +544,10 @@ class Handler(BaseHTTPRequestHandler):
             argv += ["--purpose", purpose]
         if variants > 1:
             argv += ["--variants", str(variants)]
+        # Рисовать ли картинки генератором (`Z-28`): страница шлёт выбор
+        # всегда; нет поля — умолчание движка. Картинки автора встают в обоих случаях.
+        if "images" in request:
+            argv += ["--images", "on" if request.get("images") else "off"]
         if verify_requested:
             # Аудит слайдов (`Z-34`) идёт с проверкой вёрстки: обоим нужен
             # PowerPoint, и оба про то, что увидит зритель.

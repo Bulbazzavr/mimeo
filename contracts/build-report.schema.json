@@ -46,6 +46,19 @@
           "audit": {
             "type": ["string", "null"],
             "description": "Путь к отчёту аудита слайдов (build --audit, Z-34, contracts/audit.schema.json) или null — аудит не запускался. Необязательное поле (правило 3 контрактов), 27 сентября: версия контракта прежняя."
+          },
+          "pictures": {
+            "type": "array",
+            "description": "Картинки, нарисованные генератором, на слайдах этой колоды: номер слайда и промпт, с которым её нарисовали, — чтобы человек видел, что просили у генератора. Пусто — генератор ничего не нарисовал (выключен, не отвечает или идей нет — причина в diagnostics.warnings). В колоду промпт не идёт. Необязательное поле (правило 3 контрактов), 27 сентября: версия контракта прежняя.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["slide", "prompt"],
+              "properties": {
+                "slide": {"type": "integer", "minimum": 1, "description": "Номер слайда в файле, 1-based."},
+                "prompt": {"type": "string", "description": "Промпт генератора целиком: сцена, написанная моделью, и хвост из config/generator.json (prompt_suffix)."}
+              }
+            }
           }
         }
       }
