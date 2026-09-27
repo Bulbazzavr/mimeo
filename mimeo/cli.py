@@ -112,10 +112,13 @@ def _pictures(args, doc, analysis, outage=None):
         model = _replace(model, access=Access(access))
 
     translations: dict[str, str] = {}       # сцена по-английски → по-русски, для человека
+    deck = doc                              # вся колода — контекст каждой сцены
 
-    def rewrite(ideas):
+    def rewrite(ideas, sections=()):
+        # Уже написанные сцены колоды — ключи переводов: рамки не повторят идеи.
         return images.scenes(ideas, gen, model, inputs=(args.content,), outage=outage,
-                             translations=translations)
+                             translations=translations, deck=deck, sections=sections,
+                             taken=tuple(translations))
 
     doc, placeholders, note = images.add_placeholders(doc, args.out, gen, slide_size=size,
                                                       rewrite=rewrite)

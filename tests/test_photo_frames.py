@@ -182,7 +182,7 @@ def test_empty_frames_get_pictures_of_scenes_written_by_the_model(tmp_path):
     `seed`, иначе на соседних слайдах стояла бы одна картинка."""
     asked: list[list[str]] = []
 
-    def rewrite(subjects):
+    def rewrite(subjects, _sections=()):
         asked.append(list(subjects))
         return [f"Сцена {i}" for i, _ in enumerate(subjects)], "от модели"
 
@@ -208,18 +208,18 @@ def test_frames_stay_as_they_are_when_they_cannot_be_drawn(tmp_path):
     не меняется, и сказано почему."""
     plan = _plan(("m02", 1))
     painter = images.Painter(_gen(tmp_path), {}, slide_size=(12192000, 6858000),
-                             rewrite=lambda xs: (None, "ответ не по форме"), folder=str(tmp_path))
+                             rewrite=lambda xs, _sections=(): (None, "ответ не по форме"), folder=str(tmp_path))
     assert painter.frames(plan, _library(), _frame_doc(planner="deterministic")) == plan
     assert "колоду строила не модель" in painter.note()
 
     with FakeSD() as sd:
         painter = images.Painter(_gen(tmp_path, sd.base_url), {}, slide_size=(12192000, 6858000),
-                                 rewrite=lambda xs: (None, "ответ не по форме"), folder=str(tmp_path))
+                                 rewrite=lambda xs, _sections=(): (None, "ответ не по форме"), folder=str(tmp_path))
         assert painter.frames(plan, _library(), _frame_doc()) == plan
         assert "выдуманные буквы" in painter.note() and sd.requests == []
 
         painter = images.Painter(_gen(tmp_path, sd.base_url), {}, slide_size=(12192000, 6858000),
-                                 rewrite=lambda xs: (["Сцена"] * len(xs), "от модели"),
+                                 rewrite=lambda xs, _sections=(): (["Сцена"] * len(xs), "от модели"),
                                  folder=str(tmp_path))
         assert painter.frames(plan, _library(side=1000000), _frame_doc()) == plan
         assert sd.requests == [] and "осталось пустыми 1" in painter.note()

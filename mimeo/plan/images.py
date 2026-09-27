@@ -81,6 +81,7 @@ class GeneratorConfig:
     min_place_side: float = 0.3
     prompt_suffix: str = ""
     scene_system: str = ""
+    scene_batch: int = 5
     timeout_sec: float = 180.0
     llm_sleep_wait_sec: float = 30.0
     cache_root: str = "cache/images"
@@ -143,18 +144,41 @@ def reachable(gen: GeneratorConfig) -> str | None:
 
 
 #: Схема ответа на запрос сцен — контракт, в коде (`ADR-0022`); промпт — в конфиге.
-#: `scenes` — сцены для генератора (с 1.3 конфига — по-английски), `ru` — их
-#: перевод для человека. Без годного перевода сцены всё равно берутся.
+#: `ru` — сцена по-русски, `scenes` — её перевод на английский для генератора.
+#: Порядок полей — порядок, в котором модель их пишет: сначала по-русски, на
+#: нём Gemma пишет лучше, потом перевод. Без годного русского сцены всё равно берутся.
 SCENE_SCHEMA = {
     "type": "object",
-    "properties": {"scenes": {"type": "array", "items": {"type": "string"}},
-                   "ru": {"type": "array", "items": {"type": "string"}}},
-    "required": ["scenes", "ru"],
+    "properties": {"ru": {"type": "array", "items": {"type": "string"}},
+                   "scenes": {"type": "array", "items": {"type": "string"}}},
+    "required": ["ru", "scenes"],
 }
 
 
+def deck_outline(doc) -> list[dict]:
+    """Колода целиком для запроса сцен: слайды по порядку — тип, заголовок,
+    тезисы. Картинку модель придумывает к мысли слайда в контексте всей
+    презентации, а не по одной фразе идеи (решение пользователя 27 сентября)."""
+    out = []
+    for n, section in enumerate(doc.sections, 1):
+        theses = []
+        for block in section.blocks:
+            if block.kind == "image":
+                continue
+            if block.items:
+                theses.extend(i for i in block.items if i)
+            elif block.kind == "metric":
+                theses.append(" ".join(x for x in (block.value, block.label) if x))
+            elif block.text:
+                theses.append(block.text)
+        out.append({"slide": n, "kind": section.kind or "", "heading": section.heading or "",
+                    "theses": theses})
+    return out
+
+
 def scenes(ideas: list[str], gen: GeneratorConfig, model_config, inputs=(),
-           outage=None, translations: dict | None = None) -> tuple[list[str] | None, str]:
+           outage=None, translations: dict | None = None, deck=None,
+           sections=(), taken=()) -> tuple[list[str] | None, str]:
     """Сюжеты без текста — второй короткий вызов языковой модели (`Z-28`).
 
     Замер 26 сентября: текст на картинке рисуется, когда он есть в самой идее
@@ -163,7 +187,12 @@ def scenes(ideas: list[str], gen: GeneratorConfig, model_config, inputs=(),
     смысл делает модель. Возвращает (сцены или `None`, откуда или почему нет);
     ответ идёт в кэш ответов модели, как и колода. `outage` — отказ сервера,
     общий на сборку (`client.Outage`). `translations` — словарь, куда лягут
-    переводы «сцена → по-русски», если модель их дала: их видит человек."""
+    переводы «сцена → по-русски», если модель их дала: их видит человек.
+    `deck` — документ колоды, `sections` — раздел каждой идеи: с ними модель
+    получает всю презентацию и номер слайда каждой картинки; без них — только
+    список идей. `taken` — сцены, уже написанные для этой колоды прошлыми
+    запросами: модель их не повторяет, иначе все картинки выходят про одно
+    (замер 27 сентября: пять из пяти — человек за компьютером)."""
     from .client import ModelClient
     from .prompt import Mode, Request
     from .validate import extract_json
@@ -172,7 +201,30 @@ def scenes(ideas: list[str], gen: GeneratorConfig, model_config, inputs=(),
         from ..config import missing
 
         raise missing(CONFIG_NAME, "нет промпта сцен картинок (scene_system)")
-    user = json.dumps(ideas, ensure_ascii=False)
+    batch = max(1, gen.scene_batch)
+    if len(ideas) > batch:
+        # Сцена на двух языках — сотни токенов: пачками, чтобы ответ не упёрся
+        # в max_tokens модели; вся колода уходит с каждой пачкой.
+        out: list[str] = []
+        how = ""
+        for i in range(0, len(ideas), batch):
+            part = list(sections[i:i + batch]) if len(sections) == len(ideas) else ()
+            got, how = scenes(ideas[i:i + batch], gen, model_config, inputs, outage,
+                              translations, deck, part, tuple(taken) + tuple(out))
+            if got is None:
+                return None, how
+            out.extend(got)
+        return out, how
+    if deck is not None and len(sections) == len(ideas):
+        number = {s.id: n for n, s in enumerate(deck.sections, 1)}
+        message = {"presentation": deck_outline(deck),
+                   "pictures": [{"slide": number.get(s.id), "idea": idea}
+                                for s, idea in zip(sections, ideas)]}
+        if taken:
+            message["taken"] = list(taken)
+        user = json.dumps(message, ensure_ascii=False)
+    else:
+        user = json.dumps(ideas, ensure_ascii=False)
     if model_config.mode is Mode.FREE_TEXT:
         user += "\n\nОтветь одним JSON-объектом по схеме:\n" + json.dumps(SCENE_SCHEMA, ensure_ascii=False)
     request = Request(mode=model_config.mode, system=gen.scene_system, user=user, schema=SCENE_SCHEMA,
@@ -231,8 +283,9 @@ def add_placeholders(doc, out_dir: str, gen: GeneratorConfig, rules=None,
     # Файл прошлой сборки с именем заготовки дал бы плану пропорцию чужой картинки.
     shutil.rmtree(folder, ignore_errors=True)
     min_side = int(gen.min_place_side * min(slide_size)) if slide_size else None
-    ideas = [s.image_idea.strip() for s in doc.sections if s.id in chosen]
-    rewritten, how = rewrite(ideas) if rewrite else (None, "")
+    picked = [s for s in doc.sections if s.id in chosen]
+    ideas = [s.image_idea.strip() for s in picked]
+    rewritten, how = rewrite(ideas, picked) if rewrite else (None, "")
     subjects = iter(rewritten or ideas)
     wanted: dict[str, str] = {}
     sections = []
@@ -519,6 +572,7 @@ class Painter:
         лишний вызов будит её, и генератор ждёт, пока она снова уснёт. Рамки
         мельче порога сцен не получают — рисовать их не будут."""
         subjects: list[str] = []
+        owners: list = []                   # раздел каждого сюжета — его слайд в колоде
         jobs = [j for plan in plans for j in self._frame_jobs(plan, library, doc)
                 if self._big_enough(j[1])]
         if not self._ready(doc, jobs):
@@ -527,9 +581,10 @@ class Painter:
             subject = self._subject(section)
             if subject and subject not in self._scenes and subject not in subjects:
                 subjects.append(subject)
+                owners.append(section)
         if not subjects:
             return
-        got, how = self.rewrite(subjects)
+        got, how = self.rewrite(subjects, owners)
         if got is None:
             if not self.frames_note:
                 self.frames_note = (f"Рамки под фото не заполнены: сцены без текста не написаны "

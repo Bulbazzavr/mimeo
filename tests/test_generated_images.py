@@ -157,7 +157,7 @@ def test_ideas_are_rewritten_into_scenes_without_text(tmp_path):
     with FakeSD() as sd:
         doc, wanted, note = images.add_placeholders(
             _doc(ideas=3), str(tmp_path), _gen(tmp_path, sd.base_url),
-            rewrite=lambda xs: ([f"Сцена {i}" for i, _ in enumerate(xs)], "от модели"))
+            rewrite=lambda xs, _sections=(): ([f"Сцена {i}" for i, _ in enumerate(xs)], "от модели"))
     assert list(wanted.values()) == ["Сцена 0", "Сцена 1", "Сцена 2"]
     assert note.startswith("Сюжеты картинок переписаны моделью без текста (от модели)")
 
@@ -193,6 +193,26 @@ def test_scene_translation_reaches_the_picture(tmp_path):
         got, _how = images.scenes(ideas, _gen(tmp_path), replace(config, cache_root=str(tmp_path / "llm2"),
                                   endpoint=client.Endpoint(base_url=fake.base_url)), translations=lost)
     assert got == answer["scenes"] and lost == {}
+
+
+def test_scene_request_carries_the_whole_deck(tmp_path):
+    """Сцену модель пишет, видя всю презентацию — заголовки и тезисы всех
+    слайдов по порядку — и номер слайда каждой картинки, а не одну фразу идеи."""
+    doc = _doc(ideas=3)
+    picked = [s for s in doc.sections if s.image_idea][:2]
+    config = client.ClientConfig(access=client.Access.ON, extra_body={},
+                                 cache_root=str(tmp_path / "llm"), tz_cache_root=str(tmp_path / "tz"))
+    from dataclasses import replace
+    with FakeModel(answer={"ru": ["Сцена А", "Сцена Б"], "scenes": ["Scene A", "Scene B"]}) as fake:
+        got, _how = images.scenes([s.image_idea for s in picked], _gen(tmp_path), replace(
+            config, endpoint=client.Endpoint(base_url=fake.base_url)), deck=doc, sections=picked,
+            taken=("A carpenter planes a board",))
+        sent = json.loads(fake.requests[0]["messages"][1]["content"])
+    assert got == ["Scene A", "Scene B"]
+    assert sent["taken"] == ["A carpenter planes a board"], "написанное раньше модель видит и не повторяет"
+    assert [p["heading"] for p in sent["presentation"]] == [s.heading for s in doc.sections]
+    assert sent["presentation"][1]["theses"] == ["Тезис слайда 2"]
+    assert sent["pictures"] == [{"slide": 2, "idea": "Сюжет 2"}, {"slide": 3, "idea": "Сюжет 3"}]
 
 
 def test_deck_without_model_gets_no_pictures(tmp_path):
