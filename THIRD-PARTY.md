@@ -65,7 +65,7 @@ Hugging Face по адресу из манифеста `config/runtime.json` и 
 
 | Модель | Размер | Лицензия | Сверено | Где применяется |
 |---|---|---|---|---|
-| `google/gemma-4-12B-it` (QAT Q4_0 и `mmproj` BF16) | 12B | **Apache 2.0** | 19 сентября, карточка и блог Google Open Source | строит колоду из текста; зрение — картинки шаблона (`ADR-0025`) |
+| `google/gemma-4-12B-it` (QAT Q4_0 и `mmproj` BF16) | 12B | **Apache 2.0** | 19 сентября, карточка и блог Google Open Source | строит колоду из текста, выбирает пиктограммы (`ADR-0028`); зрение — картинки шаблона (`ADR-0025`) и аудит готовых слайдов (`ADR-0027`) |
 | `Tongyi-MAI/Z-Image-Turbo` (GGUF Q8_0 `leejet/Z-Image-Turbo-GGUF`) | 6B | **Apache 2.0** | 26 сентября, карточки обеих | рисует картинки по идеям модели (`ADR-0024`) |
 | `Qwen/Qwen3-4B-Instruct-2507` (GGUF Q8_0) | 4B | Apache 2.0 | 15 сентября | кодировщик запроса у Z-Image-Turbo |
 | VAE `ae.safetensors` из `black-forest-labs/FLUX.1-schnell` | — | Apache 2.0 | 26 сентября; копия без входа — `Comfy-Org/z_image_turbo` (сумма та же) | декодер картинки у Z-Image-Turbo |

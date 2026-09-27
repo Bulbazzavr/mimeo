@@ -20,8 +20,11 @@
 
 Здесь нет чтения самих настроек — только их паспорт. Значения читают
 `plan/prose.py`, `plan/variants.py`, `plan/client.py`, `plan/prompt.py`,
-`analyze/typeface.py`, `analyze/picture.py` и `analyze/captions.py`, каждый по-своему и
-каждый со своими встроенными запасными.
+`plan/outline.py`, `plan/images.py`, `plan/icons.py`, `plan/donor.py`,
+`audit/vision.py`, `analyze/typeface.py`, `analyze/picture.py` и
+`analyze/captions.py`, каждый по-своему. Запасные значения в коде — только у
+чисел и порогов; текстов для модели в коде нет (`Z-72`): без файла —
+`MissingConfig`.
 """
 
 from __future__ import annotations
