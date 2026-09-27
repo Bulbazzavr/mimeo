@@ -45,6 +45,8 @@ _FALLBACK = {
     "aspect_tolerance": 0.3,
     "frame_hint_center": 0.2,
     "frame_hint_chars": 30,
+    "visual_min_side": 0.45,
+    "visual_text_overlap": 0.15,
 }
 _FALLBACK_HINTS = ("фото", "изображен", "картинк", "иллюстрац", "image", "photo", "picture")
 
@@ -72,6 +74,8 @@ class PictureConfig:
         self.aspect_tolerance = float(values["aspect_tolerance"])
         self.frame_hint_center = float(values["frame_hint_center"])
         self.frame_hint_chars = int(values["frame_hint_chars"])
+        self.visual_min_side = float(values["visual_min_side"])
+        self.visual_text_overlap = float(values["visual_text_overlap"])
         self.frame_hints = tuple(re.compile(h, re.IGNORECASE) for h in hints)
         self.loaded = loaded
         self.version = version

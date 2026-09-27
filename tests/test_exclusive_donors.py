@@ -20,7 +20,11 @@ from mimeo.plan import load_content, plan_deck
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 #: Единственный шаблон корпуса с диаграммой и внедрёнными объектами.
 RISKY = os.path.join(ROOT, "samples", "business-plan-ppt-template-10-slides-creative.pptx")
-CONTENT = os.path.join(ROOT, "examples", "content-mimeo.md")
+#: Текст, на котором план без запрета **хочет** повторить исключительного
+#: донора — иначе мутация ниже ничего не доказывает. До 26 сентября это был
+#: основной текст; переписанный под нынешний продукт (`PLAN-10.0`) повтора не
+#: просит, а `content-chat.md` просит дважды (`p01`, `p06`).
+CONTENT = os.path.join(ROOT, "examples", "content-chat.md")
 
 pytestmark = pytest.mark.skipif(
     not os.path.exists(RISKY), reason="шаблоны не коммитятся: tools/fetch_samples.py"

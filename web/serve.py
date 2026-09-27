@@ -342,6 +342,8 @@ class Handler(BaseHTTPRequestHandler):
         url = urllib.parse.urlparse(self.path)
         if url.path == "/":
             return self._static("index.html")
+        if url.path == "/api/export":
+            return self._export(urllib.parse.parse_qs(url.query))
         if url.path == "/api/deck":
             return self._deck(urllib.parse.parse_qs(url.query))
         if url.path == "/api/design":
@@ -503,7 +505,9 @@ class Handler(BaseHTTPRequestHandler):
             # Оставить их значило бы показать прошлую вёрстку как нынешнюю
             # (`PLAN-8.2`, логическая проверка 1, дыра 5).
             run["previews"] = {}
-        for stale in glob.glob(os.path.join(run["dir"], "preview-*")):
+        # И выгрузки в .html и .pdf — они от прежних колод (`Z-27`).
+        for stale in glob.glob(os.path.join(run["dir"], "preview-*")) + glob.glob(
+                os.path.join(run["dir"], "export-*")):
             shutil.rmtree(stale, ignore_errors=True)
 
         # Отчёт проверки вёрстки читаем и отдаём **как есть**: у него своя схема
@@ -695,6 +699,61 @@ class Handler(BaseHTTPRequestHandler):
             return self._fail(404, "картинка пропала")
         with open(path, "rb") as fh:
             self._send(200, fh.read(), "image/png")
+
+    # --- выгрузка в .html и .pdf ---------------------------------------
+
+    def _export(self, query: dict) -> None:
+        """Колода номер `n` — в `.html` или `.pdf` (ТЗ, п. 7; `Z-27`).
+
+        **По требованию и один раз.** Выгрузка идёт командой `mimeo export`
+        (граница слоя, `tests/test_web_boundary.py`), готовый файл лежит в
+        `export-<n>/` прогона до пересборки колод. PDF рисует PowerPoint — он
+        берёт тот же замок, что проверка вёрстки и превью, и ждёт его, как
+        сборка: это прямое действие пользователя (`PLAN-8.2`, дыра 1)."""
+        run = _run((query.get("token") or [""])[0])
+        if not run:
+            return self._fail(404, "прогон не найден")
+        n = self._deck_index(query, run)
+        if n is None:
+            return self._fail(404, "нет такой колоды")
+        fmt = (query.get("format") or [""])[0]
+        if fmt not in ("html", "pdf"):
+            return self._fail(400, "формат — html или pdf")
+        deck = run["decks"][n]
+        deck = deck if os.path.isabs(deck) else os.path.join(ROOT, deck)
+        if not os.path.isfile(deck):
+            return self._fail(404, "колода пропала")
+        out_dir = os.path.join(run["dir"], f"export-{n}")
+        target = os.path.join(out_dir, os.path.splitext(os.path.basename(deck))[0] + "." + fmt)
+        if not os.path.isfile(target):
+            holding = False
+            if fmt == "pdf":
+                holding = _POWERPOINT.acquire(timeout=BUILD_TIMEOUT_SECONDS)
+                if not holding:
+                    return self._fail(503, "PowerPoint занят другой операцией дольше допустимого")
+            try:
+                proc = _engine(["export", deck, f"--{fmt}", "-o", out_dir])
+            except subprocess.TimeoutExpired:
+                return self._fail(504, f"выгрузка не уложилась в {BUILD_TIMEOUT_SECONDS} с")
+            finally:
+                if holding:
+                    _POWERPOINT.release()
+            if proc.returncode == 3:
+                return self._fail(503, "PowerPoint уже открыт — закройте его и повторите: "
+                                       "приложение одноэкземплярное, закрывать ваши документы мы не вправе")
+            if not os.path.isfile(target):
+                return self._fail(500, "выгрузка не удалась: "
+                                       + ((proc.stdout or "") + (proc.stderr or ""))[-600:])
+        ctype = "text/html; charset=utf-8" if fmt == "html" else "application/pdf"
+        with open(target, "rb") as fh:
+            body = fh.read()
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        name = urllib.parse.quote(os.path.basename(target))
+        self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{name}")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     # --- скачивание ----------------------------------------------------
 

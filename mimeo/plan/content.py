@@ -39,7 +39,7 @@ def is_numeric_line(text: str) -> bool:
 @dataclass(frozen=True)
 class ContentBlock:
     id: str
-    kind: str            # paragraph | list | metric | quote | table | image
+    kind: str            # paragraph | list | metric | quote | table | chart | image
     text: str = ""
     items: tuple[str, ...] = ()
     value: str | None = None      # metric: само число
@@ -48,7 +48,11 @@ class ContentBlock:
     #: image: меньшая сторона места под иллюстрацию не короче, EMU. Задаётся
     #: только заготовке генератора (`images.add_placeholders`, `Z-28`): нарисованная
     #: картинка — украшение, миниатюра в рамке донора хуже слайда без неё.
+    #: table, chart: то же для места под таблицу и диаграмму (`plan/visual.py`).
     min_side: int | None = None
+    #: table, chart: данные — `visual.TableData` или `visual.ChartData`
+    #: (`Z-32`, `ADR-0026`). Сборка строит из них нативный объект PowerPoint.
+    data: object | None = None
 
     @property
     def units(self) -> int:
@@ -229,7 +233,18 @@ def parse_markdown(source: str, name: str = "content") -> ContentDoc:
             builder.add(kind="quote", text=" ".join(" ".join(quote).split()))
             quote.clear()
         if table:
-            builder.add(kind="table", text=" ".join(table), items=tuple(table))
+            # Таблица входа — нативной таблицей (`Z-32`); не складывается в
+            # таблицу — строками списка: содержание не теряется.
+            from .visual import markdown_table
+
+            data = markdown_table(table)
+            if data is not None:
+                builder.add(kind="table", text=" ".join(data.strings()), data=data)
+            else:
+                rows = tuple(" ".join(r.strip().strip("|").split()) for r in table
+                             if r.strip(" |:-"))           # без строки-разделителя
+                if rows:
+                    builder.add(kind="list", items=rows, text=" ".join(rows))
             table.clear()
 
     for raw in source.splitlines():

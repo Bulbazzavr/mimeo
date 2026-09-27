@@ -260,6 +260,8 @@ function render(data) {
       + '<span class="meta">' + deck.slides + ' слайдов, ' + escape(problems) + '</span>'
       + '<button type="button" class="link show-slides" data-n="' + n + '">Показать слайды</button>'
       + '<a href="/api/deck?token=' + encodeURIComponent(token) + '&n=' + n + '">Скачать .pptx</a>'
+      + '<a href="/api/export?token=' + encodeURIComponent(token) + '&n=' + n + '&format=html">.html</a>'
+      + '<a href="/api/export?token=' + encodeURIComponent(token) + '&n=' + n + '&format=pdf">.pdf</a>'
       + '</div>'
       + '<div class="strip" id="strip-' + n + '"></div>';
   }).join('');

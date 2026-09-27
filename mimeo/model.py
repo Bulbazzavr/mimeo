@@ -469,9 +469,13 @@ class Fill:
     #: не трогали. Решение живёт здесь, а не в файле: сборка обязана оставаться
     #: чистой функцией от шаблона и плана (`ADR-0005`, `PLAN-4.0`).
     font_scale: int | None = None
+    #: Данные таблицы или диаграммы (`plan/visual.py`, `Z-32`, `ADR-0026`):
+    #: сборка ставит на место слота нативный объект. `None` — у слота их нет,
+    #: и тогда ключа нет и в JSON: прежние планы не меняются ни ключом.
+    data: object | None = None
 
     def to_json(self) -> dict:
-        return {
+        out = {
             "slot_id": self.slot_id,
             "kind": self.kind,
             "text": self.text,
@@ -480,6 +484,9 @@ class Fill:
             "font_scale": self.font_scale,
             "over_capacity": self.over_capacity,
         }
+        if self.data is not None:
+            out["data"] = self.data.to_json()
+        return out
 
 
 @dataclass(frozen=True)

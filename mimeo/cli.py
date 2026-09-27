@@ -65,6 +65,28 @@ def model_path(args, doc, target, config=None, outage=None):
     return outcome, outline.write_record(args.out, outcome.record)
 
 
+def _visuals(doc, analysis):
+    """Таблицы и диаграммы колоды (`Z-32`, `plan/visual.py`): наименьшее место
+    под них — доля от слайда (`config/images.json`, `visual_min_side`); если
+    места нет ни в одной раскладке шаблона, данные становятся списком, и
+    предупреждение плана это называет."""
+    from dataclasses import replace as _replace
+    from .analyze.picture import load_config as load_picture_config
+    from .plan import visual
+    from .plan.matching import visual_host
+
+    if not any(b.kind in ("table", "chart") and b.data is not None
+               for s in doc.sections for b in s.blocks):
+        return doc
+    slide = analysis.design_system.slide
+    doc = visual.with_floor(doc, visual.floor((slide.cx_emu, slide.cy_emu),
+                                              load_picture_config().visual_min_side))
+    patterns = analysis.patterns.patterns
+    doc, notes = visual.without_hosts(
+        doc, lambda block: any(visual_host(p, block) is not None for p in patterns))
+    return _replace(doc, notes=tuple(doc.notes) + tuple(notes)) if notes else doc
+
+
 def _pictures(args, doc, analysis, outage=None):
     """Картинки по идеям модели (`Z-28`): заготовки в документ до плана и тот,
     кто их нарисует после. Возвращает (документ, художник, заметка)."""
@@ -303,7 +325,8 @@ def cmd_plan(args):
     doc = load_content(args.content, target=target)
     outcome, record_path = model_path(args, doc, target)
     plan = plan_deck(
-        outcome.doc, analysis.patterns, analysis.design_system.source.sha256, target=target
+        _visuals(outcome.doc, analysis), analysis.patterns, analysis.design_system.source.sha256,
+        target=target,
     )
     elapsed = time.perf_counter() - started
 
@@ -420,7 +443,7 @@ def cmd_build(args):
     # До ветки вариантов: один вызов модели на все варианты (`ADR-0023`,
     # «Следствия» — три вёрстки одного содержания).
     outcome, record_path = model_path(args, doc, target, outage=outage)
-    doc, painter, picture_note = _pictures(args, outcome.doc, analysis, outage)
+    doc, painter, picture_note = _pictures(args, _visuals(outcome.doc, analysis), analysis, outage)
 
     # Несколько вариантов вёрстки — отдельная ветка (`ADR-0020`, `Z-26`).
     # Умолчание не меняется: без флага собирается одна колода ровно как раньше.
@@ -455,15 +478,22 @@ def cmd_build(args):
         from .verify import verify_deck                       # noqa: PLC0415
         from .verify.report import describe, write_json       # noqa: PLC0415
 
-        outcome = verify_deck(
+        # Своё имя, а не `outcome`: то занято исходом пути модели, и сводка ниже
+        # печатает его строку — с общим именем `build --verify` одной колоды
+        # падал в конце сводки (найдено 26 сентября, PLAN-10.0, Ш5).
+        checked = verify_deck(
             args.template, plan, analysis.patterns, target, report,
             rounds=args.rounds,
         )
-        verify = outcome.report
-        plan, report = outcome.plan, outcome.build
+        verify = checked.report
+        plan, report = checked.plan, checked.build
         elapsed = time.perf_counter() - started
         problems = inspect_package(target)      # файл пересобран — проверить заново
         write_json(verify, os.path.join(args.out, "render-report.json"))
+
+    export_lines, export_failed = ([], [])
+    if getattr(args, "export", None):
+        export_lines, export_failed = _export_lines([target], args.export)
 
     write_build_report(
         getattr(args, "report", None),
@@ -473,7 +503,7 @@ def cmd_build(args):
         )],
         elapsed,
         plan,
-        extra_warnings=picture_notes,
+        extra_warnings=picture_notes + tuple(export_failed),
     )
 
     if not args.quiet:
@@ -503,6 +533,8 @@ def cmd_build(args):
             print(f"            отчёт: {os.path.join(args.out, 'render-report.json')}")
         print(f"время       {elapsed:.2f} с")
         print(f"записано    {target}")
+        for line in export_lines:
+            print(f"экспорт     {line}")
 
     # Неустранённая вёрстка кодом возврата не считается: отказ ужимать текст
     # ниже предела читаемости — штатный исход, а не ошибка (`PLAN-4.0`,
@@ -571,6 +603,9 @@ def _build_variants(args, analysis, doc, target, started, model_summary="",
     elapsed = time.perf_counter() - started
     picture_notes = tuple(n for n in (picture_note, painter.note() if painter else None,
                                       judge.note() if judge else None) if n)
+    export_lines, export_failed = ([], [])
+    if getattr(args, "export", None):
+        export_lines, export_failed = _export_lines([path for _n, _v, path, *_ in written], args.export)
 
     write_build_report(
         getattr(args, "report", None),
@@ -583,7 +618,7 @@ def _build_variants(args, analysis, doc, target, started, model_summary="",
         ],
         elapsed,
         [pl for *_rest, pl in written],
-        extra_warnings=(reason,) + picture_notes,
+        extra_warnings=(reason,) + picture_notes + tuple(export_failed),
     )
 
     if not args.quiet:
@@ -603,11 +638,46 @@ def _build_variants(args, analysis, doc, target, started, model_summary="",
                 for line in describe(verdict):
                     print(f"    {line}")
         print(f"время       {elapsed:.2f} с на {len(chosen)} вариант(ов)")
+        for line in export_lines:
+            print(f"экспорт     {line}")
 
     # Отобрано меньше запрошенного — это не ошибка запуска, а свойство шаблона,
     # и причина уже напечатана. Кодом возврата отвечает только структурная
     # проверка, как и в обычной сборке.
     return 2 if worst else 0
+
+
+def _export_lines(decks, value) -> tuple[list[str], list[str]]:
+    """`build --export`: каждая собранная колода — в `.html` и `.pdf`
+    (`Z-27`, `PLAN-10.0`, Ш6). Возвращает строки сводки и отказы — их сборка
+    кладёт в предупреждения отчёта: форма отчёта неизменна (`Z-46`)."""
+    from .export.run import export_deck, parse_formats
+
+    formats = parse_formats(value)
+    lines, failed = [], []
+    for deck in decks:
+        for item in export_deck(deck, formats):
+            lines.append(item.line)
+            if item.path is None:
+                failed.append(f"{os.path.basename(deck)}: {item.line}")
+    return lines, failed
+
+
+def cmd_export(args):
+    """Собранная колода — в `.html` и `.pdf` (ТЗ, п. 7; `Z-27`). Без флагов —
+    оба формата, рядом с колодой или в `-o`."""
+    from .export.run import FORMATS, export_deck
+
+    wanted = tuple(f for f in FORMATS if getattr(args, f, False)) or FORMATS
+    out_dir = getattr(args, "out", None)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
+    done = export_deck(args.deck, wanted, out_dir)
+    for item in done:
+        print(item.line)
+    if any(item.busy for item in done):
+        return 3
+    return 0 if all(item.path for item in done) else 1
 
 
 def _add_model_args(parser: argparse.ArgumentParser) -> None:
@@ -746,11 +816,29 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"сколько раундов ремонта при --verify (по умолчанию {VERIFY_ROUNDS})",
     )
     build.add_argument(
+        "--export",
+        metavar="html,pdf",
+        help="выгрузить каждую собранную колоду ещё и в .html и/или .pdf рядом с ней "
+             "(ТЗ, п. 7; Z-27): html — свой рендер, работает везде; pdf — PowerPoint "
+             "(Windows) или LibreOffice. Без флага — только .pptx",
+    )
+    build.add_argument(
         "--config",
         metavar="ФАЙЛ",
         help="JSON с аргументами прогона: те же ключи, что у флагов. Командная строка важнее файла (ТЗ, раздел 6)",
     )
     build.set_defaults(func=cmd_build)
+
+    export = sub.add_parser(
+        "export", help="собранную колоду .pptx — в .html и .pdf (ТЗ, п. 7)"
+    )
+    export.add_argument("deck", help="путь к собранному .pptx")
+    export.add_argument("--html", action="store_true",
+                        help="HTML: свой рендер, текст разметкой, картинки внутри файла; работает везде")
+    export.add_argument("--pdf", action="store_true",
+                        help="PDF: рисует PowerPoint (Windows) или LibreOffice")
+    export.add_argument("-o", "--out", help="каталог для файлов (по умолчанию — рядом с колодой)")
+    export.set_defaults(func=cmd_export)
 
     return parser
 
@@ -874,7 +962,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         notes = apply_run_config(args, argv)
         _check_model_args(args)
-        _require(args, *(("template",) if args.command == "analyze" else ("template", "content")))
+        if args.command != "export":
+            _require(args, *(("template",) if args.command == "analyze" else ("template", "content")))
         if notes and not getattr(args, "quiet", False):
             print(NL.join(notes))
         return args.func(args)

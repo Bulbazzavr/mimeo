@@ -147,6 +147,41 @@
                   "minimum": 10,
                   "maximum": 100,
                   "description": "Шкала кегля в процентах, назначенная стадией VERIFY: текст не влезал, и его ужали. null — слот не трогали. Применяет COMPOSE, записывая a:normAutofit; сам план остаётся единственным источником решения (ADR-0005)."
+                },
+                "data": {
+                  "type": "object",
+                  "description": "Данные таблицы (header, rows) или диаграммы (type, unit, categories, series) у заливки kind table или chart: сборка ставит на место слота нативный объект PowerPoint (Z-32, ADR-0026). Нет ключа — данных нет; необязательное поле, версию схемы не поднимает (правило 3 ARCH-CONTRACTS).",
+                  "oneOf": [
+                    {
+                      "required": ["header", "rows"],
+                      "properties": {
+                        "header": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 5},
+                        "rows": {"type": "array", "items": {"type": "array", "items": {"type": "string"}}, "minItems": 1, "maxItems": 6}
+                      }
+                    },
+                    {
+                      "required": ["type", "unit", "categories", "series"],
+                      "properties": {
+                        "type": {"type": "string", "enum": ["column", "bar", "line", "pie"]},
+                        "unit": {"type": "string"},
+                        "categories": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 12},
+                        "series": {
+                          "type": "array",
+                          "minItems": 1,
+                          "maxItems": 5,
+                          "items": {
+                            "type": "object",
+                            "required": ["name", "values", "labels"],
+                            "properties": {
+                              "name": {"type": "string"},
+                              "values": {"type": "array", "items": {"type": "number"}},
+                              "labels": {"type": "array", "items": {"type": "string"}}
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
                 }
               }
             }

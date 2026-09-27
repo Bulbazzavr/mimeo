@@ -303,10 +303,15 @@ def _derived_kinds(section: ContentSection) -> tuple[str, ...]:
     kinds = section.kinds()
     lists = [b for b in section.blocks if b.kind == "list"]
 
+    # Таблица и диаграмма с данными (`Z-32`) встают на место таблицы или
+    # диаграммы донора, иллюстрации или крупного текста (`visual_host`):
+    # раскладки этих видов такие места и несут.
+    if "chart" in kinds:
+        return ("chart", "table", "two_column", "image_text", "text")
+    if "table" in kinds:
+        return ("table", "chart", "two_column", "text", "image_text")
     if "metric" in kinds:
         return ("metric", "cards", "text")
-    if "table" in kinds:
-        return ("table", "text")
     if "quote" in kinds:
         return ("quote", "text")
     if "image" in kinds and ("paragraph" in kinds or "list" in kinds):
@@ -476,7 +481,7 @@ def _clear_of_taken(slots: list[Slot], pattern: Pattern, used: set[str]) -> list
     """
     taken = [
         s.rect for s in pattern.slots
-        if s.id in used and s.content_type in ("image", "table")
+        if s.id in used and s.content_type in ("image", "table", "chart")
     ]
     if not taken:
         return slots
@@ -488,6 +493,50 @@ def _clear_of_taken(slots: list[Slot], pattern: Pattern, used: set[str]) -> list
             for t in taken
         )
     ]
+
+
+#: Где встаёт своя таблица или диаграмма, по старшинству (`Z-32`, `ADR-0026`):
+#: место таблицы или диаграммы донора — оно и задумано под данные, а его числа
+#: чужие (`Z-12`); место под иллюстрацию — крупное и свободное от текста;
+#: крупный текстовый слот — тело слайда. Роли текста — только тело и список:
+#: подпись и заголовок под таблицу не годятся.
+_HOST_TEXT_ROLES = ("body", "bullet_list")
+
+
+def _host_classes(slot: Slot) -> int | None:
+    """Старшинство слота как места под таблицу или диаграмму; `None` — не место."""
+    if slot.content_type in ("table", "chart"):
+        return 0
+    if slot.content_type == "image" and slot.picture_kind == _ILLUSTRATION:
+        return 1
+    if slot.content_type in ("text", "list") and slot.role in _HOST_TEXT_ROLES:
+        return 2
+    return None
+
+
+def visual_host(pattern: Pattern, block: ContentBlock, used=frozenset()) -> Slot | None:
+    """Слот, на место которого встанет таблица или диаграмма `block`.
+
+    Слот свободен, не заслонён (`Z-48`: поверх него лежит непрозрачное) и не
+    мельче `block.min_side`; не налезает на уже занятое место картинки или
+    таблицы (`_clear_of_taken`). Из годных старшего класса — самый крупный: у
+    таблицы и диаграммы площадь решает, прочтут ли их; при равной площади —
+    первый в порядке чтения."""
+    free = [s for s in pattern.slots
+            if s.id not in used and not s.occluded and _host_classes(s) is not None
+            and (block.min_side is None or min(s.rect.cx, s.rect.cy) >= block.min_side)]
+    free = _clear_of_taken(free, pattern, set(used))
+    # И не накрывает уже занятое текстом — заголовок прежде всего: таблица
+    # встаёт поверх в порядке фигур хозяина и спрятала бы его.
+    limit = load_picture_config().backdrop_overlap
+    taken = [s.rect for s in pattern.slots if s.id in used]
+    free = [s for s in free if not any(_rect_overlap(t, s.rect) > limit for t in taken)]
+    if not free:
+        return None
+    best = min(_host_classes(s) for s in free)
+    order = {s.id: i for i, s in enumerate(pattern.slots)}
+    return max((s for s in free if _host_classes(s) == best),
+               key=lambda s: (s.rect.cx * s.rect.cy, -order[s.id]))
 
 
 def _aspect_gap(slot: Slot, ref: str | None) -> float | None:
@@ -605,7 +654,32 @@ def match(
             leftover.append(block.id)
 
     # 3. Изображения, таблицы, диаграммы — только если слот под них есть.
-    for block in (b for b in section.blocks if b.kind in ("image", "table")):
+    for block in (b for b in section.blocks if b.kind in ("image", "table", "chart")):
+        if block.kind in ("table", "chart") and block.data is not None:
+            # Своя таблица или диаграмма (`Z-32`, `ADR-0026`): встаёт на место
+            # фигуры-хозяина. Нет хозяина — раскладка разделу не годится, и
+            # раздел дробится, как всегда; нет его во всём шаблоне — данные
+            # заранее стали списком (`visual.without_hosts`).
+            host = visual_host(pattern, block, used)
+            if host is None:
+                leftover.append(block.id)
+                continue
+            take(host, kind=block.kind, data=block.data)
+            # Текстовые места, которые таблица накроет, текста не получают:
+            # сборка их очистит, как любой незаполненный слот. Порог мал
+            # намеренно: растр 26 сентября (WorkSpace, `p23`) — карточка с
+            # тезисом накрывала место диаграммы на 48 % своей площади, прошла
+            # прежний порог в половину, и рамке после отступа от текста
+            # (`compose/visual.clear_of`) остался угол.
+            limit = load_picture_config().visual_text_overlap
+            for s in pattern.slots:
+                if (s.id not in used and s.content_type in ("text", "list")
+                        and _rect_overlap(s.rect, host.rect) > limit):
+                    used.add(s.id)
+            continue
+        if block.kind == "chart":
+            leftover.append(block.id)
+            continue
         role = "image" if block.kind == "image" else "table"
         slots = free((role,))
         if role == "image":
@@ -761,7 +835,10 @@ def match(
     empty_required = len(empty_places(pattern, used))
     thin = sum(1 for ratio in slack if ratio < tuning.slack)
     over = sum(overflows) / len(overflows) if overflows else 0.0
-    donor_data = sum(1 for s in pattern.slots if s.content_type in ("table", "chart"))
+    # Таблица или диаграмма донора, на место которой встала наша (`Z-32`), —
+    # уже не чужие числа: штраф только за оставшиеся.
+    donor_data = sum(1 for s in pattern.slots
+                     if s.content_type in ("table", "chart") and s.id not in used)
 
     score = (
         coverage
@@ -810,6 +887,9 @@ def _reason(
 ) -> str:
     """Человекочитаемое обоснование. Это показывают эксперту, а не пишут в лог."""
     shape = []
+    for block in section.blocks:
+        if block.kind in ("table", "chart") and block.data is not None:
+            shape.append("таблица" if block.kind == "table" else "диаграмма")
     lists = [b for b in section.blocks if b.kind == "list"]
     if lists:
         shape.append(f"{len(lists[0].items)} равноправных пункта")

@@ -10,8 +10,8 @@
       "sha256": "793afdbd66cc6f60583e9c5bf89a509f6d6e2c1c5f7b5eef29a9f75e1bc21933"
     },
     "images.json": {
-      "version": "1.2",
-      "sha256": "9cc4ee41645b020ec7c152003e38f87d3d454157e8e3fb01e92d276a651c9881"
+      "version": "1.3",
+      "sha256": "f9f1bcf202171a95e16ca4b49eca64704e05cae8957775f5b241a26a862a9099"
     },
     "kinds.json": {
       "version": "1.1",
@@ -22,8 +22,8 @@
       "sha256": "73ac918db5e1622452cc9e5ea779cb19d5eadbf0106eb22ce7e9391537bc6768"
     },
     "outline.json": {
-      "version": "1.2",
-      "sha256": "e8455a9806af78e2feda74b72357f42541a630c3cffc1b6741329a80de941bb0"
+      "version": "1.3",
+      "sha256": "b0be43f2512b5d337337c5924bb20e0fb8591c7c4f779915a36530dec4b1414f"
     },
     "prompt.json": {
       "version": "1.0",

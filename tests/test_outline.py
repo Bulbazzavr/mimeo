@@ -13,35 +13,50 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 #: Запись промпта, которым снят последний замер. Сменили промпт — новый замер,
 #: новая запись и новое имя здесь; иначе этот тест падает (заморозка до Ш9).
-MEASURED_PROMPT = "2026-09-26-z57-prompt-1.2.md"
+MEASURED_PROMPT = "2026-09-26-prompt-1.3.md"
 
 
 def _measured_blocks() -> list[str]:
-    """Три блока кода из записи замера: общий текст, тезисы «оставить» и «доработать»."""
+    """Пять блоков кода из записи замера: общий текст, тезисы «оставить» и
+    «доработать», объём «оставить» и «доработать» (с 1.3, `PLAN-10.0`)."""
     path = os.path.join(ROOT, "WORKLOG", MEASURED_PROMPT)
     text = open(path, encoding="utf-8").read()
-    return re.findall(r"```\n(.*?)\n```", text, re.S)[:3]
+    return re.findall(r"```\n(.*?)\n```", text, re.S)[:5]
 
 
 @pytest.mark.parametrize("mode, block", [("keep", 1), ("improve", 2)])
 def test_prompt_is_the_measured_one(mode, block):
     """Продукт шлёт ровно тот промпт, которым сняты числа, при рамках замера 10–15."""
     blocks = _measured_blocks()
-    expected = blocks[0].replace("{theses}", blocks[block] + "\n")
+    expected = (blocks[0].replace("{volume}", blocks[block + 2])
+                .replace("{theses}", blocks[block] + "\n")
+                .replace("{slides_min}", "10").replace("{slides_max}", "15"))
     assert outline.system_prompt(mode, 10, 15) == expected
 
 
 def test_builtin_prompt_equals_config(tmp_path):
-    common, theses, loaded = outline.load_config()
+    common, theses, volume, loaded = outline.load_config()
     assert loaded
-    assert (common, theses) == (outline._SYSTEM, outline._THESES)
+    assert (common, theses, volume) == (outline._SYSTEM, outline._THESES, outline._VOLUME)
     fallback = outline.load_config(str(tmp_path / "нет.json"))
-    assert fallback == (outline._SYSTEM, outline._THESES, False)
+    assert fallback == (outline._SYSTEM, outline._THESES, outline._VOLUME, False)
 
 
 def test_bounds_reach_the_prompt():
     prompt = outline.system_prompt("keep", 3, 7)
-    assert "(от 3 до 7;" in prompt and "{" not in prompt
+    assert "(от 3 до 7)" in prompt and "{" not in prompt
+
+
+def test_brief_expands_only_when_rewriting():
+    """Бриф разворачивается в «доработать» до нижней рамки; в «оставить»
+    фразы автора дословны — развернуть их нечем (`OQ-38`, `PLAN-10.0`)."""
+    improve, keep = outline.system_prompt("improve", 10, 15), outline.system_prompt("keep", 10, 15)
+    assert "разверни его до 10" in improve and "без новых чисел, фактов, названий" in improve
+    assert "разверни" not in keep and "слайдов меньше" in keep
+    # Потолок — первым и в обоих режимах: «каждой мысли свой слайд» модель
+    # читала и на длинном тексте — 16–18 слайдов при потолке 15 (замер 26 сентября).
+    assert improve.index("не больше 15") < improve.index("разверни")
+    assert "не больше 15" in keep
 
 
 def test_unknown_mode_is_refused():
@@ -54,9 +69,16 @@ def test_kinds_are_the_code_vocabulary():
     schema = json.load(open(os.path.join(ROOT, "contracts", "pattern-library.schema.json"), encoding="utf-8"))
     enums = [node["enum"] for node in _walk(schema) if isinstance(node, dict) and "cover" in node.get("enum", [])]
     assert enums and set(outline.KINDS) <= set(enums[0])
-    slide = outline.RESPONSE_SCHEMA["properties"]["slides"]["items"]
-    assert slide["properties"]["kind"]["enum"] == list(outline.KINDS)
-    assert set(slide["required"]) == set(slide["properties"])
+    variants = outline.RESPONSE_SCHEMA["properties"]["slides"]["items"]["anyOf"]
+    kinds = [k for v in variants for k in v["properties"]["kind"]["enum"]]
+    assert sorted(kinds) == sorted(outline.KINDS), "каждый тип — ровно в одном варианте"
+    # Необязательны ровно таблица и диаграмма (`Z-32`), и каждая — только у
+    # своего типа: грамматика сервера не даёт поставить таблицу слайду text.
+    for v in variants:
+        extra = set(v["properties"]) - set(v["required"])
+        assert v["additionalProperties"] is False
+        assert extra <= set(outline.OPTIONAL_FIELDS)
+        assert all(v["properties"]["kind"]["enum"] == [field] for field in extra)
 
 
 TEXT = (
@@ -114,7 +136,8 @@ def test_clean_answer_passes(mode):
     (lambda a: a["slides"][3].__setitem__("heading", "Склад на Python"), "латиница"),
     (lambda a: a["slides"][3]["theses"].append("Не забудь про склад"), "обращения"),
     (lambda a: a["slides"].extend(_slide(f"Ещё {i}") for i in range(10)), "объём"),
-    (lambda a: a["slides"][3].__setitem__("kind", "chart"), "типы"),
+    (lambda a: a["slides"][3].__setitem__("kind", "timeline"), "типы"),
+    (lambda a: a["slides"][3]["theses"].append("склад в Твери"), "названия"),
     (lambda a: a["slides"][2].__setitem__("kind", "agenda") or a["slides"][3].__setitem__("kind", "agenda"), "типы"),
     (lambda a: a["slides"][0].__setitem__("heading", "Революция в презентациях"), "название"),
     (lambda a: a["slides"][-1]["theses"].append("ваш путь к успеху"), "дословность"),
@@ -137,6 +160,20 @@ def test_keep_refuses_retelling(thesis):
     answer["slides"][3]["theses"] = [thesis]
     assert _failed(answer, "keep") == {"дословность"}
     assert _failed(answer, "improve") == set()
+
+
+def test_extra_agenda_goes_first_when_over_the_ceiling():
+    """Колода на слайд длиннее потолка — снимается оглавление: его пункты
+    собирает код, текста автора там нет (замер 26 сентября: 16 при 15)."""
+    answer = _answer(_slide("Содержание", "agenda", ["что-то"]))
+    over = len(answer["slides"])
+    trimmed, note = outline.without_extra_agenda(answer, over - 1)
+    assert len(trimmed["slides"]) == over - 1 and "оглавление снято" in note
+    assert not any(s["kind"] == "agenda" for s in trimmed["slides"])
+    same, quiet = outline.without_extra_agenda(answer, over)
+    assert same is answer and quiet == "", "в потолке — ничего не снимается"
+    two_over, _ = outline.without_extra_agenda(answer, over - 2)
+    assert len(two_over["slides"]) == over - 1, "снимается только оглавление, остальное — дело «объёма»"
 
 
 def test_agenda_theses_are_not_on_slides():

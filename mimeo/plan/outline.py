@@ -25,10 +25,11 @@ MODES = ("keep", "improve")
 
 #: Словарь типов слайда — словарь кода, а не шаблона (`ADR-0023`, п. 2). Имена те
 #: же, что у kind'ов макетов (`contracts/pattern-library.schema.json`), но без
-#: chart, image_full, timeline и other: промпт с ними не мерился.
+#: image_full, timeline и other: промпт с ними не мерился. chart — с промпта 1.3
+#: (`Z-32`, `PLAN-10.0`): у диаграммы теперь есть данные.
 KINDS = (
     "cover", "agenda", "section", "text", "bullets", "cards", "two_column",
-    "metric", "quote", "table", "image_text", "closing",
+    "metric", "quote", "table", "chart", "image_text", "closing",
 )
 
 #: Те же типы словами — как их называет строка `kind` промпта. Нужны там, где
@@ -37,7 +38,8 @@ KIND_WORDS = {
     "cover": "обложка", "agenda": "оглавление", "section": "разделитель",
     "text": "абзац", "bullets": "список", "cards": "равные пункты",
     "two_column": "сравнение", "metric": "крупное число", "quote": "цитата",
-    "table": "таблица", "image_text": "картинка с текстом", "closing": "финал",
+    "table": "таблица", "chart": "диаграмма", "image_text": "картинка с текстом",
+    "closing": "финал",
 }
 
 #: Роли слайда пишутся только в `outline.json` рядом с колодой: омоним «модель»
@@ -47,25 +49,77 @@ ROLES = (
     "конкуренты", "финансы", "команда", "риски", "планы", "просьба", "прочее",
 )
 
+#: Таблица и диаграмма слайда (`Z-32`, `PLAN-10.0`) — **необязательные** поля:
+#: у слайда без данных их нет вовсе. Замер 26 сентября: `llama-server` принимает
+#: и такую схему, и `anyOf null`; без поля ответ короче. Потолки схемы — те же,
+#: что проверяет `plan/visual.py` (Приложение 1 ТЗ); длины рядов схема держать
+#: не умеет — их проверяет код.
+_TABLE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "header": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 5},
+        "rows": {"type": "array", "items": {"type": "array", "items": {"type": "string"}},
+                 "minItems": 1, "maxItems": 6},
+    },
+    "required": ["header", "rows"],
+}
+_CHART_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "type": {"type": "string", "enum": ["column", "bar", "line", "pie"]},
+        "unit": {"type": "string"},
+        "categories": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 12},
+        "series": {
+            "type": "array", "minItems": 1, "maxItems": 5,
+            "items": {
+                "type": "object",
+                "properties": {"name": {"type": "string"},
+                               "values": {"type": "array", "items": {"type": "string"}}},
+                "required": ["name", "values"],
+            },
+        },
+    },
+    "required": ["type", "unit", "categories", "series"],
+}
+#: Поля слайда, которых у ответа может не быть.
+OPTIONAL_FIELDS = ("table", "chart")
+
+#: Поля слайда без таблицы и диаграммы — общие для всех типов.
+_SLIDE_FIELDS = {
+    "heading": {"type": "string"},
+    "kind": {"type": "string", "enum": list(KINDS)},
+    "role": {"type": "string", "enum": list(ROLES)},
+    "theses": {"type": "array", "items": {"type": "string"}},
+    "image_idea": {"type": "string"},
+    "images": {"type": "array", "items": {"type": "string"}},
+}
+_REQUIRED = ["heading", "kind", "role", "theses", "image_idea", "images"]
+
+
+def _slide_variant(kinds, extra: dict) -> dict:
+    fields = dict(_SLIDE_FIELDS, kind={"type": "string", "enum": list(kinds)}, **extra)
+    return {"type": "object", "properties": fields, "required": list(_REQUIRED),
+            "additionalProperties": False}
+
+
 #: Что считается годным ответом по форме. Смысл — числа, картинки, латиницу,
 #: дословность — проверяет код поверх схемы (`ADR-0023`, п. 5).
+#:
+#: **Таблица — только у слайда `table`, диаграмма — только у `chart`**, и
+#: держит это грамматика сервера, а не просьба промпта. Замер 26 сентября: со
+#: схемой, где оба поля разрешены любому слайду, модель в «оставить» заполнила
+#: их у всех восьми слайдов брифа выдуманными рядами («Площадка 1 — 1,
+#: Площадка 2 — 0»), и колода отвергнута «числами» дважды (`PLAN-10.0`, Ш7).
 RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {
         "slides": {
             "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "heading": {"type": "string"},
-                    "kind": {"type": "string", "enum": list(KINDS)},
-                    "role": {"type": "string", "enum": list(ROLES)},
-                    "theses": {"type": "array", "items": {"type": "string"}},
-                    "image_idea": {"type": "string"},
-                    "images": {"type": "array", "items": {"type": "string"}},
-                },
-                "required": ["heading", "kind", "role", "theses", "image_idea", "images"],
-            },
+            "items": {"anyOf": [
+                _slide_variant(("table",), {"table": _TABLE_SCHEMA}),
+                _slide_variant(("chart",), {"chart": _CHART_SCHEMA}),
+                _slide_variant(tuple(k for k in KINDS if k not in ("table", "chart")), {}),
+            ]},
         },
         "missing_roles": {"type": "array", "items": {"type": "string", "enum": list(ROLES)}},
     },
@@ -76,9 +130,8 @@ RESPONSE_SCHEMA = {
 #: тест. Без файла движок обязан работать, как с `config/prose.json`.
 _SYSTEM = (
     "Ты раскладываешь текст автора по слайдам презентации. Отвечай строго JSON.\n"
-    "Реши, сколько нужно слайдов (от {slides_min} до {slides_max}; если содержания"
-    " меньше — меньше, ничего не выдумывая), в каком порядке они идут и что на"
-    " каждом.\n"
+    "Реши, сколько нужно слайдов (от {slides_min} до {slides_max}), в каком порядке"
+    " они идут и что на каждом. {volume}\n"
     "Для каждого слайда:\n"
     "- heading — заголовок-вывод: полное утверждение с глаголом, от 3 до 7 слов, —"
     " что прямо сказано в тезисах этого слайда; не название темы и не отглагольное"
@@ -87,8 +140,9 @@ _SYSTEM = (
     "{theses}- kind — тип слайда: cover (обложка), agenda (оглавление), section"
     " (разделитель), text (абзац), bullets (список), cards (равные пункты),"
     " two_column (сравнение), metric (крупное число), quote (цитата), table"
-    " (таблица), image_text (картинка с текстом), closing (финал); оглавление и"
-    " финал — только из того, что есть в тексте и на слайдах колоды;\n"
+    " (таблица), chart (диаграмма), image_text (картинка с текстом), closing"
+    " (финал); оглавление и финал — только из того, что есть в тексте и на слайдах"
+    " колоды;\n"
     "- role — роль слайда, одна из: обложка, проблема, решение, продукт, рынок,"
     " тяга, бизнес-модель, конкуренты, финансы, команда, риски, планы, просьба,"
     " прочее;\n"
@@ -97,19 +151,43 @@ _SYSTEM = (
     " логотипов и портретов реальных людей. Графики, диаграммы, таблицы, схемы,"
     " карты, списки и значки в image_idea не пиши — это не сюжет для рисунка."
     " Пустая строка — у обложки, оглавления, финала, крупного числа, таблицы,"
-    " сравнения и цитаты, у слайда с картинками из текста и там, где рисунок не"
-    " скажет больше слов; рисунков — не больше чем на трети слайдов;\n"
+    " диаграммы, сравнения и цитаты, у слайда с картинками из текста и там, где"
+    " рисунок не скажет больше слов; рисунков — не больше чем на трети слайдов;\n"
     "- images — пути к картинкам из текста, которые относятся к этому слайду,"
     " дословно как в тексте, какими бы они ни были — фото, схема, график; иначе"
-    " пустой список.\n"
-    "Правила: не добавляй фактов, чисел и названий, которых нет в тексте. Каждое"
-    " число из текста должно попасть на какой-нибудь слайд. Каждый путь к картинке —"
-    " ровно на один слайд, даже если он упомянут в просьбе к тебе. В missing_roles"
-    " перечисли роли, которых в тексте нет.\n"
+    " пустой список;\n"
+    "- table — только у слайда table, когда автор сравнивает несколько предметов по"
+    " одним и тем же признакам: header — названия колонок, rows — строки; от 2 до 5"
+    " колонок и не больше 6 строк; в ячейках — слова и числа из текста, ровно как в"
+    " тексте;\n"
+    "- chart — только у слайда chart, когда в тексте есть ряд из трёх и больше чисел"
+    " одной величины: type — line (изменение по времени: месяцы, годы), column"
+    " (сравнение нескольких предметов), bar (то же при длинных подписях), pie (доли"
+    " одного целого); unit — единица измерения словами текста или пустая строка;"
+    " categories — подписи; series — от 1 до 3 рядов: name и values — по одному"
+    " числу на каждую подпись, ровно как в тексте.\n"
+    "У слайдов без таблицы и диаграммы полей table и chart нет. У таблицы и"
+    " диаграммы вывод — в заголовке; тезисы можно не писать, а числа таблицы и"
+    " диаграммы в тезисах не повторяй.\n"
+    "Правила: не добавляй фактов, чисел, названий, имён и дат, которых нет в тексте."
+    " Каждое число из текста должно попасть на какой-нибудь слайд — в заголовок,"
+    " тезис, таблицу или диаграмму. Каждый путь к картинке — ровно на один слайд,"
+    " даже если он упомянут в просьбе к тебе. В missing_roles перечисли роли,"
+    " которых в тексте нет.\n"
     "Обложка — тема словами автора, без добавленных слов. Финал — итог или просьба"
     " автора его словами; если их в тексте нет, финала не делай. Благодарностей,"
     " лозунгов и призывов от себя не пиши."
 )
+#: Правило объёма по режиму (`PLAN-10.0`, Ш1; `OQ-38`): в «доработать» бриф
+#: разворачивается до нижней рамки, в «оставить» развернуть нечем.
+_VOLUME = {
+    "keep": "Слайдов не больше {slides_max}: близкие мысли объединяй. Если содержания"
+    " меньше — слайдов меньше, ничего не выдумывая.",
+    "improve": "Слайдов не больше {slides_max}: близкие мысли объединяй. Только если текст"
+    " короткий, как бриф, и слайдов выходит меньше {slides_min}, разверни его до"
+    " {slides_min}: дай каждой мысли автора свой слайд и тезисы, которые её поясняют и"
+    " связывают с соседними, — без новых чисел, фактов, названий, имён и дат.",
+}
 _THESES = {
     "keep": "- theses — от 1 до 4 тезисов: ДОСЛОВНЫЕ фразы или части фраз из текста автора,"
     " без перефразирования; каждый тезис — из одного предложения автора: сокращать"
@@ -128,28 +206,31 @@ def config_path() -> str:
     return os.path.join(os.path.dirname(os.path.dirname(here)), "config", CONFIG_NAME)
 
 
-def load_config(path: str | None = None) -> tuple[str, dict[str, str], bool]:
-    """Читает `config/outline.json`: общий текст, блоки тезисов по режимам и
-    признак «прочитан». Нет файла — встроенные значения и `False`: отличать
-    «прочитано» от «работают запасные» обязан сам загрузчик, а не молчание."""
+def load_config(path: str | None = None) -> tuple[str, dict[str, str], dict[str, str], bool]:
+    """Читает `config/outline.json`: общий текст, блоки тезисов и правила объёма
+    по режимам и признак «прочитан». Нет файла — встроенные значения и `False`:
+    отличать «прочитано» от «работают запасные» обязан сам загрузчик, а не
+    молчание."""
     path = path or config_path()
     try:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
     except FileNotFoundError:
-        return _SYSTEM, dict(_THESES), False
-    return "".join(data["system"]), dict(data["theses"]), True
+        return _SYSTEM, dict(_THESES), dict(_VOLUME), False
+    return "".join(data["system"]), dict(data["theses"]), dict(data["volume"]), True
 
 
 def system_prompt(mode: str, slides_min: int, slides_max: int, path: str | None = None) -> str:
-    """Системный промпт режима `mode` с рамками объёма."""
+    """Системный промпт режима `mode` с рамками объёма. Блоки режима
+    подставляются раньше рамок: правило объёма само называет нижнюю рамку."""
     if mode not in MODES:
         raise ValueError(f"режим текста {mode!r}: ждём один из {MODES}")
-    common, theses, _ = load_config(path)
+    common, theses, volume, _ = load_config(path)
     return (
-        common.replace("{slides_min}", str(slides_min))
-        .replace("{slides_max}", str(slides_max))
+        common.replace("{volume}", volume[mode])
         .replace("{theses}", theses[mode])
+        .replace("{slides_min}", str(slides_min))
+        .replace("{slides_max}", str(slides_max))
     )
 
 
@@ -311,19 +392,61 @@ def _is_title(index: int, slide: dict) -> bool:
     return index == 0 and slide.get("kind") == "cover"
 
 
-def _slide_texts(slides: list[dict]) -> list[str]:
-    """Что окажется на слайдах: заголовки и тезисы. Тезисы оглавления не в
-    счёт — пункты оглавления собирает код из заголовков колоды; тезисы обложки
-    тоже — на обложку идёт только название (Ш3). Иначе число, стоящее лишь в
-    подзаголовке обложки, считалось бы «на слайде», а на слайд не попало бы.
-    Замер: на ответах Ш1б итог проверок от этого тот же, 9 из 10
+def _slide_texts(slides: list[dict], visuals: list | None = None) -> list[str]:
+    """Что окажется на слайдах: заголовки, тезисы, ячейки таблиц и подписи и
+    значения диаграмм (`visuals` — годные данные слайдов, `_visuals`). Тезисы
+    оглавления не в счёт — пункты оглавления собирает код из заголовков колоды;
+    тезисы обложки тоже — на обложку идёт только название (Ш3). Иначе число,
+    стоящее лишь в подзаголовке обложки, считалось бы «на слайде», а на слайд
+    не попало бы. Замер: на ответах Ш1б итог проверок от этого тот же, 9 из 10
     (`WORKLOG/2026-09-25-z57-sh3-baseline.md`, § 5)."""
     out = []
     for i, s in enumerate(slides):
         out.append(s["heading"])
         if s["kind"] != "agenda" and not _is_title(i, s):
             out.extend(s["theses"])
+            if visuals and visuals[i] is not None:
+                out.extend(visuals[i].strings())
     return out
+
+
+def _visuals(slides: list[dict]) -> tuple[list, list[str]]:
+    """Таблица или диаграмма каждого слайда (`None` — нет или негодная) и что
+    с ними не так. Негодная снимается, а не валит колоду: слайд остаётся с
+    тезисами; если её числа больше нигде не стоят, это поймает «числа», и
+    повтор узнает причину из этого перечня (`PLAN-10.0`, проверка 1, п. 1)."""
+    from .visual import from_slide
+
+    out, problems = [], []
+    for i, s in enumerate(slides, 1):
+        data, why = from_slide(s)
+        out.append(data)
+        problems += [f"слайд {i}: {w}" for w in why]
+    return out, problems
+
+
+#: Слово — кириллицей или латиницей, с дефисом внутри.
+_WORD = re.compile(r"[A-Za-zА-Яа-яЁё][A-Za-zА-Яа-яЁё-]*")
+#: Где начинается фраза: прописная там — не признак названия.
+_PHRASE = re.compile(r"[.!?…:;«»\"“”()\[\]]|\s[—–-]\s")
+
+
+def new_names(strings, text: str) -> list[str]:
+    """Названия на слайдах, которых нет в тексте: кириллическое слово с
+    прописной не в начале фразы и не из слов автора (`PLAN-10.0`, Ш1; ответ
+    пользователя по `OQ-38` — «без новых цифр, фактов и названий»). Латиницу
+    судит «латиница», числа — «числа»; этого русские названия не видел никто:
+    бриф — место, где модель скажет «в Москве»."""
+    vocab = set(_tokens(text))
+    found = set()
+    for s in strings:
+        for phrase in _PHRASE.split(s):
+            for word in _WORD.findall(phrase)[1:]:
+                if not word[0].isupper() or word[0].isascii():
+                    continue
+                if not _in_vocab(word.lower().replace("ё", "е"), vocab):
+                    found.add(word)
+    return sorted(found)
 
 
 def _form(answer) -> str | None:
@@ -370,8 +493,12 @@ def check_outline(
 
     slides = answer["slides"]
     plain = _PATH.sub(" ", text)
-    on_slides = _slide_texts(slides)
-    joined = _PATH.sub(" ", " ".join(on_slides))
+    visuals, visual_problems = _visuals(slides)
+    on_slides = _slide_texts(slides, visuals)
+    # Строки слайдов склеиваются через «;», а не пробел: иначе соседние ячейки
+    # «100», «100», «100» читались как одно число «100 100 100» с разрядами
+    # (замер 26 сентября, «выдуманы ['100100100']»).
+    joined = _PATH.sub(" ", " ; ".join(on_slides))
     checks = [Check("форма", True)]
 
     src_nums, out_nums = _NUM.findall(_prep(text)), _NUM.findall(_prep(joined))
@@ -399,6 +526,13 @@ def check_outline(
     src_lat = {w.lower() for w in _LAT.findall(plain)}
     new_lat = sorted({w for w in _LAT.findall(joined) if w.lower() not in src_lat})
     checks.append(Check("латиница", not new_lat, f"нет в тексте: {new_lat}" if new_lat else ""))
+
+    names = new_names([_PATH.sub(" ", t) for t in on_slides], plain)
+    checks.append(Check("названия", not names, f"нет в тексте: {names}" if names else ""))
+
+    # Не отказ, а заметка: негодная таблица или диаграмма уже снята, слайд
+    # остаётся с тезисами. Повтор, если он будет, узнает причину отсюда.
+    checks.append(Check(VISUALS, True, "; ".join(visual_problems)))
 
     addressed = [t for t in on_slides if has_address(t, prose_cfg)]
     checks.append(Check("обращения", not addressed, f"на слайдах: {addressed}" if addressed else ""))
@@ -449,6 +583,11 @@ def check_outline(
         checks.append(Check("дословность", not loose, f"не из текста автора: {loose}" if loose else ""))
 
     return tuple(checks)
+
+
+#: Имя заметки о снятых таблицах и диаграммах: проверка, которая не отказывает,
+#: но говорит (`_visuals`).
+VISUALS = "таблицы и диаграммы"
 
 
 def accepted(checks: tuple[Check, ...]) -> bool:
@@ -520,8 +659,12 @@ _FIX = {
     "картинки": "каждый путь к картинке из текста — ровно на один слайд, в поле images, "
                 "а не в заголовок или тезис",
     "латиница": "латинских слов, которых нет в тексте, не пиши",
+    "названия": "названий, имён, мест и дат, которых нет в тексте, не пиши",
+    VISUALS: "исправь таблицу или диаграмму по правилам промпта или убери её, "
+             "а её числа поставь в тезисы",
     "обращения": "обращений к исполнителю и просьб о самой презентации на слайдах быть не должно",
-    "объём": "уложись в рамки числа слайдов",
+    "объём": "сократи колоду до потолка: объедини соседние слайды об одном и том же и "
+             "убери повторы, не теряя чисел",
     "типы": "тип слайда — только из словаря, оглавление — не больше одного",
     "название": "название на обложке — словами автора",
     "клише финала": "благодарностей и лозунгов от себя не пиши",
@@ -539,12 +682,33 @@ def retry_history(answer_text: str, checks: tuple[Check, ...]) -> tuple[dict, ..
     колоду, а не строить её заново; судят его те же проверки."""
     lines = []
     for c in checks:
-        if not c.ok:
+        # Заметка о снятой таблице — не отказ, но без неё повтор не понял бы,
+        # почему «потеряны» её числа (`PLAN-10.0`, проверка 1, п. 1).
+        if not c.ok or (c.name == VISUALS and c.detail):
             fix = _FIX.get(c.name, "исправь")
             lines.append(f"- {c.name}: {c.detail} — {fix}.")
     fix = ("Твой ответ не прошёл проверку:\n" + "\n".join(lines) +
            "\nИсправь колоду и верни её целиком тем же JSON; остальное не меняй.")
     return ({"role": "assistant", "content": answer_text}, {"role": "user", "content": fix})
+
+
+def without_extra_agenda(answer, slides_max: int) -> tuple[object, str]:
+    """Колода длиннее потолка на оглавлении — оглавление снимается кодом.
+
+    Пункты оглавления и так собирает код из заголовков колоды (`to_doc`), а
+    его тезисы проверки не считают (`_slide_texts`): текста автора на этом
+    слайде нет, и снять его — ничего не потерять. Замер 26 сентября (промпт
+    1.3, основной текст сдачи): 16 и 17 слайдов при потолке 15, повтор
+    ужимался на один — колода уходила путём без модели. Возвращает (ответ,
+    заметка); заметка пуста — ничего не снято."""
+    if not isinstance(answer, dict) or not isinstance(answer.get("slides"), list):
+        return answer, ""
+    slides = answer["slides"]
+    agendas = [i for i, s in enumerate(slides) if isinstance(s, dict) and s.get("kind") == "agenda"]
+    if len(slides) <= slides_max or len(agendas) != 1:
+        return answer, ""
+    kept = [s for i, s in enumerate(slides) if i != agendas[0]]
+    return dict(answer, slides=kept), f"оглавление снято: слайдов {len(slides)} при потолке {slides_max}"
 
 
 def too_long(system: str, user: str, endpoint) -> str | None:
@@ -582,6 +746,7 @@ def to_doc(answer: dict, text: str, path: str, name: str, prose_cfg=None) -> tup
     """
     from .content import ContentBlock, ContentDoc, ContentSection, resolve_image
     from .prose import _blocks_from, _Numbering, load_config as load_prose
+    from .visual import TableData, from_slide
 
     prose_cfg = prose_cfg or load_prose()
     slides = answer["slides"]
@@ -615,10 +780,21 @@ def to_doc(answer: dict, text: str, path: str, name: str, prose_cfg=None) -> tup
                              "картинка не вставлена.")
                 continue
             images.append(ContentBlock(id=f"{sid}i{len(images) + 1:02d}", kind="image", ref=where))
-        sections.append(ContentSection(id=sid, heading=s["heading"], blocks=blocks + tuple(images),
+        # Таблица или диаграмма (`Z-32`): годная — блоком с данными, первой в
+        # разделе; негодную проверки уже назвали (`_visuals`), на слайд она не идёт.
+        data, _ = from_slide(s) if s["kind"] != "agenda" else (None, [])
+        visual = ()
+        if data is not None:
+            kind = "table" if isinstance(data, TableData) else "chart"
+            visual = (ContentBlock(id=f"{sid}v", kind=kind, text=" ".join(data.strings()), data=data),)
+        sections.append(ContentSection(id=sid, heading=s["heading"],
+                                       blocks=visual + blocks + tuple(images),
                                        kind=s["kind"], image_idea=idea))
-        deck.append({"heading": s["heading"], "kind": s["kind"], "theses": theses,
-                     "images": [b.ref for b in images], "image_idea": idea})
+        entry = {"heading": s["heading"], "kind": s["kind"], "theses": theses,
+                 "images": [b.ref for b in images], "image_idea": idea}
+        if data is not None:
+            entry["table" if isinstance(data, TableData) else "chart"] = data.to_json()
+        deck.append(entry)
     doc = ContentDoc(name=name, title=title, sections=sections, origin=text,
                      notes=tuple(notes), planner="mixed")
     return doc, notes, deck
@@ -723,6 +899,9 @@ def run(path: str, fallback, *, access: str | None = None, text_mode: str | None
         parsed = extract_json(answer.text)
         if parsed is None:
             return answer, got, None, (Check("форма", False, "ответ не разобрался как JSON"),), "unparsed"
+        parsed, trimmed = without_extra_agenda(parsed, frames[1])
+        if trimmed:
+            got += f", {trimmed}"
         checks = check_outline(text, parsed, mode, frames[1], prose_cfg, closing_captions)
         return answer, got, parsed, checks, "accepted" if accepted(checks) else "rejected"
 

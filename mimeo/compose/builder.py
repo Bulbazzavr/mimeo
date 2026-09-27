@@ -22,6 +22,8 @@ from .clone import (
 )
 from .package import CT_SLIDE, RT_SLIDE, PackageWriter
 from .substitute import replace_picture, set_font_scale, set_items, set_text
+from .visual import place as place_visual
+from .visual import slide_height
 
 #: Идентификаторы слайдов в `p:sldIdLst` должны быть не меньше 256.
 _FIRST_SLIDE_ID = 256
@@ -124,6 +126,9 @@ def build(
     #: раньше бралось от номера слайда, и две картинки одного слайда делили
     #: одну часть (`Z-28a`, `PLAN-7.10`, шаг 4).
     pictures = 0
+    #: Сквозной номер своей диаграммы — имя её части и книги (`Z-32`).
+    charts = 0
+    slide_cy = slide_height(writer)
     slide_parts: list[str] = []
     written: list[int] = []
 
@@ -171,8 +176,20 @@ def build(
                 if problem:
                     warnings.append(f"слайд {planned.index}: {problem}")
                 ok = problem is None
+            elif fill.kind in ("chart", "table") and fill.data is not None:
+                # Своя таблица или диаграмма (`Z-32`, `ADR-0026`) — на место
+                # фигуры-хозяина, в её координаты.
+                charts += fill.kind == "chart"
+                rect = (slot.rect.x, slot.rect.y, slot.rect.cx, slot.rect.cy)
+                texts = [(s.rect.x, s.rect.y, s.rect.cx, s.rect.cy) for f in planned.fills
+                         if f.kind in ("text", "list", "number") and (s := slots.get(f.slot_id))]
+                problem = place_visual(writer, part, tree, shape, rect, fill.data, charts, slide_cy,
+                                       others=texts)
+                if problem:
+                    warnings.append(f"слайд {planned.index}: {problem}")
+                ok = True
             elif fill.kind in ("chart", "table"):
-                # Подмены данных нет (`Z-12`): фигуру уберёт проход ниже.
+                # Данных нет — подмены тоже (`Z-12`): фигуру уберёт проход ниже.
                 ok = False
             else:
                 ok = set_text(shape, fill.text or "")
@@ -194,12 +211,16 @@ def build(
         # подстановке: там содержимое донора оставлено сознательно, и об этом
         # уже есть предупреждение.
         intended = {f.slot_id for f in planned.fills}
+        # Место, куда встала своя таблица или диаграмма (`Z-32`): фигуры донора
+        # там уже нет, убирать нечего.
+        visual = {f.slot_id for f in planned.fills
+                  if f.kind in ("table", "chart") and f.data is not None}
         # Таблица и диаграмма донора — чужие числа (`Z-62`): данных таблиц и
         # диаграмм движок не подменяет (`Z-12`), поэтому фигура уходит со
         # слайда целиком, заполнял её план или нет. Ранг такие раскладки
         # обходит (`_PENALTY_DONOR_DATA`); здесь — страховка, и она слышна.
         for slot in pattern.slots:
-            if slot.content_type not in ("table", "chart"):
+            if slot.content_type not in ("table", "chart") or slot.id in visual:
                 continue
             shape = find_shape(tree, slot.shape_id)
             if shape is not None and remove_shape(tree, shape):
