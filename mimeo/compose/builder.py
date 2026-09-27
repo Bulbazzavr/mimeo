@@ -20,6 +20,7 @@ from .clone import (
     remove_shape,
     slide_from_layout,
 )
+from .icon import replace_with_icon
 from .package import CT_SLIDE, RT_SLIDE, PackageWriter
 from .substitute import replace_picture, set_font_scale, set_items, set_text
 from .visual import place as place_visual
@@ -236,6 +237,16 @@ def build(
                 warnings.append(
                     f"слайд {planned.index}: картинка донора с чужим содержимым убрана (Z-62)"
                 )
+        # Значок донора — пиктограмма по смыслу пункта (`plan/icons.py`, `Z-32`).
+        for icon in getattr(planned, "icons", ()):
+            shape = find_shape(tree, icon.shape_id)
+            if shape is None or shape.tag != qn("p:pic"):
+                warnings.append(f"слайд {planned.index}: значка {icon.shape_id} нет — "
+                                f"пиктограмма «{icon.name}» не встала")
+                continue
+            problem = replace_with_icon(tree, shape, icon.name, icon.color)
+            if problem:
+                warnings.append(f"слайд {planned.index}: {problem}")
         for slot in pattern.slots:
             if slot.id in intended or slot.content_type in ("table", "chart"):
                 continue

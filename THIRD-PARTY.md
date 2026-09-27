@@ -24,6 +24,14 @@
 `rpds-py` (MIT), `jsonschema-specifications` (MIT), `typing_extensions`
 (PSF-2.0).
 
+## Пиктограммы: Tabler Icons
+
+С 27 сентября в поставке лежат 121 иконка **Tabler Icons 3.48.0**
+(`@tabler/icons`, <https://tabler.io/icons>, Paweł Kuna) — лицензия **MIT**,
+её текст — `assets/icons/tabler/LICENSE`. Файлы SVG — как выпущены, без правок;
+сборка переводит контур иконки в нативную фигуру PowerPoint на месте значка
+шаблона (`ADR-0028`, `Z-32`). Какие иконки взяты — `config/icons.json`.
+
 ## Только для тестов
 
 Эти пакеты не входят в поставку и не используются движком. `python-pptx` служит

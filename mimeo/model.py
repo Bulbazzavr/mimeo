@@ -490,6 +490,19 @@ class Fill:
 
 
 @dataclass(frozen=True)
+class PlacedIcon:
+    """Пиктограмма на месте значка донора (`Z-32`, `ADR-0028`,
+    `plan/icons.py`): какую иконку набора и каким цветом ставит сборка."""
+
+    shape_id: str               # p:cNvPr/@id картинки-значка донора
+    name: str                   # имя иконки — файл assets/icons/tabler/<name>.svg
+    color: str | None = None    # `#RRGGBB` значка донора; `None` — акцент темы
+
+    def to_json(self) -> dict:
+        return {"shape_id": self.shape_id, "name": self.name, "color": self.color}
+
+
+@dataclass(frozen=True)
 class PlannedSlide:
     index: int
     pattern_id: str
@@ -508,6 +521,9 @@ class PlannedSlide:
     #: диаграмму, снимок экрана, фото, — по суждению зрения модели (`Z-62`,
     #: `plan/donor.py`). Сборка убирает эти фигуры. Пусто — ключа в JSON нет.
     dropped_pictures: tuple[str, ...] = ()
+    #: Значки донора, на место которых встают пиктограммы по смыслу пункта
+    #: (`Z-32`, `plan/icons.py`). Пусто — ключа в JSON нет.
+    icons: tuple[PlacedIcon, ...] = ()
 
     def to_json(self) -> dict:
         origin = None
@@ -529,6 +545,8 @@ class PlannedSlide:
             out["image_idea"] = self.image_idea
         if self.dropped_pictures:
             out["dropped_pictures"] = list(self.dropped_pictures)
+        if self.icons:
+            out["icons"] = [i.to_json() for i in self.icons]
         return out
 
 

@@ -41,6 +41,7 @@ from .model import ConfigStamp
 KNOWN = (
     "audit.json",
     "generator.json",
+    "icons.json",
     "images.json",
     "kinds.json",
     "model.json",

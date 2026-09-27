@@ -152,6 +152,20 @@ def _judge(args, analysis, outage=None):
                        slide_size=(slide.cx_emu, slide.cy_emu), outage=outage)
 
 
+def _icons(args, outage=None):
+    """Пиктограммы по смыслу пункта на месте значков шаблона (`Z-32`,
+    `plan/icons.py`): тот же доступ к модели и тот же отказ сервера, что у
+    колоды."""
+    from dataclasses import replace as _replace
+    from .plan import icons
+
+    model = load_model_config()
+    access = getattr(args, "llm", None)
+    if access is not None:
+        model = _replace(model, access=Access(access))
+    return icons.Picker(icons.load_config(), model, args.template, outage=outage)
+
+
 def _model_line(outcome, record_path) -> str:
     """Строка сводки: каким путём собран текст колоды и почему — ИКР `PLAN-9.0`
     («без модели сборка идёт прежним путём и говорит об этом словами»)."""
@@ -515,18 +529,20 @@ def cmd_build(args):
     # Это не вежливость к старому коду — девять сдаточных колод собираются этой
     # же командой, и молчаливая смена поведения испортила бы их незаметно.
     judge = _judge(args, analysis, outage)
+    picker = _icons(args, outage)
     if int(getattr(args, "variants", 1) or 1) > 1:
         return _build_variants(args, analysis, doc, target, started,
                                _model_line(outcome, record_path), painter, picture_note, judge,
-                               outage)
+                               outage, picker)
 
     sha = analysis.design_system.source.sha256
     plan = plan_deck(doc, analysis.patterns, sha, target=target)
     plan = _painted(plan, painter, doc, analysis.patterns,
                     lambda d: plan_deck(d, analysis.patterns, sha, target=target))
     plan = judge.mark(plan, analysis.patterns)
+    plan = picker.mark(plan, analysis.patterns)
     plan, fix_note = _shrunk(plan, analysis.patterns, args.fix_picks, None)
-    picture_notes = tuple(n for n in (picture_note, painter.note(), judge.note()) if n)
+    picture_notes = tuple(n for n in (picture_note, painter.note(), judge.note(), picker.note()) if n)
 
     os.makedirs(args.out, exist_ok=True)
     target = args.output or os.path.join(args.out, "deck.pptx")
@@ -622,7 +638,7 @@ def cmd_build(args):
 
 
 def _build_variants(args, analysis, doc, target, started, model_summary="",
-                    painter=None, picture_note=None, judge=None, outage=None):
+                    painter=None, picture_note=None, judge=None, outage=None, picker=None):
     """Три (или сколько попросили) варианта вёрстки одного контента.
 
     Требование ТЗ, раздел 2, п. 5, и пункт критерия 3, который проверяют
@@ -668,6 +684,8 @@ def _build_variants(args, analysis, doc, target, started, model_summary="",
                             lambda d, t=tuning: plan_deck(d, analysis.patterns, sha, target, tuning=t))
         if judge is not None:
             plan = judge.mark(plan, analysis.patterns)
+        if picker is not None:
+            plan = picker.mark(plan, analysis.patterns)
         plan, fix_note = _shrunk(plan, analysis.patterns, getattr(args, "fix_picks", ()), n)
         if fix_note:
             fix_notes.append(f"вариант {n}: {fix_note}")
@@ -692,7 +710,8 @@ def _build_variants(args, analysis, doc, target, started, model_summary="",
         written.append((n, variant, path, built, problems, verdict, plan))
     elapsed = time.perf_counter() - started
     picture_notes = tuple(n for n in (picture_note, painter.note() if painter else None,
-                                      judge.note() if judge else None) if n)
+                                      judge.note() if judge else None,
+                                      picker.note() if picker else None) if n)
     export_lines, export_failed = ([], [])
     if getattr(args, "export", None):
         export_lines, export_failed = _export_lines([path for _n, _v, path, *_ in written], args.export)
