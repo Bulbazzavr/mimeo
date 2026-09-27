@@ -1114,3 +1114,7 @@ def main(argv: list[str] | None = None) -> int:
     except ET.ParseError as exc:
         print(f"Битый XML внутри пакета: {exc}", file=sys.stderr)
         return 1
+    except cfg.MissingConfig as exc:
+        # Промптов в коде нет (`Z-72`): без файла — остановка и как починить.
+        print(f"Нет конфига: {exc}", file=sys.stderr)
+        return 1

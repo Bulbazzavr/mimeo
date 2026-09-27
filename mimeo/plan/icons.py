@@ -23,8 +23,8 @@
 Запрос к модели — **один на колоду** и общий для вариантов: одинаковые пункты
 второй и третьей вёрстки ответ берут из памяти выбора. Модели нет, она не
 ответила или ответ не по форме — значки шаблона остаются, и сводка это
-называет. Промпт — только в конфиге (`ADR-0022`, `Z-72`): нет файла — нет
-пиктограмм, и сводка говорит почему.
+называет. Промпт — только в конфиге (`ADR-0022`, `Z-72`): нет файла —
+сборка останавливается с понятной ошибкой (`config.MissingConfig`).
 """
 
 from __future__ import annotations
@@ -48,13 +48,14 @@ _TEXT_LIMIT = 200
 @dataclass(frozen=True)
 class IconConfig:
     system: str = ""
+    #: Реплика с пунктами: `{catalog}` — строки «имя — о чём», `{items}` —
+    #: пронумерованные пункты.
+    user: str = ""
     #: Имя иконки → о чём она. Только те, чей файл есть в наборе.
     icons: dict = field(default_factory=dict)
     max_aspect: float = 1.67
     max_gap: float = 3.0
     version: str = ""
-    #: Почему пиктограмм не будет, если конфиг не годен. `None` — годен.
-    problem: str | None = None
 
 
 def config_path() -> str:
@@ -64,33 +65,35 @@ def config_path() -> str:
 
 
 def load_config(path: str | None = None, icon_root: str | None = None) -> IconConfig:
-    """Настройки и словарь иконок. Запасной копии промпта в коде нет: файла
-    нет или он не годен — `problem` называет причину."""
+    """Настройки и словарь иконок. Промпта в коде нет (`Z-72`): файла нет или
+    в нём нет промпта, реплики или хотя бы двух иконок с файлами —
+    `MissingConfig`."""
     from ..compose.icon import assets_root
+    from ..config import missing
 
     path = path or config_path()
     try:
         with open(path, encoding="utf-8") as fh:
             raw = json.load(fh)
     except (OSError, ValueError) as exc:
-        return IconConfig(problem=f"нет или не читается {os.path.basename(path)} ({exc.__class__.__name__})")
+        raise missing(CONFIG_NAME, f"файла нет или он не читается ({exc.__class__.__name__})") from exc
     root = icon_root or os.path.join(assets_root(), "tabler")
     listed = raw.get("icons") if isinstance(raw.get("icons"), dict) else {}
     icons = {str(k): str(v) for k, v in listed.items()
              if os.path.isfile(os.path.join(root, f"{k}.svg"))}
     system = str(raw.get("system") or "").strip()
+    user = str(raw.get("user") or "")
+    if not system or "{catalog}" not in user or "{items}" not in user:
+        raise missing(CONFIG_NAME, "нет промпта выбора пиктограмм (system, user с {catalog} и {items})")
+    if len(icons) < 2:
+        raise missing(CONFIG_NAME, "в словаре меньше двух иконок, чьи файлы есть в assets/icons/tabler/")
     base = IconConfig()
     aspect, gap = raw.get("max_aspect"), raw.get("max_gap")
-    problem = None
-    if not system:
-        problem = f"в {os.path.basename(path)} нет промпта (system)"
-    elif len(icons) < 2:
-        problem = f"в {os.path.basename(path)} меньше двух иконок, чьи файлы есть в наборе"
     return IconConfig(
-        system=system, icons=icons,
+        system=system, user=user, icons=icons,
         max_aspect=float(aspect) if isinstance(aspect, (int, float)) and aspect >= 1 else base.max_aspect,
         max_gap=float(gap) if isinstance(gap, (int, float)) and gap > 0 else base.max_gap,
-        version=str(raw.get("version", "")), problem=problem,
+        version=str(raw.get("version", "")),
     )
 
 
@@ -297,7 +300,7 @@ class Picker:
             items = "\n".join(f"{n}. " + (f"[{title}] " if title else "") + text
                               for n, (title, text) in enumerate(batch, 1))
             schema = _schema(names, len(batch))
-            user = f"Пиктограммы (имя — о чём):\n{catalog}\n\nПункты:\n{items}"
+            user = self.cfg.user.replace("{catalog}", catalog).replace("{items}", items)
             if self.model_config.mode is Mode.FREE_TEXT:
                 user += "\n\nОтветь одним JSON-объектом по схеме:\n" + json.dumps(schema, ensure_ascii=False)
             request = Request(mode=self.model_config.mode, system=self.cfg.system, user=user,
@@ -328,9 +331,6 @@ class Picker:
         from .client import Access
 
         if self.model_config.access is Access.OFF:
-            return plan
-        if self.cfg.problem:
-            self.failure = self.cfg.problem
             return plan
         found = spots(plan, library, self.template, self.cfg)
         todo = list(dict.fromkeys(_key(s) for s in found if _key(s) not in self.chosen))

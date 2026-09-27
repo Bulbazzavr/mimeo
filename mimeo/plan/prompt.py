@@ -33,13 +33,10 @@ from .matching import Match
 #: Имя конфига с формулировкой промпта и шириной каталога.
 CONFIG_NAME = "prompt.json"
 
-#: Запасные значения. Основные лежат в `config/prompt.json` (`ADR-0022`):
-#: формулировку меняют под модель, а менять её правкой кода — значит прятать
-#: изменение продукта в диффе движка. Здесь они остаются на случай, когда файла
-#: нет: движок обязан работать и без него, как с `config/prose.json`.
-#:
-#: Сколько пригодных паттернов показываем модели. Больше — только шум: они
-#: отсортированы по пригодности, и хвост заведомо хуже.
+#: Сколько пригодных паттернов показываем модели, если `config/prompt.json`
+#: не задаёт `max_candidates`. Больше — только шум: они отсортированы по
+#: пригодности, и хвост заведомо хуже. Это число, а не промпт: формулировка
+#: живёт только в файле (`Z-72`, ТЗ, раздел 4).
 _MAX_CANDIDATES = 6
 
 
@@ -89,54 +86,43 @@ RESPONSE_SCHEMA: dict = {
     },
 }
 
-_BUILTIN_SYSTEM = (
-    "Ты раскладываешь готовый контент по слайдам презентации. "
-    "Дизайн уже задан шаблоном, менять его нельзя.\n\n"
-    "Правила, нарушение любого делает ответ негодным:\n"
-    "1. Выбери pattern_id строго из предложенных. Не придумывай новых.\n"
-    "2. Заполняй только перечисленные слоты этого паттерна, по slot_id.\n"
-    "3. Соблюдай max_chars для каждого слота. target_chars — ориентир, к нему стоит стремиться.\n"
-    "4. Не выдумывай фактов, которых нет во входном тексте. Сокращать и "
-    "переформулировать можно, добавлять новое нельзя.\n"
-    "5. Отвечай только JSON по схеме, без пояснений вокруг."
-)
-
-
-def load_config(path: str | None = None) -> tuple[str, int, bool]:
-    """Читает `config/prompt.json`. Отсутствие файла — не ошибка, а работа на
-    встроенных значениях; вызывающий узнаёт об этом по третьему члену, а не по
-    молчанию (то же правило, что в `prose.load_config`).
-
-    Битое значение не роняет прогон и не подменяется тихо целиком: негодный
-    `system` откатывается к встроенному, негодный `max_candidates` — к шести,
-    независимо друг от друга.
-    """
-    path = path or cfg.path_for(CONFIG_NAME)
+def _read(path: str | None = None) -> dict | None:
     try:
-        with open(path, encoding="utf-8") as fh:
+        with open(path or cfg.path_for(CONFIG_NAME), encoding="utf-8") as fh:
             raw = json.load(fh)
     except (OSError, ValueError):
-        return _BUILTIN_SYSTEM, _MAX_CANDIDATES, False
-    if not isinstance(raw, dict):
-        return _BUILTIN_SYSTEM, _MAX_CANDIDATES, False
+        return None
+    return raw if isinstance(raw, dict) else None
 
+
+def _candidates(raw: dict | None) -> int:
+    limit = raw.get("max_candidates") if raw else None
+    return limit if isinstance(limit, int) and limit > 0 else _MAX_CANDIDATES
+
+
+def load_config(path: str | None = None) -> tuple[str, int]:
+    """Промпт и ширина каталога из `config/prompt.json`.
+
+    Промпта в коде нет (`Z-72`): файла нет или `system` в нём негоден —
+    `MissingConfig`. Негодный `max_candidates` — шесть: это число, а не
+    формулировка."""
+    raw = _read(path)
+    if raw is None:
+        raise cfg.missing(CONFIG_NAME, "файла нет или он не читается")
     lines = raw.get("system")
     if isinstance(lines, list) and lines and all(isinstance(x, str) for x in lines):
         system = "".join(lines)          # разделители ставит сам текст, не склейка
     elif isinstance(lines, str) and lines:
         system = lines
     else:
-        system = _BUILTIN_SYSTEM
-
-    limit = raw.get("max_candidates")
-    candidates = limit if isinstance(limit, int) and limit > 0 else _MAX_CANDIDATES
-    return system, candidates, True
+        raise cfg.missing(CONFIG_NAME, "нет промпта (system)")
+    return system, _candidates(raw)
 
 
-#: Читается один раз при импорте: промпт не меняется по ходу прогона, а
-#: детерминированность требует, чтобы два слайда одной колоды спрашивали
-#: одинаково. Имена сохранены прежними — на них ссылаются тесты и `ADR-0010`.
-_SYSTEM, MAX_CANDIDATES, _CONFIG_LOADED = load_config()
+#: Ширина каталога — при импорте: на неё ссылаются тесты и `ADR-0010`. Промпт
+#: читается при сборке запроса (`build_request`): без файла падает не импорт,
+#: а запрос — с понятной ошибкой.
+MAX_CANDIDATES = _candidates(_read())
 
 
 @dataclass(frozen=True)
@@ -248,7 +234,7 @@ def build_request(
         )
     return Request(
         mode=mode,
-        system=_SYSTEM,
+        system=load_config()[0],
         user=user,
         schema=RESPONSE_SCHEMA,
         section_id=section.id,

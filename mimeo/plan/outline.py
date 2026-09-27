@@ -126,98 +126,37 @@ RESPONSE_SCHEMA = {
     "required": ["slides", "missing_roles"],
 }
 
-#: Запасные формулировки — байт в байт те, что в `config/outline.json`; сверяет
-#: тест. Без файла движок обязан работать, как с `config/prose.json`.
-_SYSTEM = (
-    "Ты раскладываешь текст автора по слайдам презентации. Отвечай строго JSON.\n"
-    "Реши, сколько нужно слайдов (от {slides_min} до {slides_max}), в каком порядке"
-    " они идут и что на каждом. {volume}\n"
-    "Для каждого слайда:\n"
-    "- heading — заголовок-вывод: полное утверждение с глаголом, от 3 до 7 слов, —"
-    " что прямо сказано в тезисах этого слайда; не название темы и не отглагольное"
-    " существительное; без оценок, причин и обещаний, которых нет в тексте. У"
-    " обложки, оглавления и финала — тема от 2 до 6 слов;\n"
-    "{theses}- kind — тип слайда: cover (обложка), agenda (оглавление), section"
-    " (разделитель), text (абзац), bullets (список), cards (равные пункты),"
-    " two_column (сравнение), metric (крупное число), quote (цитата), table"
-    " (таблица), chart (диаграмма), image_text (картинка с текстом), closing"
-    " (финал); оглавление и финал — только из того, что есть в тексте и на слайдах"
-    " колоды;\n"
-    "- role — роль слайда, одна из: обложка, проблема, решение, продукт, рынок,"
-    " тяга, бизнес-модель, конкуренты, финансы, команда, риски, планы, просьба,"
-    " прочее;\n"
-    "- image_idea — сюжет для рисунка одной фразой: предмет, место или люди в"
-    " действии, которые показывают мысль слайда; без стиля, надписей, чисел,"
-    " логотипов и портретов реальных людей. Графики, диаграммы, таблицы, схемы,"
-    " карты, списки и значки в image_idea не пиши — это не сюжет для рисунка."
-    " Пустая строка — у обложки, оглавления, финала, крупного числа, таблицы,"
-    " диаграммы, сравнения и цитаты, у слайда с картинками из текста и там, где"
-    " рисунок не скажет больше слов; рисунков — не больше чем на трети слайдов;\n"
-    "- images — пути к картинкам из текста, которые относятся к этому слайду,"
-    " дословно как в тексте, какими бы они ни были — фото, схема, график; иначе"
-    " пустой список;\n"
-    "- table — только у слайда table, когда автор сравнивает несколько предметов по"
-    " одним и тем же признакам: header — названия колонок, rows — строки; от 2 до 5"
-    " колонок и не больше 6 строк; в ячейках — слова и числа из текста, ровно как в"
-    " тексте;\n"
-    "- chart — только у слайда chart, когда в тексте есть ряд из трёх и больше чисел"
-    " одной величины: type — line (изменение по времени: месяцы, годы), column"
-    " (сравнение нескольких предметов), bar (то же при длинных подписях), pie (доли"
-    " одного целого); unit — единица измерения словами текста или пустая строка;"
-    " categories — подписи; series — от 1 до 3 рядов: name и values — по одному"
-    " числу на каждую подпись, ровно как в тексте.\n"
-    "У слайдов без таблицы и диаграммы полей table и chart нет. У таблицы и"
-    " диаграммы вывод — в заголовке; тезисы можно не писать, а числа таблицы и"
-    " диаграммы в тезисах не повторяй.\n"
-    "Правила: не добавляй фактов, чисел, названий, имён и дат, которых нет в тексте."
-    " Каждое число из текста должно попасть на какой-нибудь слайд — в заголовок,"
-    " тезис, таблицу или диаграмму. Каждый путь к картинке — ровно на один слайд,"
-    " даже если он упомянут в просьбе к тебе. В missing_roles перечисли роли,"
-    " которых в тексте нет.\n"
-    "Обложка — тема словами автора, без добавленных слов. Финал — итог или просьба"
-    " автора его словами; если их в тексте нет, финала не делай. Благодарностей,"
-    " лозунгов и призывов от себя не пиши."
-)
-#: Правило объёма по режиму (`PLAN-10.0`, Ш1; `OQ-38`): в «доработать» бриф
-#: разворачивается до нижней рамки, в «оставить» развернуть нечем.
-_VOLUME = {
-    "keep": "Слайдов не больше {slides_max}: близкие мысли объединяй. Если содержания"
-    " меньше — слайдов меньше, ничего не выдумывая.",
-    "improve": "Слайдов не больше {slides_max}: близкие мысли объединяй. Только если текст"
-    " короткий, как бриф, и слайдов выходит меньше {slides_min}, разверни его до"
-    " {slides_min}: дай каждой мысли автора свой слайд и тезисы, которые её поясняют и"
-    " связывают с соседними, — без новых чисел, фактов, названий, имён и дат.",
-}
-_THESES = {
-    "keep": "- theses — от 1 до 4 тезисов: ДОСЛОВНЫЕ фразы или части фраз из текста автора,"
-    " без перефразирования; каждый тезис — из одного предложения автора: сокращать"
-    " можно, добавлять и переставлять слова нельзя; до 90 знаков и не больше 15"
-    " слов;\n",
-    "improve": "- theses — от 1 до 4 тезисов: короткие законченные фразы до 90 знаков; можно"
-    " переформулировать для ясности, но только то, что есть в тексте; названия,"
-    " термины и сокращения — только из текста и так, как в тексте: новых не вводи,"
-    " не переводи и не сокращай;\n",
-}
-
-
 def config_path() -> str:
     """`config/outline.json` рядом с пакетом: `mimeo/` лежит в корне репозитория."""
     here = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(os.path.dirname(os.path.dirname(here)), "config", CONFIG_NAME)
 
 
-def load_config(path: str | None = None) -> tuple[str, dict[str, str], dict[str, str], bool]:
-    """Читает `config/outline.json`: общий текст, блоки тезисов и правила объёма
-    по режимам и признак «прочитан». Нет файла — встроенные значения и `False`:
-    отличать «прочитано» от «работают запасные» обязан сам загрузчик, а не
-    молчание."""
-    path = path or config_path()
+def _read_config(path: str | None = None) -> dict:
+    """`config/outline.json` целиком. Промпта в коде нет (`Z-72`, ТЗ, раздел
+    4): файла нет или он не читается — `MissingConfig`, а не тихая копия."""
+    from ..config import missing
+
     try:
-        with open(path, encoding="utf-8") as f:
+        with open(path or config_path(), encoding="utf-8") as f:
             data = json.load(f)
-    except FileNotFoundError:
-        return _SYSTEM, dict(_THESES), dict(_VOLUME), False
-    return "".join(data["system"]), dict(data["theses"]), dict(data["volume"]), True
+    except (OSError, ValueError) as exc:
+        raise missing(CONFIG_NAME, f"файла нет или он не читается ({exc.__class__.__name__})") from exc
+    if not isinstance(data, dict):
+        raise missing(CONFIG_NAME, "файл не объект JSON")
+    return data
+
+
+def load_config(path: str | None = None) -> tuple[str, dict[str, str], dict[str, str]]:
+    """Общий текст промпта колоды, блоки тезисов и правила объёма по режимам.
+    Чего-то из них нет — `MissingConfig` с именем блока."""
+    from ..config import missing
+
+    data = _read_config(path)
+    for key in ("system", "theses", "volume"):
+        if not data.get(key):
+            raise missing(CONFIG_NAME, f"нет блока промпта «{key}»")
+    return "".join(data["system"]), dict(data["theses"]), dict(data["volume"])
 
 
 #: Назначения презентации — ТЗ, бизнес-задача 2: «фича, продукт, проект,
@@ -235,13 +174,13 @@ def purpose_line(purpose: str | None, path: str | None = None) -> str:
         return ""
     if purpose not in PURPOSES:
         raise ValueError(f"назначение {purpose!r}: ждём одно из {PURPOSES}")
-    try:
-        with open(path or config_path(), encoding="utf-8") as fh:
-            block = json.load(fh)["purpose"]
-    except (OSError, ValueError, KeyError):
-        # Файла или блока нет: каркас назначения без него не собрать, и
-        # подставить свой из кода значило бы зашить промпт (Z-72).
-        return ""
+    from ..config import missing
+
+    block = _read_config(path).get("purpose")
+    if not (isinstance(block, dict) and block.get("line") and isinstance(block.get(purpose), dict)):
+        # Каркас назначения без файла не собрать, а подставить свой из кода
+        # значило бы зашить промпт (`Z-72`): назначение просили — это ошибка.
+        raise missing(CONFIG_NAME, f"нет каркаса назначения «{purpose}» (purpose)")
     return (block["line"].replace("{name}", block[purpose]["name"])
             .replace("{order}", block[purpose]["order"]))
 
@@ -253,7 +192,7 @@ def system_prompt(mode: str, slides_min: int, slides_max: int, path: str | None 
     `purpose` — назначение (`Z-37`): строка каркаса в конце промпта."""
     if mode not in MODES:
         raise ValueError(f"режим текста {mode!r}: ждём один из {MODES}")
-    common, theses, volume, _ = load_config(path)
+    common, theses, volume = load_config(path)
     prompt = (
         common.replace("{volume}", volume[mode])
         .replace("{theses}", theses[mode])
@@ -681,26 +620,17 @@ def request(text: str, mode: str, frames: tuple[int, int], transport=None, label
     )
 
 
-#: Что сказать модели при повторе, по имени проверки: проверка называет
-#: нарушение (`Check.detail`), а это — что с ним сделать.
-_FIX = {
-    "числа": "каждое число из текста поставь в заголовок или тезис слайда, где о нём речь; "
-             "чисел, которых нет в тексте, не пиши",
-    "картинки": "каждый путь к картинке из текста — ровно на один слайд, в поле images, "
-                "а не в заголовок или тезис",
-    "латиница": "латинских слов, которых нет в тексте, не пиши",
-    "названия": "названий, имён, мест и дат, которых нет в тексте, не пиши",
-    VISUALS: "исправь таблицу или диаграмму по правилам промпта или убери её, "
-             "а её числа поставь в тезисы",
-    "обращения": "обращений к исполнителю и просьб о самой презентации на слайдах быть не должно",
-    "объём": "сократи колоду до потолка: объедини соседние слайды об одном и том же и "
-             "убери повторы, не теряя чисел",
-    "типы": "тип слайда — только из словаря, оглавление — не больше одного",
-    "название": "название на обложке — словами автора",
-    "клише финала": "благодарностей и лозунгов от себя не пиши",
-    "дословность": "тезисы — дословные фразы или части фраз автора",
-    "форма": "ответ — JSON по схеме",
-}
+def retry_config(path: str | None = None) -> tuple[str, dict[str, str], str]:
+    """Реплика повтора из `config/outline.json`, блок `retry`: рамка с
+    `{lines}`, что сделать по имени проверки и что — без своей строки. Проверка
+    называет нарушение (`Check.detail`), конфиг — что с ним сделать."""
+    from ..config import missing
+
+    block = _read_config(path).get("retry")
+    if not (isinstance(block, dict) and "{lines}" in str(block.get("frame", ""))
+            and isinstance(block.get("fixes"), dict)):
+        raise missing(CONFIG_NAME, "нет реплики повтора (retry: frame с {lines} и fixes)")
+    return str(block["frame"]), dict(block["fixes"]), str(block.get("default") or "исправь")
 
 
 def retry_history(answer_text: str, checks: tuple[Check, ...]) -> tuple[dict, ...]:
@@ -710,15 +640,14 @@ def retry_history(answer_text: str, checks: tuple[Check, ...]) -> tuple[dict, ..
     модель теряла числа (1400, 180, 55, 620, 640, 85), и сборка уходила путём
     без модели. Повтор с перечнем нарушений даёт модели поправить свою же
     колоду, а не строить её заново; судят его те же проверки."""
+    frame, fixes, default = retry_config()
     lines = []
     for c in checks:
         # Заметка о снятой таблице — не отказ, но без неё повтор не понял бы,
         # почему «потеряны» её числа (`PLAN-10.0`, проверка 1, п. 1).
         if not c.ok or (c.name == VISUALS and c.detail):
-            fix = _FIX.get(c.name, "исправь")
-            lines.append(f"- {c.name}: {c.detail} — {fix}.")
-    fix = ("Твой ответ не прошёл проверку:\n" + "\n".join(lines) +
-           "\nИсправь колоду и верни её целиком тем же JSON; остальное не меняй.")
+            lines.append(f"- {c.name}: {c.detail} — {fixes.get(c.name, default)}.")
+    fix = frame.replace("{lines}", "\n".join(lines))
     return ({"role": "assistant", "content": answer_text}, {"role": "user", "content": fix})
 
 
@@ -1000,10 +929,13 @@ def run(path: str, fallback, *, access: str | None = None, text_mode: str | None
         # Правка по аудиту (`Z-34`): принятая колода и выбранные находки по
         # заголовкам слайдов. Судят те же проверки; не прошла — в вёрстку идёт
         # прежняя колода, и строка сводки это говорит.
-        ask_fix = (revise_prompt or "Проверка готовых слайдов нашла:\n{findings}\n"
-                   "Исправь названные слайды, прочие оставь как были; новых чисел и фактов "
-                   "не добавляй. Верни колоду целиком тем же JSON.")
-        fix_text = ask_fix.replace("{findings}", "\n".join(f"- {line}" for line in revise))
+        # Просьба правки — только из `config/audit.json` (`slides.revise`,
+        # `Z-72`): её передаёт вызывающий, копии здесь нет.
+        if "{findings}" not in (revise_prompt or ""):
+            from ..config import missing
+
+            raise missing("audit.json", "нет просьбы правки с {findings} (slides.revise)")
+        fix_text = revise_prompt.replace("{findings}", "\n".join(f"- {line}" for line in revise))
         history = ({"role": "assistant", "content": answer.text}, {"role": "user", "content": fix_text})
         again = request(text, mode, frames, config.mode,
                         label=f"колода {os.path.basename(path)} {mode} правка аудита", history=history,

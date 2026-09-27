@@ -83,7 +83,13 @@ class FakeSD:
         self._server.server_close()
 
 
+#: Тексты для моделей — только из `config/generator.json` (`Z-72`). Читаются
+#: при импорте: тесты подменяют `images.load_config` на `_gen`.
+_SHIPPED = images.load_config()
+
+
 def _gen(tmp_path, base_url="http://127.0.0.1:9", **kw) -> images.GeneratorConfig:
+    kw = {"scene_system": _SHIPPED.scene_system, "prompt_suffix": _SHIPPED.prompt_suffix, **kw}
     return images.GeneratorConfig(base_url=base_url, cache_root=str(tmp_path / "img-cache"),
                                   llm_sleep_wait_sec=0, **kw)
 

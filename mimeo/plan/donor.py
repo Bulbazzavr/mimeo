@@ -43,13 +43,10 @@ _MIME = ((b"\x89PNG", "image/png"), (b"\xff\xd8", "image/jpeg"), (b"GIF8", "imag
 
 @dataclass(frozen=True)
 class AuditConfig:
-    system: str = (
-        "Тебе показывают картинку из шаблона презентации: она останется на слайде рядом с чужим"
-        " текстом. Реши, что это. content — на картинке есть текст, буквы, цифры, диаграмма,"
-        " таблица, график, снимок экрана или интерфейса приложения, логотип, фотография конкретных"
-        " людей, товара или места. decor — только оформление: абстрактные фигуры, узоры, градиенты,"
-        " объёмные предметы без смысла, рамки, пустой экран устройства. Отвечай строго JSON.")
-    question: str = "Что на картинке и к чему она относится?"
+    #: Промпт и вопрос — только из `config/audit.json`, `donor_pictures`
+    #: (`Z-72`, ТЗ, раздел 4): копии в коде нет, `load_config` без них падает.
+    system: str = ""
+    question: str = ""
     #: Картинка, у которой и большая сторона короче этой доли меньшей стороны
     #: слайда, — значок, не спрашиваем (тот же порог, что делит слоты на иконки и
     #: иллюстрации, `config/images.json`). По большей стороне, а не по меньшей:
@@ -69,17 +66,23 @@ def config_path() -> str:
 
 
 def load_config(path: str | None = None) -> AuditConfig:
+    """Промпт зрения о картинках донора и пороги. Промпта нет — `MissingConfig`
+    (`Z-72`); пороги — числа, негодный берётся встроенным."""
+    from ..config import missing
+
     path = path or config_path()
     try:
         with open(path, encoding="utf-8") as fh:
             raw = (json.load(fh) or {}).get("donor_pictures") or {}
-    except (OSError, ValueError, AttributeError):
-        return AuditConfig()
+    except (OSError, ValueError, AttributeError) as exc:
+        raise missing(CONFIG_NAME, f"файла нет или он не читается ({exc.__class__.__name__})") from exc
+    if not (raw.get("system") and raw.get("question")):
+        raise missing(CONFIG_NAME, "нет промпта зрения о картинках донора (donor_pictures: system, question)")
     base = AuditConfig()
     min_side, repeated = raw.get("min_side"), raw.get("repeated")
     return AuditConfig(
-        system=str(raw.get("system") or base.system),
-        question=str(raw.get("question") or base.question),
+        system=str(raw["system"]),
+        question=str(raw["question"]),
         min_side=float(min_side) if isinstance(min_side, (int, float)) else base.min_side,
         repeated=int(repeated) if isinstance(repeated, int) and repeated > 0 else base.repeated,
         loaded=True,

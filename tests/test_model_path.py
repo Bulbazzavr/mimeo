@@ -470,7 +470,7 @@ def test_image_only_on_the_cover_is_not_placed():
 
 def test_request_carries_mode_frames_and_names():
     req = outline.request(TEXT, "improve", (8, 12))
-    assert "(от 8 до 12)" in req.system and outline._THESES["improve"] in req.system
+    assert "(от 8 до 12)" in req.system and outline.load_config()[1]["improve"] in req.system
     assert "разверни его до 8" in req.system, "бриф разворачивается до нижней рамки (OQ-38)"
     assert req.user == TEXT
     body = client.chat_body(req, client.ClientConfig())

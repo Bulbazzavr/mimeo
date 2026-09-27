@@ -61,8 +61,10 @@ FOLDER = "images"
 
 @dataclass(frozen=True)
 class GeneratorConfig:
-    """Настройки генератора. Значения по умолчанию — те же, что в
-    `config/generator.json`: без файла поведение не должно молча меняться."""
+    """Настройки генератора. Числа и адреса по умолчанию — те же, что в
+    `config/generator.json`. Тексты для моделей — хвост запроса картинки и
+    промпт сцен — только в файле (`Z-72`, ТЗ, раздел 4): без файла
+    `load_config` падает, без промпта сцен — `scenes`."""
 
     access: str = "on"
     base_url: str = "http://127.0.0.1:8081"
@@ -77,13 +79,8 @@ class GeneratorConfig:
     min_aspect: float = 0.25
     max_aspect: float = 4.0
     min_place_side: float = 0.3
-    prompt_suffix: str = ". Фотография, естественный свет."
-    scene_system: str = (
-        "Тебе дают сюжеты для рисунков к слайдам презентации. Перепиши каждый так, чтобы на"
-        " рисунке не было ни текста, ни букв, ни цифр, ни экранов, ни телефонов с сообщениями,"
-        " ни документов, ни слайдов, ни вывесок: только люди, предметы и места в действии,"
-        " которые передают ту же мысль. Одна фраза до 15 слов на сюжет, по-русски, в том же"
-        " порядке и столько же, сколько дали. Отвечай строго JSON.")
+    prompt_suffix: str = ""
+    scene_system: str = ""
     timeout_sec: float = 180.0
     llm_sleep_wait_sec: float = 30.0
     cache_root: str = "cache/images"
@@ -99,14 +96,17 @@ def config_path() -> str:
 
 
 def load_config(path: str | None = None) -> GeneratorConfig:
-    """Читает `config/generator.json`; значение не того типа — встроенное."""
+    """Читает `config/generator.json`; значение не того типа — встроенное.
+    Файла нет — `MissingConfig` (`Z-72`): в нём тексты для моделей."""
+    from ..config import missing
+
     path = path or config_path()
     config = GeneratorConfig()
     try:
         with open(path, encoding="utf-8") as fh:
             raw = json.load(fh)
-    except (OSError, ValueError):
-        raw = None
+    except (OSError, ValueError) as exc:
+        raise missing(CONFIG_NAME, f"файла нет или он не читается ({exc.__class__.__name__})") from exc
     if isinstance(raw, dict):
         values = {}
         for name in _SETTINGS:
@@ -165,7 +165,9 @@ def scenes(ideas: list[str], gen: GeneratorConfig, model_config, inputs=(),
     from .validate import extract_json
 
     if not gen.scene_system.strip():
-        return None, "промпта сцен нет в config/generator.json"
+        from ..config import missing
+
+        raise missing(CONFIG_NAME, "нет промпта сцен картинок (scene_system)")
     user = json.dumps(ideas, ensure_ascii=False)
     if model_config.mode is Mode.FREE_TEXT:
         user += "\n\nОтветь одним JSON-объектом по схеме:\n" + json.dumps(SCENE_SCHEMA, ensure_ascii=False)

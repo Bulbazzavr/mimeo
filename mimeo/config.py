@@ -70,6 +70,22 @@ def path_for(name: str) -> str:
     return os.path.join(config_root(), name)
 
 
+class MissingConfig(RuntimeError):
+    """Нет конфига с промптом или промпта в нём (`Z-72`).
+
+    ТЗ, раздел 4: промпты «лежат отдельными файлами, т.е. не зашиты в код», и
+    организаторы 17 сентября назвали это минимумом. Запасных копий промптов в
+    коде поэтому нет: без файла сборка останавливается с этим сообщением, а не
+    работает молча на копии. `cli.main` печатает его и возвращает 1."""
+
+
+def missing(name: str, what: str) -> MissingConfig:
+    """Ошибка «в `config/<name>` нет `what`» с тем, как починить."""
+    return MissingConfig(
+        f"config/{name}: {what}. Промпты лежат только в config/, копий в коде нет "
+        f"(ТЗ, раздел 4) — верните файл из репозитория: git checkout -- config/{name}")
+
+
 def declared_version(raw: object) -> str:
     """Версия из уже прочитанного JSON. Не строка — значит не объявлена."""
     if isinstance(raw, dict):

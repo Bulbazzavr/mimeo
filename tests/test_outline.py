@@ -34,14 +34,6 @@ def test_prompt_is_the_measured_one(mode, block):
     assert outline.system_prompt(mode, 10, 15) == expected
 
 
-def test_builtin_prompt_equals_config(tmp_path):
-    common, theses, volume, loaded = outline.load_config()
-    assert loaded
-    assert (common, theses, volume) == (outline._SYSTEM, outline._THESES, outline._VOLUME)
-    fallback = outline.load_config(str(tmp_path / "нет.json"))
-    assert fallback == (outline._SYSTEM, outline._THESES, outline._VOLUME, False)
-
-
 def test_bounds_reach_the_prompt():
     prompt = outline.system_prompt("keep", 3, 7)
     assert "(от 3 до 7)" in prompt and "{" not in prompt

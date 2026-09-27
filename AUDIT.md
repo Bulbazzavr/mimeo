@@ -54,7 +54,7 @@ python tools/audit_doc.py --write
 | [`tests/test_export_html.py`](tests/test_export_html.py) | 13 | Выгрузка колоды в HTML (`mimeo/export/html.py`). |
 | [`tests/test_fitting.py`](tests/test_fitting.py) | 8 | Оценка вместимости. DOM-TEXT §6, §10, ADR-0008. |
 | [`tests/test_generated_images.py`](tests/test_generated_images.py) | 9 | Картинки по идеям модели (`Z-28`, `mimeo/plan/images.py`). |
-| [`tests/test_icons.py`](tests/test_icons.py) | 8 | Пиктограммы на месте значков шаблона (`Z-32`, `ADR-0028`). |
+| [`tests/test_icons.py`](tests/test_icons.py) | 7 | Пиктограммы на месте значков шаблона (`Z-32`, `ADR-0028`). |
 | [`tests/test_image_ideas.py`](tests/test_image_ideas.py) | 11 | Идеи картинок модели в плане колоды (`PLAN-9.0`, Ш6; `ADR-0023`, п. 1). |
 | [`tests/test_images.py`](tests/test_images.py) | 16 | Встраивание изображений (`Z-28a`, `PLAN-7.10`). |
 | [`tests/test_mce_prefixes.py`](tests/test_mce_prefixes.py) | 5 | Пространства имён Markup Compatibility переживают пересериализацию. |
@@ -62,12 +62,13 @@ python tools/audit_doc.py --write
 | [`tests/test_model_flags.py`](tests/test_model_flags.py) | 9 | Флаги модели `--llm` и `--text` (`PLAN-9.0`, Ш2; `ADR-0021`, `ADR-0023`). |
 | [`tests/test_model_path.py`](tests/test_model_path.py) | 28 | Путь модели в сборке (`PLAN-9.0`, Ш3; `ADR-0023`). |
 | [`tests/test_occlusion.py`](tests/test_occlusion.py) | 23 | Ёмкость слота знает, что лежит поверх него. `Z-48`, `PLAN-7.8`. |
-| [`tests/test_outline.py`](tests/test_outline.py) | 16 | Промпт и схема ответа модели, строящей колоду (`ADR-0023`, `PLAN-9.0`, Ш1). |
+| [`tests/test_outline.py`](tests/test_outline.py) | 15 | Промпт и схема ответа модели, строящей колоду (`ADR-0023`, `PLAN-9.0`, Ш1). |
 | [`tests/test_paragraph_order.py`](tests/test_paragraph_order.py) | 6 | Порядок детей `a:p` по схеме DrawingML: прогоны до `a:endParaRPr`. |
 | [`tests/test_patterns.py`](tests/test_patterns.py) | 13 | Библиотека паттернов. ADR-0004, ADR-0006, ADR-0007. |
 | [`tests/test_photo_frames.py`](tests/test_photo_frames.py) | 9 | Рамка под фото с подсказкой дизайнера (`Z-55`, вариант 2 — выбор пользователя 26 сентября). |
 | [`tests/test_plan.py`](tests/test_plan.py) | 20 | Подбор раскладок и планировщик без модели. ADR-0009. |
 | [`tests/test_prompt_contract.py`](tests/test_prompt_contract.py) | 16 | Промпт-контракт: что уходит в модель и что принимается назад. ADR-0010. |
+| [`tests/test_prompts_in_config.py`](tests/test_prompts_in_config.py) | 4 | Промпты лежат только в `config/`, копий в коде нет (`Z-72`). |
 | [`tests/test_prose.py`](tests/test_prose.py) | 48 | Сегментация сплошной прозы. Задача `Z-25`, план `PLAN-2.2`. |
 | [`tests/test_purpose.py`](tests/test_purpose.py) | 5 | Назначение презентации на входе (`Z-37`): фича, продукт, проект, инициатива. |
 | [`tests/test_quality.py`](tests/test_quality.py) | 16 | Весы для колоды: дешёвый ярус. `PLAN-2.5`, `ADR-0019`. |
@@ -88,7 +89,7 @@ python tools/audit_doc.py --write
 | [`tests/test_volume.py`](tests/test_volume.py) | 19 | Объём колоды: 10–15 слайдов или сколько задали. `Z-35`, план `PLAN-2.3`. |
 | [`tests/test_web_boundary.py`](tests/test_web_boundary.py) | 5 | Граница веб-слоя (`Z-29`, `PLAN-8.0`, `SPEC-WEB` раздел 2). |
 | [`tests/test_web_design.py`](tests/test_web_design.py) | 13 | Экран «что вынули из вашего шаблона» (`Z-29`, `PLAN-8.1`, часть A). |
-| **всего** | **731** | в 50 файлах |
+| **всего** | **733** | в 51 файлах |
 
 <!-- /порождается -->
 

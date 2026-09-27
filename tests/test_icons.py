@@ -35,7 +35,6 @@ def test_every_listed_icon_has_a_file_that_parses_inside_its_field():
     with open(icons.config_path(), encoding="utf-8") as fh:
         listed = json.load(fh)["icons"]
     cfg = icons.load_config()
-    assert cfg.problem is None
     assert set(cfg.icons) == set(listed), "у каждой иконки словаря есть файл"
     for name in listed:
         side, cmds = load_icon(name)
@@ -136,6 +135,3 @@ def test_wrong_answer_and_model_off_leave_template_icons(tmp_path, monkeypatch):
         assert off.note() is None
 
 
-def test_missing_config_is_said_not_silently_replaced(tmp_path):
-    cfg = icons.load_config(str(tmp_path / "icons.json"))
-    assert cfg.problem and "icons.json" in cfg.problem

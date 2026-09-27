@@ -63,28 +63,13 @@ CONFIG_NAME = "audit.json"
 
 @dataclass(frozen=True)
 class VisionConfig:
-    system: str = (
-        "Ты проверяешь готовый слайд презентации по его картинке. Отвечай строго JSON по схеме,"
-        " каждое поле — да (true) или нет (false). Смотри только на то, что видно на картинке.")
-    question: str = (
-        "Слайд {n} из {total}. Ответь на вопросы.\n"
-        "title_is_conclusion: заголовок — законченная мысль, вывод (утверждение, часто с глаголом"
-        " или числом), а не название темы вроде «Результаты» или «О продукте»?\n"
-        "content_matches_title: текст, таблица и диаграмма на слайде говорят о том же, что заголовок?\n"
-        "has_content: кроме заголовка на слайде есть содержание — текст, список, таблица, диаграмма"
-        " или картинка?\n"
-        "pictures_on_topic: если на слайде есть фотография или рисунок (не логотип и не узор"
-        " оформления) — он относится к теме слайда? Картинок нет — null.\n"
-        "no_service_text: на слайде нет служебного текста — обращений к докладчику или ассистенту,"
-        " просьб вроде «сделай презентацию», пометок TODO, XXX, lorem ipsum, «вставьте текст»?\n"
-        "one_language: весь текст слайда на одном языке? Названия продуктов и компаний не считаются.\n"
-        "problem: если хоть один ответ «нет» — одним предложением, что именно не так и где на"
-        " слайде; если всё «да» — пустая строка.")
+    #: Промпт, вопросы о слайде и просьба правки — только из `config/audit.json`,
+    #: блок `slides` (`Z-72`, ТЗ, раздел 4): копии в коде нет.
+    system: str = ""
+    question: str = ""
     #: Что сказать модели при исправлении смысла (`build --fix`): `{findings}` —
     #: выбранные находки строками. Путь — `plan/outline.run`, `revise`.
-    revise: str = (
-        "Проверка готовых слайдов нашла:\n{findings}\nИсправь названные слайды, прочие оставь"
-        " как были; новых чисел и фактов не добавляй. Верни колоду целиком тем же JSON.")
+    revise: str = ""
     loaded: bool = False
 
 
@@ -95,16 +80,21 @@ def config_path() -> str:
 
 
 def load_config(path: str | None = None) -> VisionConfig:
+    """Промпт зрения о готовом слайде и просьба правки. Чего-то нет —
+    `MissingConfig` (`Z-72`)."""
+    from ..config import missing
+
     path = path or config_path()
     try:
         with open(path, encoding="utf-8") as fh:
             raw = (json.load(fh) or {}).get("slides") or {}
-    except (OSError, ValueError, AttributeError):
-        return VisionConfig()
-    base = VisionConfig()
-    return VisionConfig(system=str(raw.get("system") or base.system),
-                        question=str(raw.get("question") or base.question),
-                        revise=str(raw.get("revise") or base.revise), loaded=bool(raw))
+    except (OSError, ValueError, AttributeError) as exc:
+        raise missing(CONFIG_NAME, f"файла нет или он не читается ({exc.__class__.__name__})") from exc
+    absent = [k for k in ("system", "question", "revise") if not raw.get(k)]
+    if absent:
+        raise missing(CONFIG_NAME, f"нет промпта аудита слайдов (slides: {', '.join(absent)})")
+    return VisionConfig(system=str(raw["system"]), question=str(raw["question"]),
+                        revise=str(raw["revise"]), loaded=True)
 
 
 @dataclass
