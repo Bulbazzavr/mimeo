@@ -445,7 +445,9 @@ eol=lf`. Прежде чем назвать причину, сосчитать �
   модель строит колоду в PLAN (`ADR-0023`) и после плана судит картинки донора
   (`ADR-0025`); генератор рисует картинки между PLAN и COMPOSE (`ADR-0024`). Оба
   сервера — за HTTP: `llama-server` и `sd-server`. ANALYZE, COMPOSE и VERIFY в
-  сеть не ходят. По умолчанию модель и генератор включены (`access: on` в
+  сеть не ходят. **После VERIFY — аудит** (`--audit`, `ADR-0027`): зрение модели
+  смотрит на картинку готового слайда, а по выбранным находкам (`--fix`)
+  модель переписывает свою колоду. По умолчанию модель и генератор включены (`access: on` в
   `config/model.json` и `config/generator.json`, решение пользователя
   26 сентября); `--llm off|cache|on` и `--images on|off` это меняют. Модель не
   ответила или ответ не прошёл проверки и повтор — колода собирается путём без
@@ -468,6 +470,9 @@ python -m mimeo build  <шаблон.pptx> <контент.md> --slides 10-15 --
 python -m mimeo build  <шаблон.pptx> <контент.md> --variants 3 --output out/deck.pptx
 python -m mimeo build  <шаблон.pptx> <контент.md> --llm off --text keep   # модель: off|cache|on, текст: keep|improve (PLAN-9.0, Ш2)
 python -m mimeo build  <шаблон.pptx> <контент.md> --llm on    # модель строит колоду (нужен llama-server); что было — <out>/outline.json (Ш3)
+python -m mimeo build  <шаблон.pptx> <контент.md> --verify --audit      # аудит слайдов (Z-34, ADR-0027): <out>/audit[-N].json
+python -m mimeo build  <шаблон.pptx> <контент.md> --verify --fix all    # исправить все исправимые находки прошлой сборки в том же -o
+python -m mimeo build  <шаблон.pptx> <контент.md> --purpose project     # назначение: feature|product|project|initiative (Z-37)
 python -m mimeo build  --config config/run.example.json <шаблон.pptx>
 python -m mimeo analyze <шаблон.pptx> -o out --validate
 python -m mimeo plan   <шаблон.pptx> <контент.md> -o out --validate
@@ -671,8 +676,9 @@ python tools/llm_cache.py list                        что лежит в кэ�
 - **Модель — смысл, код — форма.** Модель строит колоду, пишет сцены картинок
   и судит картинки донора (`ADR-0023`, `ADR-0024`, `ADR-0025`); **пригодность и
   вместимость считает код** (`ADR-0009`). ANALYZE, COMPOSE и VERIFY моделей не
-  зовут (`ADR-0002`). Проверка готовых слайдов по их картинке (`Z-34`) выйдет за
-  эти границы — решение записать в ADR, когда дойдёт до кода.
+  зовут (`ADR-0002`). Аудит готовых слайдов — отдельный шаг после VERIFY:
+  смысл слайда по его картинке судит модель, а наезд надписей и выход за край
+  — код по замеру PowerPoint: вёрстку на картинке модель не видит (`ADR-0027`).
 - Не собирать слайд с нуля вместо клонирования донора (`ADR-0004`, `ADR-0011`).
 - Не «чинить» непонятный XML заглушкой. Неизвестная конструкция пишется в
   `evidence.unhandled` и всплывает в отчёте.
