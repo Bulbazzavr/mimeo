@@ -111,13 +111,17 @@ def _pictures(args, doc, analysis, outage=None):
     if access is not None:
         model = _replace(model, access=Access(access))
 
+    translations: dict[str, str] = {}       # сцена по-английски → по-русски, для человека
+
     def rewrite(ideas):
-        return images.scenes(ideas, gen, model, inputs=(args.content,), outage=outage)
+        return images.scenes(ideas, gen, model, inputs=(args.content,), outage=outage,
+                             translations=translations)
 
     doc, placeholders, note = images.add_placeholders(doc, args.out, gen, slide_size=size,
                                                       rewrite=rewrite)
     painter = images.Painter(gen, placeholders, llm_base_url=model.endpoint.base_url, slide_size=size,
-                             rewrite=rewrite, folder=os.path.join(args.out, images.FOLDER))
+                             rewrite=rewrite, folder=os.path.join(args.out, images.FOLDER),
+                             translations=translations)
     return doc, painter, note
 
 
@@ -435,7 +439,7 @@ def _placed(plan, built, painter) -> list[dict]:
         return []
     from .plan import images
 
-    return images.placed(plan, built.slides_written, painter.prompts)
+    return images.placed(plan, built.slides_written, painter.prompts, painter.ru)
 
 
 def _fix_picks(args):

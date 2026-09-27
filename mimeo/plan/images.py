@@ -143,15 +143,18 @@ def reachable(gen: GeneratorConfig) -> str | None:
 
 
 #: Схема ответа на запрос сцен — контракт, в коде (`ADR-0022`); промпт — в конфиге.
+#: `scenes` — сцены для генератора (с 1.3 конфига — по-английски), `ru` — их
+#: перевод для человека. Без годного перевода сцены всё равно берутся.
 SCENE_SCHEMA = {
     "type": "object",
-    "properties": {"scenes": {"type": "array", "items": {"type": "string"}}},
-    "required": ["scenes"],
+    "properties": {"scenes": {"type": "array", "items": {"type": "string"}},
+                   "ru": {"type": "array", "items": {"type": "string"}}},
+    "required": ["scenes", "ru"],
 }
 
 
 def scenes(ideas: list[str], gen: GeneratorConfig, model_config, inputs=(),
-           outage=None) -> tuple[list[str] | None, str]:
+           outage=None, translations: dict | None = None) -> tuple[list[str] | None, str]:
     """Сюжеты без текста — второй короткий вызов языковой модели (`Z-28`).
 
     Замер 26 сентября: текст на картинке рисуется, когда он есть в самой идее
@@ -159,7 +162,8 @@ def scenes(ideas: list[str], gen: GeneratorConfig, model_config, inputs=(),
     отрицания в запросе картинки его не гасят. Переписать сюжет — смысл, а
     смысл делает модель. Возвращает (сцены или `None`, откуда или почему нет);
     ответ идёт в кэш ответов модели, как и колода. `outage` — отказ сервера,
-    общий на сборку (`client.Outage`)."""
+    общий на сборку (`client.Outage`). `translations` — словарь, куда лягут
+    переводы «сцена → по-русски», если модель их дала: их видит человек."""
     from .client import ModelClient
     from .prompt import Mode, Request
     from .validate import extract_json
@@ -182,7 +186,12 @@ def scenes(ideas: list[str], gen: GeneratorConfig, model_config, inputs=(),
     if not (isinstance(got, list) and len(got) == len(ideas)
             and all(isinstance(s, str) and s.strip() for s in got)):
         return None, "ответ не по форме: нужен список сцен той же длины"
-    return [s.strip() for s in got], "из кэша" if answer.source == "cache" else "от модели"
+    got = [s.strip() for s in got]
+    ru = parsed.get("ru")
+    if translations is not None and isinstance(ru, list) and len(ru) == len(got) and all(
+            isinstance(s, str) and s.strip() for s in ru):
+        translations.update(zip(got, (s.strip() for s in ru)))
+    return got, "из кэша" if answer.source == "cache" else "от модели"
 
 
 def add_placeholders(doc, out_dir: str, gen: GeneratorConfig, rules=None,
@@ -252,11 +261,12 @@ def without(doc, refs) -> object:
     ])
 
 
-def placed(plan, slides_written, prompts: dict[str, str]) -> list[dict]:
+def placed(plan, slides_written, prompts: dict[str, str], ru: dict[str, str] | None = None) -> list[dict]:
     """Нарисованные генератором картинки колоды: номер слайда в файле
-    (1-based, по `slides_written` — сборка могла пропустить слайд) и промпт,
-    с которым картинку нарисовали. Для отчёта сборки: в саму колоду промпт не
-    идёт — на слайде он был бы служебным текстом (Приложение 1 ТЗ, вопрос 7)."""
+    (1-based, по `slides_written` — сборка могла пропустить слайд), промпт,
+    с которым картинку нарисовали, и его перевод, если он есть (`ru`: файл →
+    по-русски). Для отчёта сборки: в саму колоду промпт не идёт — на слайде
+    он был бы служебным текстом (Приложение 1 ТЗ, вопрос 7)."""
     order = list(slides_written) or [s.index for s in plan.slides]
     by_index = {s.index: s for s in plan.slides}
     out = []
@@ -264,7 +274,10 @@ def placed(plan, slides_written, prompts: dict[str, str]) -> list[dict]:
         slide = by_index.get(index)
         for fill in slide.fills if slide is not None else ():
             if fill.kind == "image" and fill.ref in prompts:
-                out.append({"slide": position, "prompt": prompts[fill.ref]})
+                item = {"slide": position, "prompt": prompts[fill.ref]}
+                if ru and fill.ref in ru:
+                    item["ru"] = ru[fill.ref]
+                out.append(item)
     return out
 
 
@@ -310,6 +323,10 @@ class Painter:
     #: Готовый файл → промпт, с которым его нарисовал генератор: человеку видно,
     #: что просили у генератора для каждой картинки (`placed`, отчёт сборки).
     prompts: dict[str, str] = field(default_factory=dict)
+    #: Сцена → перевод по-русски (заполняет `scenes`) и готовый файл → перевод
+    #: его сцены: промпт генератора английский, человеку нужен и русский.
+    translations: dict[str, str] = field(default_factory=dict)
+    ru: dict[str, str] = field(default_factory=dict)
     _scenes: dict[str, str] = field(default_factory=dict)
     _reach: str | None = "?"
 
@@ -379,7 +396,7 @@ class Painter:
         if os.path.isfile(cached):
             shutil.copyfile(cached, target)
             self.cached += 1
-            self.prompts[target] = prompt
+            self._remember(target, idea, prompt)
             return True
         try:
             png = self._draw(prompt, width, height, seed)
@@ -392,8 +409,14 @@ class Painter:
             fh.write(png)
         shutil.copyfile(cached, target)
         self.drawn += 1
-        self.prompts[target] = prompt
+        self._remember(target, idea, prompt)
         return True
+
+    def _remember(self, target: str, idea: str, prompt: str) -> None:
+        """Что просили у генератора для файла `target` — и перевод сцены."""
+        self.prompts[target] = prompt
+        if idea in self.translations:
+            self.ru[target] = self.translations[idea]
 
     def paint(self, plan, library) -> tuple[object, set[str]]:
         """Заготовки плана — в готовые файлы в пропорции своего места.

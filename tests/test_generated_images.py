@@ -162,6 +162,39 @@ def test_ideas_are_rewritten_into_scenes_without_text(tmp_path):
     assert note.startswith("Сюжеты картинок переписаны моделью без текста (от модели)")
 
 
+def test_scene_translation_reaches_the_picture(tmp_path):
+    """Сцена для генератора — по-английски, её перевод модель даёт тем же
+    ответом, и он доходит до готового файла: человек видит обе версии. Без
+    годного перевода сцены всё равно берутся."""
+    ideas = ["Человек двигает блоки текста на слайде"]
+    answer = {"scenes": ["A man stacks wooden blocks on a desk"],
+              "ru": ["Мужчина складывает деревянные кубики на столе"]}
+    config = client.ClientConfig(access=client.Access.ON, extra_body={},
+                                 cache_root=str(tmp_path / "llm"), tz_cache_root=str(tmp_path / "tz"))
+    from dataclasses import replace
+    translations: dict[str, str] = {}
+    with FakeModel(answer=answer) as fake:
+        got, _how = images.scenes(ideas, _gen(tmp_path), replace(config, endpoint=client.Endpoint(
+            base_url=fake.base_url)), translations=translations)
+    assert got == answer["scenes"] and translations == dict(zip(answer["scenes"], answer["ru"]))
+
+    painter = images.Painter(_gen(tmp_path), {}, translations=translations)
+    target = str(tmp_path / "out" / "p.png")
+    prompt = got[0] + painter.gen.prompt_suffix
+    cached = painter._cache_path(painter._key(prompt, 64, 64))
+    os.makedirs(os.path.dirname(cached))
+    with open(cached, "wb") as fh:
+        fh.write(_png(64, 64))
+    assert painter.picture(got[0], 64, 64, target)
+    assert painter.prompts[target] == prompt and painter.ru[target] == answer["ru"][0]
+
+    with FakeModel(answer={"scenes": answer["scenes"], "ru": []}) as fake:
+        lost: dict[str, str] = {}
+        got, _how = images.scenes(ideas, _gen(tmp_path), replace(config, cache_root=str(tmp_path / "llm2"),
+                                  endpoint=client.Endpoint(base_url=fake.base_url)), translations=lost)
+    assert got == answer["scenes"] and lost == {}
+
+
 def test_deck_without_model_gets_no_pictures(tmp_path):
     doc = _doc(ideas=3)
     doc = ContentDoc(name=doc.name, sections=doc.sections, planner="deterministic")

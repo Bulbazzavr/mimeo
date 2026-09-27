@@ -326,7 +326,8 @@ function promptsBlock(pictures) {
   if (!pictures || !pictures.length) return '';
   return '<details class="prompts"><summary>Картинки генератора: '
     + pictures.length + ' — с чем их рисовали</summary><ul>'
-    + pictures.map((p) => '<li><b>Слайд ' + p.slide + '.</b> ' + escape(p.prompt) + '</li>').join('')
+    + pictures.map((p) => '<li><b>Слайд ' + p.slide + '.</b> ' + escape(p.prompt)
+      + (p.ru ? '<br><span class="ru">' + escape(p.ru) + '</span>' : '') + '</li>').join('')
     + '</ul></details>';
 }
 

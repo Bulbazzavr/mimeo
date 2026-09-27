@@ -56,7 +56,8 @@
               "required": ["slide", "prompt"],
               "properties": {
                 "slide": {"type": "integer", "minimum": 1, "description": "Номер слайда в файле, 1-based."},
-                "prompt": {"type": "string", "description": "Промпт генератора целиком: сцена, написанная моделью, и хвост из config/generator.json (prompt_suffix)."}
+                "prompt": {"type": "string", "description": "Промпт генератора целиком: сцена, написанная моделью, и хвост из config/generator.json (prompt_suffix). С 1.3 конфига — по-английски."},
+                "ru": {"type": "string", "description": "Перевод сцены на русский, который модель дала вместе с ней, — для человека. Необязательное: нет перевода — нет поля."}
               }
             }
           }
