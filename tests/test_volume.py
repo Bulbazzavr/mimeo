@@ -346,3 +346,20 @@ def test_plural_of_slides_and_parts():
         "слайд", "слайда", "слайда", "слайдов", "слайдов", "слайдов", "слайдов",
         "слайд", "слайда", "слайдов",
     ]
+
+
+def test_default_volume_is_a_ceiling_only_for_the_path_without_model():
+    """`Z-70`: без `--slides` путь без модели держит потолок ТЗ — не больше 15, —
+    не добирая до 10 (добор по умолчанию портил колоды, `Z-35`); колоде модели
+    объём не навязывается: её рамки — в промпте."""
+    from types import SimpleNamespace
+
+    from mimeo import cli
+    from mimeo.plan.deterministic import _volume_note
+
+    assert cli.DEFAULT_VOLUME == (1, 15)
+    assert cli.volume_for(SimpleNamespace(planner="deterministic"), None) == (1, 15)
+    assert cli.volume_for(SimpleNamespace(planner="mixed"), None) is None
+    assert cli.volume_for(SimpleNamespace(planner="mixed"), (8, 12)) == (8, 12)
+    assert "не больше 15" in _volume_note(12, cli.DEFAULT_VOLUME, {}, 40)
+    assert "превышен" in _volume_note(17, cli.DEFAULT_VOLUME, {}, 40)

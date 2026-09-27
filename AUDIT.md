@@ -86,11 +86,11 @@ python tools/audit_doc.py --write
 | [`tests/test_verify_repair.py`](tests/test_verify_repair.py) | 20 | Ремонт плана шкалой кегля: монотонность, предел читаемости, честность. |
 | [`tests/test_verify_space.py`](tests/test_verify_space.py) | 32 | Доступное место вместо бокса (`PLAN-4.2`, `ADR-0015`). |
 | [`tests/test_visuals.py`](tests/test_visuals.py) | 25 | Таблицы и диаграммы (`Z-32`, `PLAN-10.0`, `ADR-0026`). |
-| [`tests/test_volume.py`](tests/test_volume.py) | 19 | Объём колоды: 10–15 слайдов или сколько задали. `Z-35`, план `PLAN-2.3`. |
+| [`tests/test_volume.py`](tests/test_volume.py) | 20 | Объём колоды: 10–15 слайдов или сколько задали. `Z-35`, план `PLAN-2.3`. |
 | [`tests/test_web_boundary.py`](tests/test_web_boundary.py) | 5 | Граница веб-слоя (`Z-29`, `PLAN-8.0`, `SPEC-WEB` раздел 2). |
 | [`tests/test_web_content.py`](tests/test_web_content.py) | 3 | Контент-пакет в вебе: текст файлом и картинки к нему (`Z-73`). |
 | [`tests/test_web_design.py`](tests/test_web_design.py) | 13 | Экран «что вынули из вашего шаблона» (`Z-29`, `PLAN-8.1`, часть A). |
-| **всего** | **736** | в 52 файлах |
+| **всего** | **737** | в 52 файлах |
 
 <!-- /порождается -->
 

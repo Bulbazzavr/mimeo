@@ -234,11 +234,24 @@ def _patterns_summary(lib: PatternLibrary) -> str:
     return NL.join(lines)
 
 
-#: Целевой объём колоды из ТЗ (раздел 2, «Рамки решения»). По умолчанию НЕ
-#: включён: замер показал, что цель 10–15 меняет 12 колод из 14 на размеченном
-#: контенте (`WORKLOG/2026-09-15-deck-volume.md`), а молча менять давно
-#: работающий результат нельзя. Кто хочет рамки ТЗ — просит их явно.
+#: Целевой объём колоды из ТЗ (раздел 2, «Рамки решения»). Колоде модели он
+#: рамки промпта, если `--slides` не задан (`outline.TZ_FRAMES`). Пути без
+#: модели целиком по умолчанию НЕ включён: добор до 10 менял 12 колод из 14 на
+#: размеченном контенте (`WORKLOG/2026-09-15-deck-volume.md`, `Z-35`).
 TZ_SLIDES = "10-15"
+#: Объём пути без модели, когда `--slides` не задан (`Z-70`): **потолок** ТЗ —
+#: не больше 15 слайдов, — без добора до 10. Замер `Z-35` был про добор; без
+#: потолка текст из 12 абзацев давал 19 слайдов на VK Tech, а ТЗ велит 10–15.
+DEFAULT_VOLUME = (1, int(TZ_SLIDES.split("-")[1]))
+
+
+def volume_for(doc, target):
+    """Объём для вёрстки: заданный — как задан; не задан — колоде модели
+    ничего (её рамки — в промпте, слайды она строит сама), пути без модели —
+    потолок ТЗ (`DEFAULT_VOLUME`)."""
+    if target:
+        return target
+    return None if getattr(doc, "planner", None) == "mixed" else DEFAULT_VOLUME
 
 
 def parse_slides(value: str | None) -> tuple[int, int] | None:
@@ -343,11 +356,12 @@ def cmd_plan(args):
     started = time.perf_counter()
     analysis = analyze_template(args.template)
     target = parse_slides(getattr(args, "slides", None))
-    doc = load_content(args.content, target=target)
+    # Запасной документ — путь без модели: без `--slides` — потолок ТЗ (`Z-70`).
+    doc = load_content(args.content, target=target or DEFAULT_VOLUME)
     outcome, record_path = model_path(args, doc, target)
     plan = plan_deck(
         _visuals(outcome.doc, analysis), analysis.patterns, analysis.design_system.source.sha256,
-        target=target,
+        target=volume_for(outcome.doc, target),
     )
     elapsed = time.perf_counter() - started
 
@@ -515,7 +529,8 @@ def cmd_build(args):
         args.audit = True           # исправили — проверить заново
     analysis = analyze_template(args.template)
     target = parse_slides(getattr(args, "slides", None))
-    doc = load_content(args.content, target=target)
+    # Запасной документ — путь без модели: без `--slides` — потолок ТЗ (`Z-70`).
+    doc = load_content(args.content, target=target or DEFAULT_VOLUME)
     # Отказ сервера модели — один на сборку: колода, сцены и зрение о
     # картинках донора его разделяют (`client.Outage`).
     outage = Outage()
@@ -523,6 +538,9 @@ def cmd_build(args):
     # «Следствия» — три вёрстки одного содержания).
     outcome, record_path = model_path(args, doc, target, outage=outage)
     doc, painter, picture_note = _pictures(args, _visuals(outcome.doc, analysis), analysis, outage)
+    # Объём вёрстки: колоде модели — только заданный (рамки промпта она уже
+    # получила выше), пути без модели — и потолок ТЗ по умолчанию (`Z-70`).
+    target = volume_for(doc, target)
 
     # Несколько вариантов вёрстки — отдельная ветка (`ADR-0020`, `Z-26`).
     # Умолчание не меняется: без флага собирается одна колода ровно как раньше.
@@ -863,8 +881,8 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument(
         "--slides",
         metavar="N|N-M",
-        help=f"целевое число слайдов; рамки ТЗ — {TZ_SLIDES}. "
-             "По умолчанию объём определяется контентом",
+        help=f"целевое число слайдов; рамки ТЗ — {TZ_SLIDES}. По умолчанию модель "
+             f"получает рамки ТЗ, путь без модели — только потолок {DEFAULT_VOLUME[1]} (Z-70)",
     )
     plan.add_argument("-q", "--quiet", action="store_true", help="без сводки")
     _add_model_args(plan)
@@ -886,8 +904,8 @@ def build_parser() -> argparse.ArgumentParser:
     build.add_argument(
         "--slides",
         metavar="N|N-M",
-        help=f"целевое число слайдов; рамки ТЗ — {TZ_SLIDES}. "
-             "По умолчанию объём определяется контентом",
+        help=f"целевое число слайдов; рамки ТЗ — {TZ_SLIDES}. По умолчанию модель "
+             f"получает рамки ТЗ, путь без модели — только потолок {DEFAULT_VOLUME[1]} (Z-70)",
     )
     build.add_argument(
         "--variants",

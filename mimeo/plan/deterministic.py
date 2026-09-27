@@ -814,7 +814,9 @@ def _volume_note(
     ради объёма не делит (`PLAN-9.0`, Ш5).
     """
     low, high = target
-    want = f"{low}" if low == high else f"{low}–{high}"
+    # Нижней рамки 1 не бывает у человека: это потолок ТЗ по умолчанию
+    # (`cli.DEFAULT_VOLUME`, `Z-70`) — без добора, только «не больше».
+    want = f"{low}" if low == high else (f"не больше {high}" if low <= 1 else f"{low}–{high}")
     if low <= got <= high:
         note = f"Целевой объём {want} слайдов выдержан: вышло {got}."
         if got > patterns:
