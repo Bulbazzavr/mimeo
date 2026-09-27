@@ -25,7 +25,12 @@
     <h2>2. Текст</h2>
     <p class="hint">Сплошная проза, как её пишет заказчик: без разметки, абзацами, с числами.
        Движок сам режет её на темы.</p>
+    <label class="file">
+      <input type="file" id="content" accept=".txt,.md,.png,.jpg,.jpeg,.gif,.bmp,.webp" multiple>
+      <span id="content-name">Или загрузите контент: текст файлом (.txt, .md) и картинки к нему</span>
+    </label>
     <textarea id="text" rows="12" placeholder="Сделай презентацию про наш проект, минут на десять…"></textarea>
+    <p class="hint" id="content-images" hidden></p>
     <p class="hint"><button type="button" class="link" id="fill-example">Подставить пример из корпуса</button></p>
 
     <h2>3. Как собирать</h2>

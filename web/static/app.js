@@ -73,6 +73,78 @@ $('template').addEventListener('change', async (event) => {
 
 $('fill-example').addEventListener('click', () => { $('text').value = EXAMPLE; });
 
+/* --- контент-пакет (Z-73) ---------------------------------------------- */
+
+/* ТЗ, раздел 2, п. 1: «импорт… контент-пакетов». Текст файлом ложится в поле —
+   его видно и можно поправить; картинки уходят на сервер перед сборкой и
+   встают в каталог прогона рядом с текстом. Движок берёт картинку, названную
+   в тексте, поэтому неназванные дописываются в конец текста строкой — модель
+   разложит их по слайдам по смыслу имени. */
+const IMAGE_EXT = /\.(png|jpe?g|gif|bmp|webp)$/i;
+let images = [];
+
+/* Знаки, которые обрывают путь в прозе, — то же правило, что у сервера
+   (serve.py, safe_image_name): иначе движок не узнал бы имя в тексте. */
+function safeName(name) {
+  return name.trim().replace(/[\s,;:()«»"'[\]]+/g, '_');
+}
+
+async function readText(file) {
+  const bytes = await file.arrayBuffer();
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch (error) {
+    return new TextDecoder('windows-1251').decode(bytes);
+  }
+}
+
+function mentionImages() {
+  const text = $('text').value;
+  const missing = images.map((f) => safeName(f.name)).filter((n) => !text.includes(n));
+  if (missing.length) {
+    $('text').value = text.replace(/\s+$/, '') + '\n\nПриложенные картинки: ' + missing.join(', ') + '.';
+  }
+}
+
+function showImages() {
+  const box = $('content-images');
+  box.hidden = !images.length;
+  box.innerHTML = images.length
+    ? 'Картинки: ' + escape(images.map((f) => safeName(f.name)).join(', '))
+      + ' — названные в тексте встанут на свои слайды. '
+      + '<button type="button" class="link" id="drop-images">Убрать картинки</button>'
+    : '';
+  const drop = $('drop-images');
+  if (drop) drop.addEventListener('click', () => { images = []; showImages(); });
+}
+
+$('content').addEventListener('change', async (event) => {
+  const files = Array.from(event.target.files || []);
+  const texts = files.filter((f) => /\.(txt|md)$/i.test(f.name));
+  const pictures = files.filter((f) => IMAGE_EXT.test(f.name));
+  if (texts.length) $('text').value = (await readText(texts[0])).trim();
+  for (const file of pictures) {
+    images = images.filter((f) => safeName(f.name) !== safeName(file.name)).concat([file]);
+  }
+  mentionImages();
+  showImages();
+  const skipped = files.length - texts.length - pictures.length;
+  $('content-name').textContent = (texts.length ? 'Текст: ' + texts[0].name : 'Текст — в поле ниже')
+    + (pictures.length ? '; картинок добавлено: ' + pictures.length : '')
+    + (texts.length > 1 ? '; взят первый текст из ' + texts.length : '')
+    + (skipped ? '; пропущено файлов другого вида: ' + skipped : '');
+  event.target.value = '';            /* тот же файл можно выбрать ещё раз */
+});
+
+async function uploadImages() {
+  for (const file of images) {
+    const response = await fetch('/api/content?token=' + encodeURIComponent(token)
+      + '&name=' + encodeURIComponent(safeName(file.name)), { method: 'POST', body: file });
+    const data = await response.json();
+    if (!data.ok) throw new Error('картинка ' + file.name + ': ' + (data.error || 'не загрузилась'));
+  }
+}
+
 /* --- что вынули из шаблона (PLAN-8.1, часть A) -------------------------- */
 
 /* Запрашивается сразу после загрузки файла и НЕ задерживает форму: человек в
@@ -185,6 +257,7 @@ $('go').addEventListener('click', async () => {
     : 'Модель строит колоду — до минуты…', 'working');
 
   try {
+    await uploadImages();
     const response = await fetch('/api/build', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

@@ -29,6 +29,7 @@ import glob
 import json
 import mimetypes
 import os
+import re
 import secrets
 import shutil
 import subprocess
@@ -55,6 +56,46 @@ MAX_TEMPLATE_BYTES = 100 * 1024 * 1024
 #: Потолок на текст. Основной вход корпуса — 1651 знак; миллион это заведомо
 #: больше всего разумного и заведомо меньше того, чем можно навредить.
 MAX_TEXT_CHARS = 1_000_000
+#: Картинки контент-пакета (`Z-73`, ТЗ, раздел 2, п. 1: «импорт… контент-
+#: пакетов»). Расширения — те, по которым движок узнаёт картинку в прозе
+#: (`plan/content.py`, `_IMAGE_SUFFIXES`); продублированы, потому что
+#: `import mimeo` здесь запрещён.
+ALLOWED_IMAGES = (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp")
+MAX_IMAGE_BYTES = 20 * 1024 * 1024
+MAX_IMAGES = 30
+#: Путь к картинке внутри прозы — тот же признак, что у движка
+#: (`plan/content.py`, `_PATH_IN_PROSE`). Знаки, которые его обрывают, из имени
+#: загруженного файла заменяются подчёркиванием: иначе имя «схема 1.png»
+#: движок в тексте не узнал бы.
+_PATH_IN_PROSE = re.compile(r"""[^\s,;:()«»"'\[\]]+\.(?:png|jpe?g|gif|bmp|webp)""", re.IGNORECASE)
+_NAME_BREAKERS = re.compile(r"""[\s,;:()«»"'\[\]]+""")
+
+
+def safe_image_name(name: str) -> str:
+    """Имя загруженной картинки, которое движок узнает в тексте. То же правило
+    — в `app.js`, `safeName`: строка «Приложенные картинки» пишется там."""
+    return _NAME_BREAKERS.sub("_", os.path.basename(name).strip())
+
+
+def place_uploads(text: str, run_dir: str, uploads: list[str]) -> list[str]:
+    """Картинка, названная в тексте путём с каталогами (`img/схема.png`), а
+    загруженная файлом `схема.png`, копируется по этому пути внутри прогона:
+    движок ищет её от каталога текста (`plan/content.py`, `resolve_image`).
+    Путь наружу прогона не выходит — абсолютный и с `..` пропускаются.
+    Возвращает положенные пути."""
+    placed = []
+    root = os.path.abspath(run_dir)
+    for ref in dict.fromkeys(_PATH_IN_PROSE.findall(text)):
+        base = ref.replace("\\", "/").rsplit("/", 1)[-1]
+        if base == ref or base not in uploads or os.path.isabs(ref) or ":" in ref:
+            continue
+        target = os.path.abspath(os.path.join(root, ref))
+        if not target.startswith(root + os.sep):
+            continue
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        shutil.copyfile(os.path.join(root, base), target)
+        placed.append(ref)
+    return placed
 #: Сколько вариантов вёрстки можно попросить. Потолок — **число политик ранга**
 #: в `config/variants.json`: больше колод движку просто не из чего породить.
 #: Замер 22 сентября: при 27 запрошенных реально отбирается 9 на VK Tech, 5 на
@@ -363,6 +404,8 @@ class Handler(BaseHTTPRequestHandler):
         url = urllib.parse.urlparse(self.path)
         if url.path == "/api/template":
             return self._upload(urllib.parse.parse_qs(url.query))
+        if url.path == "/api/content":
+            return self._content(urllib.parse.parse_qs(url.query))
         if url.path == "/api/build":
             return self._build()
         if url.path == "/api/fix":
@@ -408,6 +451,35 @@ class Handler(BaseHTTPRequestHandler):
             _RUNS[token]["template"] = target
         self._json({"ok": True, "token": token, "name": name, "bytes": len(payload)})
 
+    # --- контент-пакет -------------------------------------------------
+
+    def _content(self, query: dict) -> None:
+        """Картинка контент-пакета (`Z-73`): сырые байты, имя и токен прогона
+        в параметрах — как у шаблона. Ложится в каталог прогона рядом с
+        `content.md`: движок ищет картинки, названные в тексте, от каталога
+        текста. Текст файлом сервер не принимает — страница читает его сама и
+        кладёт в поле, где его видно и можно поправить."""
+        run = _run(str((query.get("token") or [""])[0]))
+        if not run:
+            return self._fail(400, "шаблон не загружен — начните с него")
+        name = safe_image_name(urllib.parse.unquote((query.get("name") or [""])[0]))
+        if not name.lower().endswith(ALLOWED_IMAGES) or name.startswith("."):
+            return self._fail(400, "картинка должна быть .png, .jpg, .gif, .bmp или .webp")
+        with _LOCK:
+            uploads = run.setdefault("uploads", [])
+            too_many = name not in uploads and len(uploads) >= MAX_IMAGES
+        if too_many:
+            return self._fail(400, f"картинок больше {MAX_IMAGES}")
+        payload = self._body(MAX_IMAGE_BYTES)
+        if payload is None:
+            return self._fail(400, "пустой файл или больше 20 МБ")
+        with open(os.path.join(run["dir"], name), "wb") as fh:
+            fh.write(payload)
+        with _LOCK:
+            if name not in uploads:
+                uploads.append(name)
+        self._json({"ok": True, "name": name, "bytes": len(payload)})
+
     # --- сборка --------------------------------------------------------
 
     def _build(self) -> None:
@@ -432,6 +504,8 @@ class Handler(BaseHTTPRequestHandler):
         content = os.path.join(run["dir"], "content.md")
         with open(content, "w", encoding="utf-8") as fh:
             fh.write(text)
+        # Картинки контент-пакета, названные в тексте путём с каталогами.
+        place_uploads(text, run["dir"], list(run.get("uploads") or ()))
 
         report_path = os.path.join(run["dir"], "report.json")
         raw = request.get("variants")
