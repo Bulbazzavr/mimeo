@@ -42,6 +42,10 @@
           "render_report": {
             "type": ["string", "null"],
             "description": "Путь к отчёту проверки вёрстки (contracts/render-report.schema.json) или null, если стадия VERIFY не запускалась. null значит «не проверяли», а не «дефектов нет» — главное правило проекта, и потребитель обязан их различать."
+          },
+          "audit": {
+            "type": ["string", "null"],
+            "description": "Путь к отчёту аудита слайдов (build --audit, Z-34, contracts/audit.schema.json) или null — аудит не запускался. Необязательное поле (правило 3 контрактов), 27 сентября: версия контракта прежняя."
           }
         }
       }

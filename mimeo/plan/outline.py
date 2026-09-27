@@ -220,18 +220,48 @@ def load_config(path: str | None = None) -> tuple[str, dict[str, str], dict[str,
     return "".join(data["system"]), dict(data["theses"]), dict(data["volume"]), True
 
 
-def system_prompt(mode: str, slides_min: int, slides_max: int, path: str | None = None) -> str:
+#: Назначения презентации — ТЗ, бизнес-задача 2: «фича, продукт, проект,
+#: инициатива» (`Z-37`). Каркас каждого — `config/outline.json`, `purpose`.
+PURPOSES = ("feature", "product", "project", "initiative")
+
+
+def purpose_line(purpose: str | None, path: str | None = None) -> str:
+    """Строка каркаса назначения для системного промпта; нет назначения — пусто.
+
+    Назначение задаёт **порядок и группировку** тем автора, а не новые разделы
+    (`CTX-NARRATIVE`, «Граница»): роли, о которой в тексте нет ни слова, модель
+    не добавляет. Не задано — промпт ровно прежний, и ключи кэша тоже."""
+    if not purpose:
+        return ""
+    if purpose not in PURPOSES:
+        raise ValueError(f"назначение {purpose!r}: ждём одно из {PURPOSES}")
+    try:
+        with open(path or config_path(), encoding="utf-8") as fh:
+            block = json.load(fh)["purpose"]
+    except (OSError, ValueError, KeyError):
+        # Файла или блока нет: каркас назначения без него не собрать, и
+        # подставить свой из кода значило бы зашить промпт (Z-72).
+        return ""
+    return (block["line"].replace("{name}", block[purpose]["name"])
+            .replace("{order}", block[purpose]["order"]))
+
+
+def system_prompt(mode: str, slides_min: int, slides_max: int, path: str | None = None,
+                  purpose: str | None = None) -> str:
     """Системный промпт режима `mode` с рамками объёма. Блоки режима
-    подставляются раньше рамок: правило объёма само называет нижнюю рамку."""
+    подставляются раньше рамок: правило объёма само называет нижнюю рамку.
+    `purpose` — назначение (`Z-37`): строка каркаса в конце промпта."""
     if mode not in MODES:
         raise ValueError(f"режим текста {mode!r}: ждём один из {MODES}")
     common, theses, volume, _ = load_config(path)
-    return (
+    prompt = (
         common.replace("{volume}", volume[mode])
         .replace("{theses}", theses[mode])
         .replace("{slides_min}", str(slides_min))
         .replace("{slides_max}", str(slides_max))
     )
+    line = purpose_line(purpose, path)
+    return prompt + ("\n" + line if line else "")
 
 
 # --- Какие идеи картинок идут в план колоды (`PLAN-9.0`, Ш6) -----------------
@@ -626,7 +656,7 @@ RECORD_VERSION = "1.0"
 
 
 def request(text: str, mode: str, frames: tuple[int, int], transport=None, label: str = "колода",
-            history: tuple[dict, ...] = ()):
+            history: tuple[dict, ...] = (), purpose: str | None = None):
     """Запрос колоды: системный промпт режима с рамками и текст автора целиком.
     `history` — прошлый ответ и поправки, если это повтор (`retry_history`).
 
@@ -645,7 +675,7 @@ def request(text: str, mode: str, frames: tuple[int, int], transport=None, label
         user += "\n\nОтветь одним JSON-объектом по схеме:\n" + json.dumps(
             RESPONSE_SCHEMA, ensure_ascii=False)
     return Request(
-        mode=transport, system=system_prompt(mode, frames[0], frames[1]), user=user,
+        mode=transport, system=system_prompt(mode, frames[0], frames[1], purpose=purpose), user=user,
         schema=RESPONSE_SCHEMA, section_id=label, candidates=(),
         name=_NAME, tool=_TOOL, purpose=_PURPOSE, history=tuple(history),
     )
@@ -821,13 +851,17 @@ def _source(chosen: bool, default: str) -> str:
 
 def run(path: str, fallback, *, access: str | None = None, text_mode: str | None = None,
         target: tuple[int, int] | None = None, config=None, prose_cfg=None,
-        closing_captions=None, outage=None) -> Outcome:
+        closing_captions=None, outage=None, revise: tuple[str, ...] = (),
+        revise_prompt: str = "", purpose: str | None = None) -> Outcome:
     """Путь модели для одной сборки: решить, звать ли, спросить, проверить.
 
     `fallback` — документ `load_content`: он же признак прозы (`origin`) и он
     же колода, если модель не дала годного ответа. `access` и `text_mode` —
     флаги (`None` — не заданы); `target` — `--slides`; `outage` — отказ
-    сервера, общий на сборку (`client.Outage`).
+    сервера, общий на сборку (`client.Outage`). `revise` — выбранные
+    находки аудита строками (`build --fix`, `Z-34`): принятую колоду модель
+    переписывает по ним, `revise_prompt` — что ей сказать
+    (`config/audit.json`, `slides.revise`).
     """
     from . import client as model_client
     from .validate import extract_json
@@ -862,6 +896,8 @@ def run(path: str, fallback, *, access: str | None = None, text_mode: str | None
         "retry": None,
         "deck": None,
     }
+    if purpose:
+        record["purpose"] = purpose
 
     def done(status: str, line: str, doc=None) -> Outcome:
         # Та же строка — заметкой в предупреждения плана: веб видит итог сборки
@@ -880,9 +916,11 @@ def run(path: str, fallback, *, access: str | None = None, text_mode: str | None
         text = fh.read()
     record["text"].update(chars=len(text), content=text)
     head = (f"{access_value} ({access_src}), текст {mode} ({mode_src}), "
-            f"рамки {frames[0]}–{frames[1]} ({frames_src}): ")
+            f"рамки {frames[0]}–{frames[1]} ({frames_src})"
+            + (f", назначение {purpose}" if purpose else "") + ": ")
 
-    req = request(text, mode, frames, config.mode, label=f"колода {os.path.basename(path)} {mode}")
+    req = request(text, mode, frames, config.mode, label=f"колода {os.path.basename(path)} {mode}",
+                  purpose=purpose)
     client = model_client.ModelClient(
         replace(config, access=model_client.Access(access_value)), inputs=(path,), outage=outage)
     record["key"] = client.key(req)
@@ -929,7 +967,8 @@ def run(path: str, fallback, *, access: str | None = None, text_mode: str | None
         # Судят его те же проверки; не прошёл — путь без модели, как раньше.
         history = retry_history(answer.text, checks)
         again = request(text, mode, frames, config.mode,
-                        label=f"колода {os.path.basename(path)} {mode} повтор", history=history)
+                        label=f"колода {os.path.basename(path)} {mode} повтор", history=history,
+                        purpose=purpose)
         answer2, got2, parsed2, checks2, status2 = ask(again)
         record["retry"] = {"request": history[1]["content"], "key": client.key(again)}
         if status2 == "no_answer":
@@ -945,10 +984,38 @@ def run(path: str, fallback, *, access: str | None = None, text_mode: str | None
         answer, parsed = answer2, parsed2
         said = f"со второй попытки: первый — {got} — {verdict}, повтор — {got2}"
 
+    where = said if record["retry"] else got
+    if revise:
+        # Правка по аудиту (`Z-34`): принятая колода и выбранные находки по
+        # заголовкам слайдов. Судят те же проверки; не прошла — в вёрстку идёт
+        # прежняя колода, и строка сводки это говорит.
+        ask_fix = (revise_prompt or "Проверка готовых слайдов нашла:\n{findings}\n"
+                   "Исправь названные слайды, прочие оставь как были; новых чисел и фактов "
+                   "не добавляй. Верни колоду целиком тем же JSON.")
+        fix_text = ask_fix.replace("{findings}", "\n".join(f"- {line}" for line in revise))
+        history = ({"role": "assistant", "content": answer.text}, {"role": "user", "content": fix_text})
+        again = request(text, mode, frames, config.mode,
+                        label=f"колода {os.path.basename(path)} {mode} правка аудита", history=history,
+                        purpose=purpose)
+        answer3, got3, parsed3, checks3, status3 = ask(again)
+        record["revise"] = {"request": fix_text, "key": client.key(again), "accepted": False}
+        if status3 == "no_answer":
+            record["revise"].update(answer_source=None, seconds=None, answer=None, checks=[])
+            where += f"; правка по аудиту не удалась: {answer3.note} — колода прежняя"
+        else:
+            record["revise"].update(attempt(answer3, parsed3, checks3))
+            if status3 == "accepted":
+                record["revise"]["accepted"] = True
+                answer, parsed = answer3, parsed3
+                where += f"; правка по аудиту (находок: {len(revise)}) — {got3}, её проверки пройдены"
+            else:
+                why = ("не разобралась как JSON" if status3 == "unparsed"
+                       else f"отвергнута проверками {failed(checks3)}")
+                where += f"; правка по аудиту — {got3} — {why}, колода прежняя"
+
     doc, _notes, deck = to_doc(parsed, text, path, fallback.name, prose_cfg)
     record["deck"] = deck
     kept = "записан в кэш, " if answer.source == "model" else ""
-    where = said if record["retry"] else got
     return done("accepted", head + f"колоду построила модель — {where}, {kept}проверки пройдены; "
                 f"слайдов в ответе {len(parsed['slides'])}", doc)
 

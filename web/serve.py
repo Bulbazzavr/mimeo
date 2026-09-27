@@ -277,6 +277,9 @@ def _read_json(path: str):
 #: Режимы текста модели — те же, что у `build --text` (`mimeo.plan.outline.MODES`);
 #: импортировать движок веб не вправе, совпадение стережёт тест.
 TEXT_MODES = ("keep", "improve")
+#: Назначения презентации — те же, что `outline.PURPOSES`; `import mimeo` здесь
+#: запрещён (веб зовёт движок только командной строкой), сверяет тест.
+PURPOSES = ("feature", "product", "project", "initiative")
 
 
 def _model_summary(run_dir: str) -> dict | None:
@@ -362,6 +365,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._upload(urllib.parse.parse_qs(url.query))
         if url.path == "/api/build":
             return self._build()
+        if url.path == "/api/fix":
+            return self._fix()
         self._fail(404, "нет такого адреса")
 
     # --- отдача страницы -----------------------------------------------
@@ -459,11 +464,26 @@ class Handler(BaseHTTPRequestHandler):
         text_mode = str(request.get("text_mode") or "")
         if text_mode in TEXT_MODES:
             argv += ["--text", text_mode]
+        # Назначение (`Z-37`): пусто — не задано, порядок по тексту.
+        purpose = str(request.get("purpose") or "")
+        if purpose in PURPOSES:
+            argv += ["--purpose", purpose]
         if variants > 1:
             argv += ["--variants", str(variants)]
         if verify_requested:
-            argv += ["--verify"]
+            # Аудит слайдов (`Z-34`) идёт с проверкой вёрстки: обоим нужен
+            # PowerPoint, и оба про то, что увидит зритель.
+            argv += ["--verify", "--audit"]
+        with _LOCK:
+            # Для «исправить отмеченное»: та же сборка плюс выбор (`/api/fix`).
+            run["argv"] = list(argv)
+            run["verify_requested"] = verify_requested
+            run["variants"] = variants
+        return self._run_engine(run, argv, verify_requested, variants, report_path)
 
+    def _run_engine(self, run: dict, argv: list, verify_requested: bool, variants: int,
+                    report_path: str) -> None:
+        """Сборка движком и ответ странице — общий у `/api/build` и `/api/fix`."""
         # Проверка вёрстки поднимает PowerPoint, а он одноэкземплярный. Сборка
         # **ждёт** замок, в отличие от превью: её попросили кнопкой, и ответить
         # «занято» на прямое действие хуже, чем подождать. Предел ожидания есть
@@ -499,8 +519,15 @@ class Handler(BaseHTTPRequestHandler):
             }, 500)
 
         decks = report.get("decks") or []
+        # Отчёты аудита (`Z-34`) — как есть, по схеме `contracts/audit.schema.json`:
+        # `null` — аудит не запускался, а не «находок нет».
+        audits = []
+        for deck in decks:
+            path = deck.get("audit")
+            audits.append(_read_json(os.path.join(ROOT, path)) if path else None)
         with _LOCK:
             run["decks"] = [d.get("path") for d in decks]
+            run["audits"] = audits
             # Колоды пересобраны — старые картинки к ним больше не относятся.
             # Оставить их значило бы показать прошлую вёрстку как нынешнюю
             # (`PLAN-8.2`, логическая проверка 1, дыра 5).
@@ -525,6 +552,7 @@ class Handler(BaseHTTPRequestHandler):
             "model": _model_summary(run["dir"]),
             "verify": verify,
             "verify_requested": verify_requested,
+            "audit": audits,
             # Сколько вариантов просили — говорит **сервер**, а не поле формы.
             # Страница читала поле в момент показа, и стоило его тронуть после
             # сборки, как подпись «вышло 1 из 3» начинала врать о том, чего не
@@ -534,6 +562,33 @@ class Handler(BaseHTTPRequestHandler):
             "seconds": round(elapsed, 2),
             "stderr": (proc.stderr or "")[-4000:],
         })
+
+    def _fix(self) -> None:
+        """«Исправить отмеченное» (`Z-34`): та же сборка, что прошлая, плюс
+        выбранные находки аудита файлом — `build --fix`. Смысловые переписывает
+        модель, вёрсточные ужимаются; после — аудит заново."""
+        payload = self._body(1 << 20)
+        if payload is None:
+            return self._fail(400, "пустой запрос")
+        try:
+            request = json.loads(payload.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            return self._fail(400, "тело не разобралось как JSON")
+        run = _run(str(request.get("token") or ""))
+        if not run or not run.get("argv"):
+            return self._fail(400, "сначала соберите колоду")
+        ids = {str(i) for i in request.get("ids") or ()}
+        picked = [f for audit in run.get("audits") or () if audit
+                  for f in audit.get("findings") or () if f.get("id") in ids and f.get("fix")]
+        if not picked:
+            return self._fail(400, "не отмечено ни одной исправимой находки")
+        fix_path = os.path.join(run["dir"], "fix.json")
+        with open(fix_path, "w", encoding="utf-8") as fh:
+            json.dump({"findings": picked}, fh, ensure_ascii=False, indent=2)
+        argv = list(run["argv"]) + ["--fix", fix_path]
+        report_path = argv[argv.index("--report") + 1]
+        return self._run_engine(run, argv, bool(run.get("verify_requested")),
+                                int(run.get("variants") or 1), report_path)
 
     # --- что вынули из шаблона -----------------------------------------
 

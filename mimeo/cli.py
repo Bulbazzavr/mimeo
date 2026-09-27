@@ -57,10 +57,17 @@ def model_path(args, doc, target, config=None, outage=None):
     ответами из своего каталога (`PLAN-9.0`, Ш9), а не своей копией вызова.
     `outage` — отказ сервера модели, общий на сборку (`client.Outage`).
     """
+    revise, revise_prompt = (), ""
+    picks = getattr(args, "fix_picks", None) or ()
+    if picks:
+        from .audit import fix, vision
+
+        revise, revise_prompt = fix.revise_lines(list(picks)), vision.load_config().revise
     outcome = outline.run(
         args.content, doc,
         access=getattr(args, "llm", None), text_mode=getattr(args, "text", None),
         target=target, config=config or load_model_config(), outage=outage,
+        revise=revise, revise_prompt=revise_prompt, purpose=getattr(args, "purpose", None),
     )
     return outcome, outline.write_record(args.out, outcome.record)
 
@@ -374,12 +381,13 @@ def _slash(path):
     return path.replace("\\", "/") if isinstance(path, str) else path
 
 
-def _deck_entry(path, slides, variant, problems, render_report):
+def _deck_entry(path, slides, variant, problems, render_report, audit=None):
     """Одна колода в отчёте.
 
     `render_report` — путь или **`None`**, и `None` значит «стадия VERIFY не
     запускалась», а не «дефектов нет». Это главное правило проекта, и здесь оно
-    держится типом: пустой строкой такое не выразить, а нулём тем более.
+    держится типом: пустой строкой такое не выразить, а нулём тем более. Так же
+    `audit` — путь к отчёту аудита (`Z-34`) или `None`: аудит не запускался.
     """
     return {
         "path": _slash(path),
@@ -387,7 +395,59 @@ def _deck_entry(path, slides, variant, problems, render_report):
         "variant": variant,
         "structural_problems": len(problems),
         "render_report": _slash(render_report),
+        "audit": _slash(audit),
     }
+
+
+def _fix_picks(args):
+    """Выбранные находки аудита для `build --fix` (`Z-34`, `audit/fix.py`):
+    пусто — исправлять нечего. Файла нет или он не читается — это ошибка
+    запуска, а не «исправлять нечего»: молча собрать прежнюю колоду значило бы
+    сказать «исправлено», не исправив."""
+    spec = getattr(args, "fix", None)
+    if not spec:
+        return []
+    from .audit import fix
+
+    try:
+        return fix.load(spec, args.out)
+    except (OSError, ValueError) as exc:
+        raise SystemExit(f"--fix: не прочитать выбор находок {spec}: {exc}")
+
+
+def _shrunk(plan, library, picks, variant):
+    """План с ужатыми по выбору слайдами (`layout`) и строка об этом."""
+    from .audit import fix
+
+    titles = fix.layout_titles(picks, variant)
+    plan, hit = fix.shrink(plan, library, titles)
+    if not titles:
+        return plan, None
+    return plan, (f"Исправление по аудиту: ужато слайдов {hit} из {len(titles)} выбранных"
+                  + ("" if hit == len(titles) else " — прочие не нашлись по заголовку в новой колоде")
+                  + " (Z-34).")
+
+
+def _audited(args, path, plan, library, built, verdict_path, variant, outage):
+    """Аудит собранной колоды (`Z-34`): отчёт рядом с ней и строки сводки."""
+    from dataclasses import replace as _replace
+
+    from . import audit
+
+    model = load_model_config()
+    access = getattr(args, "llm", None)
+    if access is not None:
+        model = _replace(model, access=Access(access))
+    verify = None
+    if verdict_path and os.path.isfile(verdict_path):
+        with open(verdict_path, encoding="utf-8") as fh:
+            verify = json.load(fh)
+    name = f"audit-{variant}" if variant else "audit"
+    report = audit.audit_deck(path, plan, library, built.slides_written, verify, model,
+                              (args.template,), os.path.join(args.out, name), variant=variant,
+                              outage=outage)
+    target = audit.write_json(report, os.path.join(args.out, name + ".json"))
+    return target, audit.describe(report)
 
 
 def write_build_report(target, decks, seconds, plan_or_plans, extra_warnings=()):
@@ -434,6 +494,10 @@ def cmd_build(args):
     модель, если она доступна и её ответ прошёл проверки (`ADR-0023`); иначе —
     путь без модели (`ADR-0009`). Вёрстка — код в обоих случаях."""
     started = time.perf_counter()
+    # Выбор находок аудита читается первым: нечитаемый файл — отказ до сборки.
+    args.fix_picks = _fix_picks(args)
+    if args.fix_picks:
+        args.audit = True           # исправили — проверить заново
     analysis = analyze_template(args.template)
     target = parse_slides(getattr(args, "slides", None))
     doc = load_content(args.content, target=target)
@@ -452,13 +516,15 @@ def cmd_build(args):
     judge = _judge(args, analysis, outage)
     if int(getattr(args, "variants", 1) or 1) > 1:
         return _build_variants(args, analysis, doc, target, started,
-                               _model_line(outcome, record_path), painter, picture_note, judge)
+                               _model_line(outcome, record_path), painter, picture_note, judge,
+                               outage)
 
     sha = analysis.design_system.source.sha256
     plan = plan_deck(doc, analysis.patterns, sha, target=target)
     plan = _painted(plan, painter, doc, analysis.patterns,
                     lambda d: plan_deck(d, analysis.patterns, sha, target=target))
     plan = judge.mark(plan, analysis.patterns)
+    plan, fix_note = _shrunk(plan, analysis.patterns, args.fix_picks, None)
     picture_notes = tuple(n for n in (picture_note, painter.note(), judge.note()) if n)
 
     os.makedirs(args.out, exist_ok=True)
@@ -491,6 +557,13 @@ def cmd_build(args):
         problems = inspect_package(target)      # файл пересобран — проверить заново
         write_json(verify, os.path.join(args.out, "render-report.json"))
 
+    audit_path, audit_lines = None, []
+    if getattr(args, "audit", False):
+        audit_path, audit_lines = _audited(
+            args, target, plan, analysis.patterns, report,
+            os.path.join(args.out, "render-report.json") if verify is not None else None,
+            None, outage)
+
     export_lines, export_failed = ([], [])
     if getattr(args, "export", None):
         export_lines, export_failed = _export_lines([target], args.export)
@@ -500,10 +573,11 @@ def cmd_build(args):
         [_deck_entry(
             target, report.slides, None, problems,
             os.path.join(args.out, "render-report.json") if verify is not None else None,
+            audit_path,
         )],
         elapsed,
         plan,
-        extra_warnings=picture_notes + tuple(export_failed),
+        extra_warnings=picture_notes + ((fix_note,) if fix_note else ()) + tuple(export_failed),
     )
 
     if not args.quiet:
@@ -513,6 +587,8 @@ def cmd_build(args):
         print(_model_line(outcome, record_path))
         for note in picture_notes:
             print(f"картинки    {note}")
+        if fix_note:
+            print(f"исправление {fix_note}")
         print(f"слайдов     {report.slides}")
         for slide in plan.slides:
             head = next((f.text for f in slide.fills if f.kind in ("text", "number") and f.text), "")
@@ -531,6 +607,8 @@ def cmd_build(args):
             for line in describe(verify):
                 print(line)
             print(f"            отчёт: {os.path.join(args.out, 'render-report.json')}")
+        for line in audit_lines:
+            print(line)
         print(f"время       {elapsed:.2f} с")
         print(f"записано    {target}")
         for line in export_lines:
@@ -543,7 +621,7 @@ def cmd_build(args):
 
 
 def _build_variants(args, analysis, doc, target, started, model_summary="",
-                    painter=None, picture_note=None, judge=None):
+                    painter=None, picture_note=None, judge=None, outage=None):
     """Три (или сколько попросили) варианта вёрстки одного контента.
 
     Требование ТЗ, раздел 2, п. 5, и пункт критерия 3, который проверяют
@@ -572,8 +650,9 @@ def _build_variants(args, analysis, doc, target, started, model_summary="",
         from .verify import verify_deck                       # noqa: PLC0415
         from .verify.report import describe, write_json       # noqa: PLC0415
 
-    written, worst = [], 0
+    written, worst, fix_notes = [], 0, []
     sha = analysis.design_system.source.sha256
+    audits: dict[int, tuple] = {}
     if painter is not None:
         # Сцены для рамок под фото всех вариантов — одним вызовом модели (`Z-55`).
         painter.prepare_frames([v.plan for v in chosen], analysis.patterns, doc)
@@ -588,6 +667,9 @@ def _build_variants(args, analysis, doc, target, started, model_summary="",
                             lambda d, t=tuning: plan_deck(d, analysis.patterns, sha, target, tuning=t))
         if judge is not None:
             plan = judge.mark(plan, analysis.patterns)
+        plan, fix_note = _shrunk(plan, analysis.patterns, getattr(args, "fix_picks", ()), n)
+        if fix_note:
+            fix_notes.append(f"вариант {n}: {fix_note}")
         built = compose_deck(args.template, plan, analysis.patterns, path)
         verdict = None
         if do_verify:
@@ -599,6 +681,13 @@ def _build_variants(args, analysis, doc, target, started, model_summary="",
             write_json(verdict, os.path.join(args.out, f"render-report-{n}.json"))
         problems = inspect_package(path)
         worst = max(worst, len(problems))
+        audit_path, audit_lines = None, []
+        if getattr(args, "audit", False):
+            audit_path, audit_lines = _audited(
+                args, path, plan, analysis.patterns, built,
+                os.path.join(args.out, f"render-report-{n}.json") if verdict is not None else None,
+                n, outage)
+        audits[n] = (audit_path, audit_lines)
         written.append((n, variant, path, built, problems, verdict, plan))
     elapsed = time.perf_counter() - started
     picture_notes = tuple(n for n in (picture_note, painter.note() if painter else None,
@@ -613,12 +702,13 @@ def _build_variants(args, analysis, doc, target, started, model_summary="",
             _deck_entry(
                 path, built.slides, n, problems,
                 os.path.join(args.out, f"render-report-{n}.json") if verdict is not None else None,
+                audits.get(n, (None,))[0],
             )
             for n, _v, path, built, problems, verdict, _pl in written
         ],
         elapsed,
         [pl for *_rest, pl in written],
-        extra_warnings=(reason,) + picture_notes + tuple(export_failed),
+        extra_warnings=(reason,) + picture_notes + tuple(fix_notes) + tuple(export_failed),
     )
 
     if not args.quiet:
@@ -628,6 +718,8 @@ def _build_variants(args, analysis, doc, target, started, model_summary="",
             print(model_summary)
         for note in picture_notes:
             print(f"картинки    {note}")
+        for note in fix_notes:
+            print(f"исправление {note}")
         print(f"политик     {len(policies)} ({source}), порог различия {min_distance:.0%}")
         for line in variants_report(chosen, reason):
             print(f"            {line}")
@@ -637,6 +729,8 @@ def _build_variants(args, analysis, doc, target, started, model_summary="",
             if verdict is not None:
                 for line in describe(verdict):
                     print(f"    {line}")
+            for line in audits.get(n, (None, []))[1]:
+                print(f"    {line}")
         print(f"время       {elapsed:.2f} с на {len(chosen)} вариант(ов)")
         for line in export_lines:
             print(f"экспорт     {line}")
@@ -814,6 +908,30 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=VERIFY_ROUNDS,
         help=f"сколько раундов ремонта при --verify (по умолчанию {VERIFY_ROUNDS})",
+    )
+    build.add_argument(
+        "--purpose",
+        choices=outline.PURPOSES,
+        default=None,
+        help="назначение презентации (ТЗ, бизнес-задача 2; Z-37): feature — питч фичи, "
+             "product — питч продукта, project — отчёт по проекту, initiative — защита "
+             "инициативы. Модель расставляет темы автора в порядке, принятом для такого "
+             "назначения, и новых разделов не добавляет. Без флага — порядок по тексту",
+    )
+    build.add_argument(
+        "--audit",
+        action="store_true",
+        help="аудит готовых слайдов (ТЗ, п. 6; Z-34): проверки кодом — пункты, слова, наезд "
+             "надписей — и моделью по картинке слайда — вывод в заголовке, служебный текст, "
+             "язык. Отчёт audit[-N].json рядом с колодой; картинки рисует PowerPoint (Windows)",
+    )
+    build.add_argument(
+        "--fix",
+        metavar="ФАЙЛ|all",
+        help="исправить выбранные находки аудита прошлой сборки (Z-34): ФАЙЛ — JSON с "
+             "выбранными находками (его пишет веб), all — все исправимые из audit*.json в "
+             "каталоге -o. Смысловые переписывает модель, вёрсточные ужимаются; после — "
+             "аудит заново",
     )
     build.add_argument(
         "--export",

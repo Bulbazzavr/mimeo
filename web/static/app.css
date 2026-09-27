@@ -204,3 +204,12 @@ table.scale .none { color: var(--muted); font-style: italic; }
 .verdict .rest b.warn { color: var(--warn); }
 .verify .notes { margin-top: 0.7rem; }
 .verify .notes p { margin: 0.25rem 0; font-size: 0.82rem; color: var(--muted); max-width: 52rem; }
+
+/* --- аудит слайдов (Z-34, PLAN-11.0) ----------------------------------- */
+
+.audit { margin-top: 1.2rem; }
+.audit > h3 { margin: 0 0 0.3rem; font-size: 0.95rem; }
+.audit h4 { margin: 1rem 0 0.2rem; font-size: 0.9rem; }
+.audit-table td:first-child { width: 1.6rem; }
+.audit-table td.num { width: 3rem; }
+.audit .actions { margin-top: 0.8rem; display: flex; gap: 1rem; align-items: center; }

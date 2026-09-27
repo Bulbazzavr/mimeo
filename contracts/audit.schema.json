@@ -1,0 +1,69 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/Bulbazzavr/mimeo/contracts/audit.schema.json",
+  "title": "Аудит готовых слайдов",
+  "description": "Что нашёл аудит одной колоды (build --audit, Z-34, PLAN-11.0): проверки кодом (deterministic) и моделью по картинке слайда (contextual), у каждой находки — чем её исправить. Пишется mimeo/audit/__init__.py, читается вебом и build --fix.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "deck", "variant", "status", "note", "slides", "checks", "model", "verify", "seconds", "findings"],
+  "properties": {
+    "version": {"type": "string", "const": "1.0"},
+    "deck": {"type": "string", "description": "Путь к колоде, прямыми слэшами."},
+    "variant": {"type": ["integer", "null"], "minimum": 1, "description": "Номер варианта; null — колода одна."},
+    "status": {
+      "enum": ["ok", "partial"],
+      "description": "partial — часть проверок не сделана (нет PowerPoint, модели или её ответа), причина — note. Ноль находок при partial не значит «чисто»."
+    },
+    "note": {"type": "string"},
+    "slides": {"type": "integer", "minimum": 0},
+    "checks": {
+      "type": "array",
+      "description": "Какие проверки есть и какого вида — для показа «как устроен аудит» (ТЗ, п. 6).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["check", "kind", "label"],
+        "properties": {
+          "check": {"type": "string"},
+          "kind": {"enum": ["deterministic", "contextual"]},
+          "label": {"type": "string"}
+        }
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["asked", "cached"],
+      "properties": {
+        "asked": {"type": "integer", "minimum": 0},
+        "cached": {"type": "integer", "minimum": 0}
+      }
+    },
+    "verify": {
+      "type": ["object", "null"],
+      "description": "Итог VERIFY этой колоды: сколько переполнений было и осталось — что починено само. null — VERIFY не запускался."
+    },
+    "seconds": {"type": "number", "minimum": 0},
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "variant", "slide", "title", "check", "kind", "detail", "fix"],
+        "properties": {
+          "id": {"type": "string", "description": "Номер находки: вариант-порядковый."},
+          "variant": {"type": ["integer", "null"]},
+          "slide": {"type": "integer", "minimum": 1, "description": "Номер слайда в колоде, с единицы."},
+          "title": {"type": "string", "description": "Заголовок слайда — по нему модель и исправление находят слайд."},
+          "check": {"type": "string"},
+          "kind": {"enum": ["deterministic", "contextual"]},
+          "detail": {"type": "string"},
+          "fix": {
+            "enum": ["model", "layout", null],
+            "description": "model — модель перепишет слайд; layout — кегль слайда на ступень ниже; null — исправления нет, detail говорит почему."
+          }
+        }
+      }
+    }
+  }
+}

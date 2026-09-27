@@ -82,6 +82,25 @@
         }
       }
     },
+    "purpose": {
+      "enum": ["feature", "product", "project", "initiative"],
+      "description": "Назначение презентации (build --purpose, Z-37): к системному промпту добавлена строка каркаса из config/outline.json. Нет поля — назначения не задавали, промпт прежний. Необязательное поле (правило 3 контрактов), 27 сентября."
+    },
+    "revise": {
+      "type": ["object", "null"],
+      "description": "Правка по аудиту (build --fix, Z-34, PLAN-11.0): модели ушли её принятый ответ и перечень выбранных находок по заголовкам слайдов (request). Поля — как у retry; accepted — прошла ли правка проверки: нет — в вёрстку ушла прежняя колода. null или нет поля — правки не просили. Необязательное поле (правило 3 контрактов), 27 сентября.",
+      "additionalProperties": false,
+      "required": ["request", "key", "answer_source", "seconds", "answer", "checks", "accepted"],
+      "properties": {
+        "request": {"type": "string"},
+        "key": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "answer_source": {"enum": ["cache", "model", null]},
+        "seconds": {"type": ["number", "null"]},
+        "answer": {"type": ["object", "string", "null"]},
+        "checks": {"type": "array", "items": {"type": "object"}},
+        "accepted": {"type": "boolean"}
+      }
+    },
     "deck": {
       "type": ["array", "null"],
       "description": "Что ушло в вёрстку из принятого ответа: обложка — только название, пункты оглавления собраны кодом из заголовков, пути картинок — найденные файлы. null — колода собрана путём без модели.",

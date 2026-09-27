@@ -194,7 +194,8 @@ $('go').addEventListener('click', async () => {
         slides: $('slides').value.trim(),
         variants: parseInt($('variants').value, 10) || 1,
         verify: verify,
-        text_mode: mode ? mode.value : 'improve'
+        text_mode: mode ? mode.value : 'improve',
+        purpose: $('purpose').value
       })
     });
     const data = await response.json();
@@ -288,6 +289,8 @@ function render(data) {
   $('verify-block').innerHTML = short + (data.verify_requested
     ? verifyBlock(data, decks)
     : notChecked());
+  $('audit-block').innerHTML = auditBlock(data, decks);
+  bindFix();
 
   const warnings = (data.report.diagnostics && data.report.diagnostics.warnings) || [];
   const unplaced = (data.report.diagnostics && data.report.diagnostics.unplaced) || [];
@@ -302,6 +305,93 @@ function render(data) {
 
   $('result').hidden = false;
   $('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/* --- аудит слайдов (Z-34, PLAN-11.0) ------------------------------------ */
+
+/* ТЗ, п. 6: система показывает найденное, пользователь выбирает, что
+   исправить. У каждой находки видно, чья проверка — кода (детерминированная)
+   или модели по картинке слайда (контекстуальная) — и чем её исправят.
+   Галочки пусты: выбор за человеком. */
+const AUDIT_KIND = { deterministic: 'код', contextual: 'модель по картинке' };
+const AUDIT_FIX = { model: 'модель перепишет слайд', layout: 'кегль слайда мельче' };
+
+function auditBlock(data, decks) {
+  const audits = data.audit || [];
+  if (!audits.some((a) => a)) return '';
+  let fixable = 0;
+  let html = '<div class="audit"><h3>Аудит слайдов — отметьте, что исправить</h3>'
+    + '<p class="hint">Код считает по плану колоды и замеру PowerPoint: пункты, слова, '
+    + 'наезд надписей. Модель смотрит на картинку каждого слайда и отвечает на вопросы '
+    + 'Приложения 1 ТЗ: вывод ли заголовок, нет ли служебного текста, один ли язык.</p>';
+  audits.forEach((a, n) => {
+    const deck = decks[n] || {};
+    const name = deck.variant === null || deck.variant === undefined
+      ? 'Колода' : 'Вариант ' + deck.variant;
+    if (!a) {
+      html += '<h4>' + escape(name) + '</h4><p class="hint">Аудит не запускался.</p>';
+      return;
+    }
+    /* «Не смог» — не «чисто»: без картинок или модели ноль находок не значит
+       ничего, и это сказано прямо. */
+    const partial = a.status === 'partial'
+      ? '<p class="hint"><strong>Проверено не всё:</strong> ' + escape(a.note) + '</p>' : '';
+    const fixed = a.verify && a.verify.before !== null && a.verify.before !== undefined
+      ? '<p class="hint">Проверка вёрстки уже ужала сама: переполнений '
+        + a.verify.before + ' → ' + a.verify.after + '.</p>' : '';
+    const found = a.findings || [];
+    html += '<h4>' + escape(name) + ' — находок ' + found.length + '</h4>' + partial + fixed;
+    if (!found.length) return;
+    html += '<table class="scale audit-table"><tr><th></th><th>Слайд</th><th>Кто нашёл</th>'
+      + '<th>Что не так</th><th>Исправление</th></tr>'
+      + found.map((f) => {
+        if (f.fix) fixable += 1;
+        return '<tr><td>' + (f.fix
+            ? '<input type="checkbox" class="pick" value="' + escape(f.id) + '">' : '')
+          + '</td><td class="num">' + f.slide + '</td>'
+          + '<td>' + escape(AUDIT_KIND[f.kind] || f.kind) + '</td>'
+          + '<td>' + escape(f.detail) + '</td>'
+          + '<td>' + escape(AUDIT_FIX[f.fix] || 'не чинится') + '</td></tr>';
+      }).join('') + '</table>';
+  });
+  if (fixable) {
+    html += '<div class="actions"><button type="button" class="primary" id="fix-go">'
+      + 'Исправить отмеченное</button>'
+      + '<button type="button" class="link" id="fix-all">отметить все</button></div>';
+  }
+  return html + '</div>';
+}
+
+function bindFix() {
+  const all = $('fix-all');
+  if (all) {
+    all.addEventListener('click', () => {
+      document.querySelectorAll('#audit-block .pick').forEach((c) => { c.checked = true; });
+    });
+  }
+  const go = $('fix-go');
+  if (!go) return;
+  go.addEventListener('click', async () => {
+    const ids = Array.from(document.querySelectorAll('#audit-block .pick:checked'))
+      .map((c) => c.value);
+    if (!ids.length) return setStatus('Отметьте хотя бы одну находку.', 'error');
+    go.disabled = true;
+    setStatus('Исправляем отмеченное и проверяем заново — это минута-две…', 'working');
+    try {
+      const response = await fetch('/api/fix', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: token, ids: ids })
+      });
+      const data = await response.json();
+      if (!data.ok) throw new Error(data.error || 'исправление не удалось');
+      render(data);
+      setStatus('Исправлено и проверено заново за ' + data.seconds + ' с.');
+    } catch (error) {
+      setStatus('Не вышло: ' + error.message, 'error');
+      go.disabled = false;
+    }
+  });
 }
 
 /* --- превью слайдов (PLAN-8.2, часть B) --------------------------------- */

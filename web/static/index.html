@@ -40,6 +40,18 @@
         <span class="hint">тезисы — дословно из текста</span></label>
     </div>
     <div class="row">
+      <label>Назначение
+        <select id="purpose">
+          <option value="">не задано — порядок по тексту</option>
+          <option value="feature">питч фичи</option>
+          <option value="product">питч продукта</option>
+          <option value="project">отчёт по проекту</option>
+          <option value="initiative">защита инициативы</option>
+        </select>
+        <span class="hint">порядок слайдов, принятый для такой презентации; новых разделов модель не добавит</span>
+      </label>
+    </div>
+    <div class="row">
       <label>Объём
         <input type="text" id="slides" placeholder="10-15" size="8">
         <span class="hint">пусто — объём определит текст</span>
@@ -69,6 +81,7 @@
     <div id="model-block"></div>
     <div id="decks"></div>
     <div id="verify-block"></div>
+    <div id="audit-block"></div>
     <details id="diagnostics-block">
       <summary>Что движок сказал о вашем тексте <span id="warn-count"></span></summary>
       <div id="diagnostics"></div>
