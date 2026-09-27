@@ -471,6 +471,7 @@ python -m mimeo build  <шаблон.pptx> <контент.md> --llm on    # м�
 python -m mimeo build  --config config/run.example.json <шаблон.pptx>
 python -m mimeo analyze <шаблон.pptx> -o out --validate
 python -m mimeo plan   <шаблон.pptx> <контент.md> -o out --validate
+python -m mimeo export <колода.pptx> [--html] [--pdf] [-o КАТАЛОГ]   # Z-27: HTML — свой рендер, PDF — PowerPoint; у build — --export html,pdf
 python -m pytest                      # pyproject.toml уже даёт -q; второй -q (-qq) прячет строку «N passed»
 python tools/report.py compose        # таблица замеров для WORKLOG
 python tools/report.py slots          # сужённые и пустые слоты (Z-48, Z-49), PowerPoint не нужен
@@ -572,7 +573,7 @@ Co-Authored-By: Анатолий Иванов <ivanoff.the.dev@gmail.com>
 
 ```
 python -m mimeo build <шаблон.pptx> <контент.md> -o out --output out/deck.pptx --verify
-python tools/build_verified.py <шаблон.pptx> <контент.md> -o out/deck.pptx  # то же, ради --rounds
+python tools/build_verified.py <шаблон.pptx> <контент.md> -o out/deck.pptx  # путь без модели с проверкой; у build свой --rounds
 python tools/render_probe.py   <файл.pptx> -o out/render   # открыть и выгрузить PNG
 python tools/rank_dump.py      <шаблон.pptx> <контент.md>  # из чего был выбор раскладки
 python tools/report.py verify --content examples/content-mimeo.md   # переполнения, заслонения, время
