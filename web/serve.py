@@ -939,8 +939,8 @@ def serve(port: int, fresh: bool) -> None:
             + chr(10)
             + f"Попробуйте другой: python web/serve.py --port {port + 1}"
         )
-    print(f"mimeo: http://127.0.0.1:{port}")
-    print("       Ctrl+C чтобы остановить")
+    print(f"Цифровой дизайнер презентаций: http://127.0.0.1:{port}")
+    print("Ctrl+C чтобы остановить")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
