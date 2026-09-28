@@ -297,7 +297,8 @@ def test_access_variable_overrides_the_config(monkeypatch):
     assert images.load_config().access == "off"
     monkeypatch.delenv("MIMEO_IMAGES_ACCESS")
     shipped = images.load_config()
-    assert shipped.loaded and shipped.access == "on" and shipped.model == images.GeneratorConfig().model
+    # Умолчание с 28 сентября — off, решение пользователя «пока временно».
+    assert shipped.loaded and shipped.access == "off" and shipped.model == images.GeneratorConfig().model
 
 
 # --- сквозь сборку -------------------------------------------------------------

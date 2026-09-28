@@ -276,10 +276,10 @@ table.scale th { text-align: left; font-weight: 600; color: var(--muted);
                  font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em;
                  padding-bottom: 0.3rem; }
 table.scale td { border-top: 1px solid var(--line); padding: 0.4rem 0.6rem 0.4rem 0; }
-/* Заголовок числового столбца — по правому краю, как и его числа, и с тем же
-   отступом справа: иначе «Кегль» стоял слева, а числа справа. */
+/* Все столбцы — по левому краю, значение ровно под заголовком, и числовые
+   тоже (решение пользователя 28 сентября: «Кегль» и «Мест» — как остальные). */
 table.scale th { padding-right: 0.6rem; }
-table.scale th.num, table.scale td.num { text-align: right; font-variant-numeric: tabular-nums;
+table.scale th.num, table.scale td.num { text-align: left; font-variant-numeric: tabular-nums;
                                          white-space: nowrap; }
 table.scale .dot { display: inline-block; width: 0.8rem; height: 0.8rem;
                    border-radius: 3px; border: 1px solid var(--line);
