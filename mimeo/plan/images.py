@@ -156,12 +156,18 @@ def reachable(gen: GeneratorConfig) -> str | None:
 #: сцена по-русски, на нём Gemma пишет лучше; `scenes` — её перевод на
 #: английский для генератора. Порядок полей — порядок, в котором модель их
 #: пишет. Без годного плана и русского сцены всё равно берутся.
+#: `maxLength` у каждой строки — против зацикливания (28 сентября, сборка в
+#: вебе): модель дважды упёрлась в потолок ответа, 6000 токенов и 138 с, —
+#: в одном ответе 27 тыс. знаков повтора одной фразы, в другом рассуждение
+#: вслух прямо в поле `plan`. Грамматика сервера дальше предела писать не
+#: даёт. Пределы — с запасом над нормой: сцена 4–5 предложений, 60–90 слов —
+#: около 400–600 знаков, строка плана — около 150.
 SCENE_SCHEMA = {
     "type": "object",
-    "properties": {"style": {"type": "string"},
-                   "plan": {"type": "array", "items": {"type": "string"}},
-                   "ru": {"type": "array", "items": {"type": "string"}},
-                   "scenes": {"type": "array", "items": {"type": "string"}}},
+    "properties": {"style": {"type": "string", "maxLength": 80},
+                   "plan": {"type": "array", "items": {"type": "string", "maxLength": 300}},
+                   "ru": {"type": "array", "items": {"type": "string", "maxLength": 900}},
+                   "scenes": {"type": "array", "items": {"type": "string", "maxLength": 900}}},
     "required": ["style", "plan", "ru", "scenes"],
 }
 
