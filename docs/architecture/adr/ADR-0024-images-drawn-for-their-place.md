@@ -1,6 +1,6 @@
 ---
 id: ADR-0024
-status: accepted
+status: accepted; partially superseded by ADR-0029
 date: 2026-09-26
 ---
 
