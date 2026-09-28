@@ -277,6 +277,34 @@ def test_one_scene_request_for_all_pictures_of_the_deck(tmp_path):
     assert "Сцены картинок написала модель по всей колоде" in painter.note()
 
 
+def test_rejected_picture_goes_back_to_the_model_with_the_reason(tmp_path):
+    """Зрение забраковало картинку — модель получает прежнюю сцену и причину
+    и пишет другую; рисуется новая сцена, а не прежняя с другим зерном. Новая
+    сцена заменяет прежнюю и для следующих вариантов вёрстки."""
+    asked = []
+
+    def rewrite(subjects, sections=(), rejected=None):
+        asked.append((list(subjects), rejected))
+        return (["Сцена без букв"] if rejected else ["Сцена с буквами"]), "от модели"
+
+    ref = str(tmp_path / "images" / "m03.png")
+    plan = _plan(("m03", 1))
+    slides = [replace(plan.slides[0], fills=plan.slides[0].fills + (Fill(slot_id="s02", kind="image", ref=ref),))]
+    plan = replace(plan, slides=tuple(slides))
+    with FakeSD() as sd:
+        painter = images.Painter(_gen(tmp_path, sd.base_url), {ref: "Идея"}, slide_size=(12192000, 6858000),
+                                 rewrite=rewrite, folder=str(tmp_path / "images"),
+                                 check=lambda png: "буквы или надписи" if len(sd.requests) == 1 else None)
+        painter.prepare([plan], _library(), _frame_doc())
+        painted, failed = painter.paint(plan, _library())
+        assert not failed
+        assert asked[1] == (["Идея"], {"scene": "Сцена с буквами", "why": "буквы или надписи"})
+        assert [r["prompt"] for r in sd.requests] == ["Сцена с буквами", "Сцена без букв"]
+        assert [r["seed"] for r in sd.requests] == [42, 42], "не новое зерно, а новая сцена"
+    assert painter._scenes["Идея"] == "Сцена без букв" and painter.revised == 1
+    assert "модель переписала сцену с причиной брака: 1" in painter.note()
+
+
 # --- COMPOSE ---------------------------------------------------------------------
 
 

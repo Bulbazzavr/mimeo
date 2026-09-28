@@ -114,11 +114,14 @@ def _pictures(args, doc, analysis, outage=None):
     translations: dict[str, str] = {}       # сцена по-английски → по-русски, для человека
     deck = doc                              # вся колода — контекст каждой сцены
 
-    def rewrite(ideas, sections=()):
+    scene_state: dict = {}                  # стиль колоды — один на все запросы сцен
+
+    def rewrite(ideas, sections=(), rejected=None):
         # Уже написанные сцены колоды — ключи переводов: новые их не повторят.
+        # `rejected` — сцена, которую забраковало зрение, и причина.
         return images.scenes(ideas, gen, model, inputs=(args.content,), outage=outage,
                              translations=translations, deck=deck, sections=sections,
-                             taken=tuple(translations))
+                             taken=tuple(translations), state=scene_state, rejected=rejected)
 
     doc, placeholders, note = images.add_placeholders(doc, args.out, gen, slide_size=size)
     painter = images.Painter(gen, placeholders, llm_base_url=model.endpoint.base_url, slide_size=size,

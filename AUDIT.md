@@ -65,7 +65,7 @@ python tools/audit_doc.py --write
 | [`tests/test_outline.py`](tests/test_outline.py) | 15 | Промпт и схема ответа модели, строящей колоду (`ADR-0023`, `PLAN-9.0`, Ш1). |
 | [`tests/test_paragraph_order.py`](tests/test_paragraph_order.py) | 6 | Порядок детей `a:p` по схеме DrawingML: прогоны до `a:endParaRPr`. |
 | [`tests/test_patterns.py`](tests/test_patterns.py) | 13 | Библиотека паттернов. ADR-0004, ADR-0006, ADR-0007. |
-| [`tests/test_photo_frames.py`](tests/test_photo_frames.py) | 10 | Рамка под фото с подсказкой дизайнера (`Z-55`, вариант 2 — выбор пользователя 26 сентября). |
+| [`tests/test_photo_frames.py`](tests/test_photo_frames.py) | 11 | Рамка под фото с подсказкой дизайнера (`Z-55`, вариант 2 — выбор пользователя 26 сентября). |
 | [`tests/test_plan.py`](tests/test_plan.py) | 20 | Подбор раскладок и планировщик без модели. ADR-0009. |
 | [`tests/test_prompt_contract.py`](tests/test_prompt_contract.py) | 16 | Промпт-контракт: что уходит в модель и что принимается назад. ADR-0010. |
 | [`tests/test_prompts_in_config.py`](tests/test_prompts_in_config.py) | 4 | Промпты лежат только в `config/`, копий в коде нет (`Z-72`). |
@@ -90,7 +90,7 @@ python tools/audit_doc.py --write
 | [`tests/test_web_boundary.py`](tests/test_web_boundary.py) | 5 | Граница веб-слоя (`Z-29`, `PLAN-8.0`, `SPEC-WEB` раздел 2). |
 | [`tests/test_web_content.py`](tests/test_web_content.py) | 3 | Контент-пакет в вебе: текст файлом и картинки к нему (`Z-73`). |
 | [`tests/test_web_design.py`](tests/test_web_design.py) | 13 | Экран «что вынули из вашего шаблона» (`Z-29`, `PLAN-8.1`, часть A). |
-| **всего** | **742** | в 52 файлах |
+| **всего** | **743** | в 52 файлах |
 
 <!-- /порождается -->
 

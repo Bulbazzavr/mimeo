@@ -207,6 +207,9 @@ def test_scene_request_carries_the_whole_deck(tmp_path):
             config, endpoint=client.Endpoint(base_url=fake.base_url)), deck=doc, sections=picked,
             taken=("A carpenter planes a board",))
         sent = json.loads(fake.requests[0]["messages"][1]["content"])
+        schema = fake.requests[0]["response_format"]["json_schema"]["schema"]
+    assert schema["properties"]["scenes"]["maxItems"] == 2 == schema["properties"]["scenes"]["minItems"], (
+        "сцен ровно столько, сколько картинок, — схемой: иначе модель пишет на все слайды колоды")
     assert got == ["Scene A. Flat vector illustration.", "Scene B. Flat vector illustration."], (
         "стиль колоды выбирает модель, код дописывает его к каждой сцене")
     assert sent["taken"] == ["A carpenter planes a board"], "написанное раньше модель видит и не повторяет"

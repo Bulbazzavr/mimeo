@@ -237,7 +237,8 @@ def deck_outline(doc) -> list[dict]:
 
 def scenes(ideas: list[str], gen: GeneratorConfig, model_config, inputs=(),
            outage=None, translations: dict | None = None, deck=None,
-           sections=(), taken=(), style: str | None = None) -> tuple[list[str] | None, str]:
+           sections=(), taken=(), style: str | None = None, state: dict | None = None,
+           rejected: dict | None = None) -> tuple[list[str] | None, str]:
     """Сюжеты без текста — второй короткий вызов языковой модели (`Z-28`).
 
     Замер 26 сентября: текст на картинке рисуется, когда он есть в самой идее
@@ -254,7 +255,11 @@ def scenes(ideas: list[str], gen: GeneratorConfig, model_config, inputs=(),
     запросами: модель их не повторяет, иначе все картинки выходят про одно
     (замер 27 сентября: пять из пяти — человек за компьютером). `style` —
     стиль, уже выбранный для колоды; нет — его выбирает модель (фото,
-    иллюстрация, 3D…), не выбрала — `prompt_suffix` конфига."""
+    иллюстрация, 3D…), не выбрала — `prompt_suffix` конфига. `state` —
+    общий на сборку словарь: в нём живёт стиль колоды между вызовами.
+    `rejected` — {"scene", "why"}: эту сцену генератор нарисовал, а зрение
+    нашло брак; модель пишет для картинки другую сцену (решение пользователя
+    28 сентября: причину брака — модели, а не новое зерно генератору)."""
     if not gen.scene_system.strip():
         from ..config import missing
 
@@ -262,20 +267,25 @@ def scenes(ideas: list[str], gen: GeneratorConfig, model_config, inputs=(),
     # Сцена на двух языках — сотни токенов: пачками, чтобы ответ не упёрся
     # в потолок; вся колода, написанное раньше и стиль уходят с каждой пачкой.
     batch = max(1, gen.scene_batch)
+    if style is None and state:
+        style = state.get("style")
     out: list[str] = []
     how = ""
     for i in range(0, len(ideas), batch):
         part = list(sections[i:i + batch]) if len(sections) == len(ideas) else ()
         got, how, style = _scene_call(ideas[i:i + batch], gen, model_config, inputs, outage,
-                                      translations, deck, part, tuple(taken) + tuple(out), style)
+                                      translations, deck, part, tuple(taken) + tuple(out), style,
+                                      rejected)
         if got is None:
             return None, how
         out.extend(got)
+    if state is not None and style:
+        state["style"] = style
     return out, how
 
 
 def _scene_call(ideas, gen, model_config, inputs, outage, translations, deck, sections,
-                taken, style) -> tuple[list[str] | None, str, str | None]:
+                taken, style, rejected=None) -> tuple[list[str] | None, str, str | None]:
     """Один запрос сцен: (сцены со стилем или `None`, откуда или почему нет, стиль)."""
     from .client import ModelClient
     from .prompt import Mode, Request
@@ -290,12 +300,20 @@ def _scene_call(ideas, gen, model_config, inputs, outage, translations, deck, se
             message["taken"] = list(taken)
         if style:
             message["style"] = style
+        if rejected:
+            message["rejected"] = {"slide": number.get(sections[0].id), **rejected} if sections else rejected
         user = json.dumps(message, ensure_ascii=False)
     else:
         user = json.dumps(ideas, ensure_ascii=False)
+    # Сцен ровно столько, сколько картинок, — схемой, а не просьбой: видя всю
+    # колоду, модель писала сцены на все 15 слайдов, когда просили одну
+    # (переписывание забракованной, 28 сентября), и ответ отбрасывался.
+    schema = json.loads(json.dumps(SCENE_SCHEMA))
+    for name in ("plan", "ru", "scenes"):
+        schema["properties"][name].update(minItems=len(ideas), maxItems=len(ideas))
     if model_config.mode is Mode.FREE_TEXT:
-        user += "\n\nОтветь одним JSON-объектом по схеме:\n" + json.dumps(SCENE_SCHEMA, ensure_ascii=False)
-    request = Request(mode=model_config.mode, system=gen.scene_system, user=user, schema=SCENE_SCHEMA,
+        user += "\n\nОтветь одним JSON-объектом по схеме:\n" + json.dumps(schema, ensure_ascii=False)
+    request = Request(mode=model_config.mode, system=gen.scene_system, user=user, schema=schema,
                       section_id="сцены картинок", candidates=(), name="scenes", tool="rewrite_scenes",
                       purpose="Переписать сюжеты рисунков без текста.")
     # Свой потолок ответа: план, сцена и перевод на десяток картинок длиннее
@@ -455,6 +473,9 @@ class Painter:
     ru: dict[str, str] = field(default_factory=dict)
     _scenes: dict[str, str] = field(default_factory=dict)
     _styled: set[str] = field(default_factory=set)
+    #: Сцена → (сюжет, раздел): по ним модель перепишет забракованную сцену.
+    _origin: dict[str, tuple] = field(default_factory=dict)
+    revised: int = 0
     _reach: str | None = "?"
 
     def _cache_path(self, key: str) -> str:
@@ -527,9 +548,9 @@ class Painter:
         prompt = idea if idea in self._styled else idea.rstrip(" .") + self.gen.prompt_suffix
         base = self.gen.seed if seed is None else seed
         attempts = 1 + (max(0, self.gen.check_retries) if self.check else 0)
-        reason = None
-        for attempt in range(attempts):
-            png = self._png(prompt, width, height, seed if attempt == 0 else base + 1000 * attempt, idea)
+        reason, reseed = None, 0
+        for _attempt in range(attempts):
+            png = self._png(prompt, width, height, seed if not reseed else base + 1000 * reseed, idea)
             if png is None:
                 return False
             reason = self.check(png) if self.check else None
@@ -537,12 +558,39 @@ class Painter:
                 os.makedirs(os.path.dirname(target), exist_ok=True)
                 with open(target, "wb") as fh:
                     fh.write(png)
-                self.redrawn += 1 if attempt else 0
                 self._remember(target, idea, prompt)
                 return True
+            # Причину брака — модели: новое зерно сцену, просящую текст, не
+            # исправит. Не вышло переписать — запасной путь, другое зерно.
+            better = self._revise(idea, reason)
+            if better:
+                idea = prompt = better
+                reseed = 0
+                self.revised += 1
+            else:
+                reseed += 1
+                self.redrawn += 1
         short = idea if len(idea) <= 80 else idea[:77].rstrip() + "…"
         self.rejected.append(f"«{short}»: {reason}")
         return False
+
+    def _revise(self, scene: str, reason: str) -> str | None:
+        """Другая сцена для картинки, которую зрение забраковало: модель видит
+        всю колоду, прежнюю сцену и причину. Новая сцена заменяет прежнюю и
+        для других вариантов вёрстки — брак не повторится трижды."""
+        origin = self._origin.get(scene)
+        if origin is None or self.rewrite is None:
+            return None
+        subject, owner = origin
+        got, _how = self.rewrite([subject], [owner] if owner is not None else (),
+                                 {"scene": scene, "why": reason})
+        if not got or got[0] == scene:
+            return None
+        better = got[0]
+        self._scenes[subject] = better
+        self._styled.add(better)
+        self._origin[better] = origin
+        return better
 
     def _png(self, prompt: str, width: int, height: int, seed: int | None, idea: str) -> bytes | None:
         """Картинка из кэша или от генератора; отказ генератора — в `failures`."""
@@ -710,6 +758,8 @@ class Painter:
             return
         self._scenes.update(zip(subjects, got))
         self._styled.update(got)
+        for subject, owner, scene in zip(subjects, owners, got):
+            self._origin[scene] = (subject, owner)
         # Что нарисовано и почему — в отчёт: сцену пишет модель, и видеть её
         # решение должен человек (замер 26 сентября: «колоду» она прочла как карты).
         pairs = "; ".join(f"«{a}» → «{b}»" for a, b in zip(subjects, got))
@@ -776,8 +826,11 @@ class Painter:
                      f"{self.frames_small}.")
         if self.frames_note:
             line += " " + self.frames_note
-        if self.redrawn or self.rejected:
-            line += f" Зрение модели забраковало и перерисовало с другим зерном: {self.redrawn}."
+        if self.revised:
+            line += (f" Зрение модели забраковало картинку, и модель переписала сцену с причиной "
+                     f"брака: {self.revised}.")
+        if self.redrawn:
+            line += f" Перерисовано с другим зерном: {self.redrawn}."
         if self.rejected:
             line += (f" Снято после {1 + self.gen.check_retries} попыток — {len(self.rejected)}: "
                      f"{'; '.join(self.rejected)} — эти слайды собраны без картинки.")
