@@ -147,7 +147,9 @@ def test_ideas_are_rewritten_into_scenes_without_text(tmp_path):
     with FakeModel(answer=good) as fake:
         got, how = images.scenes(ideas, _gen(tmp_path), replace(config, endpoint=client.Endpoint(
             base_url=fake.base_url)))
-        assert got == good["scenes"] and how == "от модели"
+        # Стиль модель не выбрала — к сцене дописан стиль по умолчанию из конфига.
+        default = _SHIPPED.prompt_suffix.strip(" .")
+        assert got == [f"{s}. {default}." for s in good["scenes"]] and how == "от модели"
         assert json.loads(fake.requests[0]["messages"][1]["content"]) == ideas
     with FakeModel(answer={"scenes": ["одна"]}) as fake:
         got, how = images.scenes(ideas[:1] + ["другая"], _gen(tmp_path), replace(
@@ -170,11 +172,12 @@ def test_scene_translation_reaches_the_picture(tmp_path):
     with FakeModel(answer=answer) as fake:
         got, _how = images.scenes(ideas, _gen(tmp_path), replace(config, endpoint=client.Endpoint(
             base_url=fake.base_url)), translations=translations)
-    assert got == answer["scenes"] and translations == dict(zip(answer["scenes"], answer["ru"]))
+    assert [g.split(".")[0] for g in got] == answer["scenes"]
+    assert translations == dict(zip(got, answer["ru"]))
 
     painter = images.Painter(_gen(tmp_path), {}, translations=translations)
     target = str(tmp_path / "out" / "p.png")
-    prompt = got[0] + painter.gen.prompt_suffix
+    prompt = got[0].rstrip(" .") + painter.gen.prompt_suffix    # художник не знает, что сцена со стилем
     cached = painter._cache_path(painter._key(prompt, 64, 64))
     os.makedirs(os.path.dirname(cached))
     with open(cached, "wb") as fh:
@@ -186,7 +189,7 @@ def test_scene_translation_reaches_the_picture(tmp_path):
         lost: dict[str, str] = {}
         got, _how = images.scenes(ideas, _gen(tmp_path), replace(config, cache_root=str(tmp_path / "llm2"),
                                   endpoint=client.Endpoint(base_url=fake.base_url)), translations=lost)
-    assert got == answer["scenes"] and lost == {}
+    assert [g.split(".")[0] for g in got] == answer["scenes"] and lost == {}
 
 
 def test_scene_request_carries_the_whole_deck(tmp_path):
@@ -197,12 +200,14 @@ def test_scene_request_carries_the_whole_deck(tmp_path):
     config = client.ClientConfig(access=client.Access.ON, extra_body={},
                                  cache_root=str(tmp_path / "llm"), tz_cache_root=str(tmp_path / "tz"))
     from dataclasses import replace
-    with FakeModel(answer={"ru": ["Сцена А", "Сцена Б"], "scenes": ["Scene A", "Scene B"]}) as fake:
+    with FakeModel(answer={"style": "Flat vector illustration", "ru": ["Сцена А", "Сцена Б"],
+                           "scenes": ["Scene A", "Scene B"]}) as fake:
         got, _how = images.scenes([s.image_idea for s in picked], _gen(tmp_path), replace(
             config, endpoint=client.Endpoint(base_url=fake.base_url)), deck=doc, sections=picked,
             taken=("A carpenter planes a board",))
         sent = json.loads(fake.requests[0]["messages"][1]["content"])
-    assert got == ["Scene A", "Scene B"]
+    assert got == ["Scene A. Flat vector illustration.", "Scene B. Flat vector illustration."], (
+        "стиль колоды выбирает модель, код дописывает его к каждой сцене")
     assert sent["taken"] == ["A carpenter planes a board"], "написанное раньше модель видит и не повторяет"
     assert [p["heading"] for p in sent["presentation"]] == [s.heading for s in doc.sections]
     assert sent["presentation"][1]["theses"] == ["Тезис слайда 2"]

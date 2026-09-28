@@ -145,6 +145,9 @@ def reachable(gen: GeneratorConfig) -> str | None:
 
 
 #: Схема ответа на запрос сцен — контракт, в коде (`ADR-0022`); промпт — в конфиге.
+#: `style` — один стиль на всю колоду (фото, иллюстрация, 3D…), по-английски:
+#: его модель выбирает по теме и тону презентации, как дизайнер (решение
+#: пользователя 28 сентября: картинки не обязаны быть фотографиями).
 #: `plan` — место и занятие каждой картинки одной строкой: модель сперва
 #: распределяет набор целиком, чтобы картинки колоды вышли разными; `ru` —
 #: сцена по-русски, на нём Gemma пишет лучше; `scenes` — её перевод на
@@ -152,10 +155,11 @@ def reachable(gen: GeneratorConfig) -> str | None:
 #: пишет. Без годного плана и русского сцены всё равно берутся.
 SCENE_SCHEMA = {
     "type": "object",
-    "properties": {"plan": {"type": "array", "items": {"type": "string"}},
+    "properties": {"style": {"type": "string"},
+                   "plan": {"type": "array", "items": {"type": "string"}},
                    "ru": {"type": "array", "items": {"type": "string"}},
                    "scenes": {"type": "array", "items": {"type": "string"}}},
-    "required": ["plan", "ru", "scenes"],
+    "required": ["style", "plan", "ru", "scenes"],
 }
 
 
@@ -182,43 +186,50 @@ def deck_outline(doc) -> list[dict]:
 
 def scenes(ideas: list[str], gen: GeneratorConfig, model_config, inputs=(),
            outage=None, translations: dict | None = None, deck=None,
-           sections=(), taken=()) -> tuple[list[str] | None, str]:
+           sections=(), taken=(), style: str | None = None) -> tuple[list[str] | None, str]:
     """Сюжеты без текста — второй короткий вызов языковой модели (`Z-28`).
 
     Замер 26 сентября: текст на картинке рисуется, когда он есть в самой идее
     («двигает блоки текста на слайде», «читает сообщение на телефоне»), и
     отрицания в запросе картинки его не гасят. Переписать сюжет — смысл, а
     смысл делает модель. Возвращает (сцены или `None`, откуда или почему нет);
-    ответ идёт в кэш ответов модели, как и колода. `outage` — отказ сервера,
-    общий на сборку (`client.Outage`). `translations` — словарь, куда лягут
-    переводы «сцена → по-русски», если модель их дала: их видит человек.
+    каждая сцена уже со стилем колоды — готовый запрос генератору. Ответ идёт
+    в кэш ответов модели, как и колода. `outage` — отказ сервера, общий на
+    сборку (`client.Outage`). `translations` — словарь, куда лягут переводы
+    «сцена → по-русски», если модель их дала: их видит человек.
     `deck` — документ колоды, `sections` — раздел каждой идеи: с ними модель
     получает всю презентацию и номер слайда каждой картинки; без них — только
     список идей. `taken` — сцены, уже написанные для этой колоды прошлыми
     запросами: модель их не повторяет, иначе все картинки выходят про одно
-    (замер 27 сентября: пять из пяти — человек за компьютером)."""
-    from .client import ModelClient
-    from .prompt import Mode, Request
-    from .validate import extract_json
-
+    (замер 27 сентября: пять из пяти — человек за компьютером). `style` —
+    стиль, уже выбранный для колоды; нет — его выбирает модель (фото,
+    иллюстрация, 3D…), не выбрала — `prompt_suffix` конфига."""
     if not gen.scene_system.strip():
         from ..config import missing
 
         raise missing(CONFIG_NAME, "нет промпта сцен картинок (scene_system)")
+    # Сцена на двух языках — сотни токенов: пачками, чтобы ответ не упёрся
+    # в потолок; вся колода, написанное раньше и стиль уходят с каждой пачкой.
     batch = max(1, gen.scene_batch)
-    if len(ideas) > batch:
-        # Сцена на двух языках — сотни токенов: пачками, чтобы ответ не упёрся
-        # в max_tokens модели; вся колода уходит с каждой пачкой.
-        out: list[str] = []
-        how = ""
-        for i in range(0, len(ideas), batch):
-            part = list(sections[i:i + batch]) if len(sections) == len(ideas) else ()
-            got, how = scenes(ideas[i:i + batch], gen, model_config, inputs, outage,
-                              translations, deck, part, tuple(taken) + tuple(out))
-            if got is None:
-                return None, how
-            out.extend(got)
-        return out, how
+    out: list[str] = []
+    how = ""
+    for i in range(0, len(ideas), batch):
+        part = list(sections[i:i + batch]) if len(sections) == len(ideas) else ()
+        got, how, style = _scene_call(ideas[i:i + batch], gen, model_config, inputs, outage,
+                                      translations, deck, part, tuple(taken) + tuple(out), style)
+        if got is None:
+            return None, how
+        out.extend(got)
+    return out, how
+
+
+def _scene_call(ideas, gen, model_config, inputs, outage, translations, deck, sections,
+                taken, style) -> tuple[list[str] | None, str, str | None]:
+    """Один запрос сцен: (сцены со стилем или `None`, откуда или почему нет, стиль)."""
+    from .client import ModelClient
+    from .prompt import Mode, Request
+    from .validate import extract_json
+
     if deck is not None and len(sections) == len(ideas):
         number = {s.id: n for n, s in enumerate(deck.sections, 1)}
         message = {"presentation": deck_outline(deck),
@@ -226,6 +237,8 @@ def scenes(ideas: list[str], gen: GeneratorConfig, model_config, inputs=(),
                                 for s, idea in zip(sections, ideas)]}
         if taken:
             message["taken"] = list(taken)
+        if style:
+            message["style"] = style
         user = json.dumps(message, ensure_ascii=False)
     else:
         user = json.dumps(ideas, ensure_ascii=False)
@@ -241,18 +254,22 @@ def scenes(ideas: list[str], gen: GeneratorConfig, model_config, inputs=(),
             model_config.endpoint, max_tokens=gen.scene_max_tokens))
     answer = ModelClient(model_config, inputs=inputs, outage=outage).complete(request)
     if not answer:
-        return None, answer.note or "ответа нет"
+        return None, answer.note or "ответа нет", style
     parsed = extract_json(answer.text)
     got = parsed.get("scenes") if isinstance(parsed, dict) else None
     if not (isinstance(got, list) and len(got) == len(ideas)
             and all(isinstance(s, str) and s.strip() for s in got)):
-        return None, "ответ не по форме: нужен список сцен той же длины"
-    got = [s.strip() for s in got]
+        return None, "ответ не по форме: нужен список сцен той же длины", style
+    # Стиль — один на колоду: выбранный раньше, иначе выбор модели, иначе конфиг.
+    chosen = parsed.get("style")
+    style = style or (chosen.strip().rstrip(" .") if isinstance(chosen, str) and chosen.strip() else
+                      gen.prompt_suffix.strip(" .") or None)
+    got = [f"{s.strip().rstrip(' .')}. {style}." if style else s.strip() for s in got]
     ru = parsed.get("ru")
     if translations is not None and isinstance(ru, list) and len(ru) == len(got) and all(
             isinstance(s, str) and s.strip() for s in ru):
         translations.update(zip(got, (s.strip() for s in ru)))
-    return got, "из кэша" if answer.source == "cache" else "от модели"
+    return got, "из кэша" if answer.source == "cache" else "от модели", style
 
 
 def add_placeholders(doc, out_dir: str, gen: GeneratorConfig, rules=None,
@@ -382,6 +399,7 @@ class Painter:
     translations: dict[str, str] = field(default_factory=dict)
     ru: dict[str, str] = field(default_factory=dict)
     _scenes: dict[str, str] = field(default_factory=dict)
+    _styled: set[str] = field(default_factory=set)
     _reach: str | None = "?"
 
     def _cache_path(self, key: str) -> str:
@@ -444,7 +462,8 @@ class Painter:
 
     def picture(self, idea: str, width: int, height: int, target: str, seed: int | None = None) -> bool:
         """Файл `target` с картинкой по идее: из кэша или от генератора."""
-        prompt = idea.rstrip(" .") + self.gen.prompt_suffix
+        # Сцена модели уже несёт стиль колоды; идея как есть — хвост конфига.
+        prompt = idea if idea in self._styled else idea.rstrip(" .") + self.gen.prompt_suffix
         cached = self._cache_path(self._key(prompt, width, height, seed))
         os.makedirs(os.path.dirname(target), exist_ok=True)
         if os.path.isfile(cached):
@@ -612,6 +631,7 @@ class Painter:
                                     f"({how}) — заголовок запросом картинки дал бы выдуманные буквы (Z-55).")
             return
         self._scenes.update(zip(subjects, got))
+        self._styled.update(got)
         # Что нарисовано и почему — в отчёт: сцену пишет модель, и видеть её
         # решение должен человек (замер 26 сентября: «колоду» она прочла как карты).
         pairs = "; ".join(f"«{a}» → «{b}»" for a, b in zip(subjects, got))
