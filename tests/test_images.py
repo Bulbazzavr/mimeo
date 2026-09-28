@@ -130,23 +130,29 @@ def test_most_image_slots_are_not_for_our_illustration():
 
 
 @pytest.mark.skipif(not os.path.exists(VK), reason="материалы ТЗ не коммитятся")
-def test_our_picture_goes_only_into_an_illustration_slot():
+def test_our_picture_goes_only_into_an_illustration_slot_or_a_photo_frame():
+    """Иконка, подложка и фон картинку автора не принимают. Рамка под фото
+    (`Z-55`) с 28 сентября принимает — если обрезка под её пропорцию не больше
+    `frame_crop_max` (`config/images.json`)."""
+    from mimeo.analyze.picture import FRAME, load_config as load_picture_config
+    from mimeo.plan.imagesize import image_size
+
     a = analyze_template(VK)
     doc = load_content(os.path.join(ROOT, "examples", "content-mimeo.md"))
     plan = plan_deck(doc, a.patterns, a.design_system.source.sha256)
     by_id = {p.id: p for p in a.patterns.patterns}
-    placed = [
-        by_id[s.pattern_id].slots
-        for s in plan.slides for f in s.fills if f.kind == "image"
-    ]
     fills = [(s, f) for s in plan.slides for f in s.fills if f.kind == "image"]
     assert fills, "на этом шаблоне картинки обязаны вставиться"
+    limit = load_picture_config().frame_crop_max
     for slide, fill in fills:
         slot = next(x for x in by_id[slide.pattern_id].slots if x.id == fill.slot_id)
-        assert slot.picture_kind == ILLUSTRATION, (
+        assert slot.picture_kind in (ILLUSTRATION, FRAME), (
             f"наша картинка легла в слот вида {slot.picture_kind}"
         )
-    assert placed
+        if slot.picture_kind == FRAME:
+            w, h = image_size(fill.ref)
+            have, want = w / h, slot.rect.cx / slot.rect.cy
+            assert 1 - min(have, want) / max(have, want) <= limit
 
 
 # --- две картинки на одном слайде --------------------------------------

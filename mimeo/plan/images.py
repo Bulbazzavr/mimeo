@@ -392,7 +392,8 @@ def add_placeholders(doc, out_dir: str, gen: GeneratorConfig, rules=None,
             ref = os.path.join(folder, f"{s.id}.png")
             wanted[ref] = s.image_idea.strip()
             s = replace(s, blocks=tuple(s.blocks) + (ContentBlock(
-                id=f"{GENERATED_PREFIX}{s.id}", kind="image", ref=ref, min_side=min_side),))
+                id=f"{GENERATED_PREFIX}{s.id}", kind="image", ref=ref, min_side=min_side,
+                generated=True),))
         sections.append(s)
     return replace(doc, sections=sections), wanted, None
 

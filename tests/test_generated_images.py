@@ -274,7 +274,7 @@ def test_generated_picture_does_not_buy_a_layout():
 
     body = ContentBlock(id="b1", kind="paragraph", text="Генераторы делают слайды по своим правилам")
     placeholder = ContentBlock(id=images.GENERATED_PREFIX + "sec", kind="image",
-                               ref="out/images/sec.png", min_side=2000000)
+                               ref="out/images/sec.png", min_side=2000000, generated=True)
     section = ContentSection(id="sec", heading="Генераторы не переносят стиль", blocks=(body, placeholder))
 
     no_place, big, small = pattern(), pattern(picture(3000000)), pattern(picture(1000000))
@@ -284,7 +284,7 @@ def test_generated_picture_does_not_buy_a_layout():
     # Встала — только премия; не встала — ни штрафа, ни потери полноты.
     assert round(placed.score - dropped.score, 4) == matching._BONUS_GENERATED_IMAGE
 
-    author = replace(placeholder, id="b2", min_side=None)
+    author = replace(placeholder, id="b2", min_side=None, generated=False)
     with_author = replace(section, blocks=(body, author))
     gap = matching.match(with_author, big).score - matching.match(with_author, no_place).score
     assert gap > matching._BONUS_GENERATED_IMAGE, "картинку автора ранг по-прежнему бережёт"

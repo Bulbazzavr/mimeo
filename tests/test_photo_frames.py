@@ -29,7 +29,7 @@ from mimeo.plan.content import ContentBlock, ContentDoc, ContentSection
 from mimeo.plan.imagesize import image_size
 from tests.fixtures.build_fixture import EXTRA_SLIDES, _slide, _text_sp, build_multi
 from tests.test_generated_images import FakeSD, _gen
-from tests.test_images import IMG, _Rect
+from tests.test_images import IMG, IMG2, _Rect
 
 BOX = (838200, 1900000, 5000000, 3200000)       # рамка: слева, под заголовком
 
@@ -128,21 +128,63 @@ def test_hint_never_takes_text_and_empty_frame_counts_as_empty():
     assert [s.id for s in matching.empty_places(_pattern(), {f.slot_id for f in got.fills})] == ["s02"]
 
 
-def test_frame_takes_only_a_generated_picture():
-    """Заготовка генератора рисуется в пропорции рамки; картинка автора легла
-    бы заливкой фигуры и растянулась — в рамку она не идёт."""
+def test_frame_takes_a_generated_picture_and_an_author_one_that_crops_little():
+    """Заготовка генератора рисуется в пропорции рамки. Картинку автора с
+    28 сентября сборка обрезает по центру под рамку — если срезать не больше
+    `frame_crop_max`: у баннера-схемы 3.69 в рамке 1.67 ушло бы 55 % ширины, и
+    он в рамку не идёт; фото 1.52 теряет 9 % и встаёт, растянутым не названо."""
     body = ContentBlock(id="b1", kind="paragraph", text="Генераторы делают слайды по своим правилам")
     drawn = ContentBlock(id=images.GENERATED_PREFIX + "sec", kind="image", ref="out/images/sec.png",
-                         min_side=2000000)
+                         min_side=2000000, generated=True)
     section = ContentSection(id="sec", heading="Заголовок", blocks=(body, drawn))
     placed = matching.match(section, _pattern())
     assert any(f.slot_id == "s02" and f.kind == "image" for f in placed.fills)
     assert matching.empty_places(_pattern(), {f.slot_id for f in placed.fills}) == []
 
-    author = replace(drawn, id="b2", ref=IMG, min_side=None)
-    kept_out = matching.match(replace(section, blocks=(body, author)), _pattern())
+    banner = replace(drawn, id="b2", ref=IMG, min_side=None, generated=False)
+    kept_out = matching.match(replace(section, blocks=(body, banner)), _pattern())
     assert not any(f.kind == "image" for f in kept_out.fills)
     assert kept_out.dropped_images == (IMG,)
+
+    photo = replace(banner, ref=IMG2)
+    framed = matching.match(replace(section, blocks=(body, photo)), _pattern())
+    assert any(f.slot_id == "s02" and f.ref == IMG2 for f in framed.fills)
+    assert framed.squeezed_images == (), "в рамке картинка обрезана, а не растянута"
+
+
+def test_empty_frame_nobody_will_fill_is_avoided():
+    """Генератор выключен — пустую рамку после плана залить некому, и она стоит
+    как чужие числа донора (`_PENALTY_EMPTY_FRAME`); включён — как раньше."""
+    body = ContentBlock(id="b1", kind="paragraph", text="Генераторы делают слайды по своим правилам")
+    section = ContentSection(id="sec", heading="Заголовок", blocks=(body,))
+    later = matching.match(section, _pattern())
+    dead = matching.match(section, _pattern(), replace(matching.DEFAULT_TUNING, frames_later=False))
+    assert round(later.score - dead.score, 4) == round(
+        matching._PENALTY_EMPTY_FRAME - matching._PENALTY_EMPTY_SLOT, 4)
+
+
+def test_frame_fill_crops_to_the_frame_instead_of_stretching():
+    """`a:srcRect` срезает по центру ровно столько, чтобы пропорция картинки
+    стала пропорцией рамки; совпадает — обрезки нет."""
+    def sp_pr(cx, cy):
+        return ET.fromstring(
+            f'<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" '
+            f'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+            f'<a:xfrm><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm>'
+            f'<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="FFFFFF"/>'
+            f'</a:solidFill></p:spPr>')
+
+    w, h = image_size(IMG2)                                  # 640×420, 1.52
+    tall = sp_pr(4000000, 2400000)                           # рамка 1.67 — шире картинки
+    _fill_with_picture(tall, IMG2)
+    src = tall.find(f"{qn('a:blipFill')}/{qn('a:srcRect')}")
+    assert src is not None and src.get("l") is None and src.get("t") == src.get("b")
+    kept = (1 - 2 * int(src.get("t")) / 100000) * h
+    assert abs(w / kept - 4000000 / 2400000) < 0.01
+
+    same = sp_pr(w * 10000, h * 10000)
+    _fill_with_picture(same, IMG2)
+    assert same.find(f"{qn('a:blipFill')}/{qn('a:srcRect')}") is None
 
 
 # --- PLAN: генератор заливает пустые рамки -----------------------------------------

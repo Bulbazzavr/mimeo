@@ -63,6 +63,15 @@ _PENALTY_SLACK = 0.10
 #: 26 сентября: таблица «Акцент 15 10» на двух колодах Education.
 _PENALTY_DONOR_DATA = 0.5
 
+#: Штраф за рамку под фото (`Z-55`), которая останется пустой: после плана её
+#: некому залить — генератор выключен или колоду строила не модель
+#: (`Tuning.frames_later`). Вместе с обычным штрафом пустого места — столько же,
+#: сколько чужие числа донора: белая карточка во весь угол слайда — такая же
+#: дыра. Сборка пользователя 28 сентября, генератор выключен: VK Tech, 6 слайдов
+#: из 11 с пустыми белыми рамками. Штраф, а не запрет: раскладка без рамки
+#: бывает хуже по тексту, и раздел не должен пропасть.
+_PENALTY_EMPTY_FRAME = 0.5
+
 #: Ниже этой доли от ориентира слот считается заполненным «на донышке».
 _SLACK_RATIO = 0.25
 
@@ -218,6 +227,10 @@ class Tuning:
     repeat: float = _REPEAT_PENALTY
     slack: float = _SLACK_RATIO
     over: float = _PENALTY_OVERFLOW
+    #: Не величина политики, а обстоятельство сборки: зальёт ли генератор пустые
+    #: рамки под фото после плана (`Z-55`). Нет — пустая рамка стоит
+    #: `_PENALTY_EMPTY_FRAME` (`cli.py`, 28 сентября). Умолчание — как было.
+    frames_later: bool = True
 
 
 #: Настройка «как в продукте». Отдельным именем, чтобы в коде было видно, что
@@ -458,6 +471,21 @@ def _by_aspect(slots: list[Slot], ref: str | None) -> list[Slot]:
     )
 
 
+def _crop(slot: Slot, ref: str | None) -> float | None:
+    """Какую долю одной стороны картинки срежет рамка под фото, если залить её
+    картинкой по центру без растяжения (`compose/substitute.py`, `a:srcRect`).
+    `None` — размеры картинки не прочитались: «проверить не смог», и в рамку
+    такая картинка не идёт."""
+    if not ref or not slot.rect.cx or not slot.rect.cy:
+        return None
+    size = image_size(ref)
+    if size is None or not size[0] or not size[1]:
+        return None
+    want = size[0] / size[1]
+    have = slot.rect.cx / slot.rect.cy
+    return 1 - min(want, have) / max(want, have)
+
+
 def _clear_of_taken(slots: list[Slot], pattern: Pattern, used: set[str]) -> list[Slot]:
     """Слоты, не налезающие на уже занятый слот картинки или таблицы.
 
@@ -694,16 +722,32 @@ def match(
             # — картинка не потеряется, она просто не встанет, и об этом
             # скажет предупреждение плана.
             #
-            # Рамка под фото (`Z-55`) — только для заготовки генератора: та
-            # рисуется в пропорции места, а картинка автора легла бы в рамку
-            # заливкой фигуры и растянулась.
-            kinds = (_ILLUSTRATION, FRAME) if block.min_side else (_ILLUSTRATION,)
-            slots = [s for s in slots if s.picture_kind in kinds]
+            # Рамка под фото (`Z-55`) — место и для заготовки генератора (та
+            # рисуется в пропорции рамки), и с 28 сентября для картинки автора:
+            # её сборка обрезает по центру под пропорцию рамки, не растягивая,
+            # если срезать нужно не больше `frame_crop_max` стороны
+            # (`config/images.json`) — у схемы край несёт содержание.
+            slots = [s for s in slots if s.picture_kind in (_ILLUSTRATION, FRAME)]
             if block.min_side:
-                # Заготовка генератора (`Z-28`): только место не мельче порога.
+                # Не мельче порога: у заготовки — `min_place_side` генератора,
+                # у картинки автора — `author_min_side` (миниатюра на фигуре
+                # донора хуже слайда без неё; проверка готовыми фото 28 сентября).
                 slots = [s for s in slots if min(s.rect.cx, s.rect.cy) >= block.min_side]
+            if not block.generated:
+                limit = load_picture_config().frame_crop_max
+                slots = [s for s in slots if s.picture_kind != FRAME
+                         or (_crop(s, block.ref) is not None and _crop(s, block.ref) <= limit)]
             slots = _clear_of_taken(slots, pattern, used)
             slots = _by_aspect(slots, block.ref)
+            if not block.generated:
+                # Рамки — первыми, с меньшей обрезкой впереди: их дизайнер задумал
+                # под фото. Сортировка устойчивая — прочее в прежнем порядке.
+                def frames_first(s: Slot) -> tuple[int, float]:
+                    if s.picture_kind != FRAME:
+                        return 1, 0.0
+                    return 0, _crop(s, block.ref) or 0.0
+
+                slots = sorted(slots, key=frames_first)
             if not slots:
                 # Не `leftover`: см. `Match.dropped_images`. Дробление раздела
                 # слота под иллюстрацию не создаст, а отвергнутая раскладка
@@ -713,7 +757,8 @@ def match(
         if not slots:
             leftover.append(block.id)
             continue
-        if role == "image":
+        if role == "image" and slots[0].picture_kind != FRAME:
+            # В рамке картинка обрезается под её пропорцию, а не растягивается.
             off = _aspect_gap(slots[0], block.ref)
             if off is not None and off > _aspect_tolerance():
                 squeezed_images.append((block.ref or block.id, off))
@@ -817,9 +862,9 @@ def match(
     # лучшей по тексту раскладки есть крупное место. Замер 26 сентября: со штрафом
     # ранг брал ради картинки тесную раскладку, и на двух колодах VK Tech текст
     # слайда с картинкой остался переполнен у предела читаемости (5 из 5 остатков).
-    generated = {b.ref for b in section.blocks if b.kind == "image" and b.min_side}
+    generated = {b.ref for b in section.blocks if b.kind == "image" and b.generated}
     total_units = sum(b.units for b in section.blocks
-                      if not (b.kind == "image" and b.min_side)) + (1 if section.heading else 0)
+                      if not (b.kind == "image" and b.generated)) + (1 if section.heading else 0)
     placed_units = sum(len(f.items or ()) if f.kind == "list" else 1 for f in fills
                        if not (f.kind == "image" and f.ref in generated))
     coverage = placed_units / total_units if total_units else 1.0
@@ -832,7 +877,12 @@ def match(
     else:
         affinity = 0.0
 
-    empty_required = len(empty_places(pattern, used))
+    empty = empty_places(pattern, used)
+    empty_required = len(empty)
+    # Рамку, которую после плана некому залить (генератор выключен или колоду
+    # строила не модель), ранг обходит: белая карточка во весь угол слайда —
+    # дыра, как чужие числа донора (`_PENALTY_EMPTY_FRAME`).
+    dead_frames = 0 if tuning.frames_later else sum(1 for s in empty if s.picture_kind == FRAME)
     thin = sum(1 for ratio in slack if ratio < tuning.slack)
     over = sum(overflows) / len(overflows) if overflows else 0.0
     # Таблица или диаграмма донора, на место которой встала наша (`Z-32`), —
@@ -844,6 +894,7 @@ def match(
         coverage
         + affinity
         - _PENALTY_EMPTY_SLOT * empty_required
+        - (_PENALTY_EMPTY_FRAME - _PENALTY_EMPTY_SLOT) * dead_frames
         - _PENALTY_DONOR_DATA * donor_data
         - _PENALTY_SLACK * (thin / max(1, len(slack)))
         - tuning.over * over

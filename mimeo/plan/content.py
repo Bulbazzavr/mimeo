@@ -45,11 +45,15 @@ class ContentBlock:
     value: str | None = None      # metric: само число
     label: str | None = None      # metric: подпись под числом
     ref: str | None = None        # image: путь
-    #: image: меньшая сторона места под иллюстрацию не короче, EMU. Задаётся
-    #: только заготовке генератора (`images.add_placeholders`, `Z-28`): нарисованная
-    #: картинка — украшение, миниатюра в рамке донора хуже слайда без неё.
+    #: image: меньшая сторона места под иллюстрацию не короче, EMU. У заготовки
+    #: генератора (`images.add_placeholders`, `Z-28`) — `min_place_side`; с
+    #: 28 сентября и у картинки автора (`config/images.json`, `author_min_side`,
+    #: `cli._author_floor`): миниатюра на фигуре донора хуже слайда без неё.
     #: table, chart: то же для места под таблицу и диаграмму (`plan/visual.py`).
     min_side: int | None = None
+    #: image: заготовка генератора, а не картинка автора (`Z-28`). Ранг судит по
+    #: этому признаку, а не по `min_side`: порог места с 28 сентября есть у обеих.
+    generated: bool = False
     #: table, chart: данные — `visual.TableData` или `visual.ChartData`
     #: (`Z-32`, `ADR-0026`). Сборка строит из них нативный объект PowerPoint.
     data: object | None = None

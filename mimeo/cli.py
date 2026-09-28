@@ -8,6 +8,7 @@ import os
 import sys
 import time
 import zipfile
+from dataclasses import replace
 from xml.etree import ElementTree as ET
 
 from . import config as cfg
@@ -18,6 +19,7 @@ from .compose import inspect as inspect_package
 from .plan import load_content, outline, plan_deck
 from .plan.client import Access, Outage
 from .plan.client import load_config as load_model_config
+from .plan.matching import DEFAULT_TUNING
 from .plan.outline import MODES
 from .opc.package import PackageError
 from .oxml.units import emu_to_inch
@@ -92,6 +94,24 @@ def _visuals(doc, analysis):
     doc, notes = visual.without_hosts(
         doc, lambda block: any(visual_host(p, block) is not None for p in patterns))
     return _replace(doc, notes=tuple(doc.notes) + tuple(notes)) if notes else doc
+
+
+def _author_floor(doc, analysis):
+    """Картинке автора — наименьшее место (`config/images.json`, `author_min_side`):
+    миниатюрой на фигуре донора она хуже, чем не встав вовсе (решение
+    пользователя 28 сентября, проверка готовыми фото). Не встала — план это
+    называет, как любую невставленную картинку (`Z-28a`)."""
+    from .analyze.picture import load_config as load_picture_config
+
+    slide = analysis.design_system.slide
+    floor = int(load_picture_config().author_min_side * min(slide.cx_emu, slide.cy_emu))
+    if floor <= 0 or not any(b.kind == "image" and not b.generated
+                             for s in doc.sections for b in s.blocks):
+        return doc
+    sections = [replace(s, blocks=tuple(
+        replace(b, min_side=floor) if b.kind == "image" and not b.generated else b
+        for b in s.blocks)) for s in doc.sections]
+    return replace(doc, sections=sections)
 
 
 def _pictures(args, doc, analysis, outage=None):
@@ -562,7 +582,12 @@ def cmd_build(args):
     # До ветки вариантов: один вызов модели на все варианты (`ADR-0023`,
     # «Следствия» — три вёрстки одного содержания).
     outcome, record_path = model_path(args, doc, target, outage=outage)
-    doc, painter, picture_note = _pictures(args, _visuals(outcome.doc, analysis), analysis, outage)
+    doc, painter, picture_note = _pictures(args, _author_floor(_visuals(outcome.doc, analysis), analysis),
+                                           analysis, outage)
+    # Зальёт ли генератор пустые рамки под фото после плана (`Z-55`): нет — ранг
+    # их обходит (`matching._PENALTY_EMPTY_FRAME`, 28 сентября).
+    tuning = replace(DEFAULT_TUNING,
+                     frames_later=painter.gen.access == "on" and doc.planner == "mixed")
     # Объём вёрстки: колоде модели — только заданный (рамки промпта она уже
     # получила выше), пути без модели — и потолок ТЗ по умолчанию (`Z-70`).
     target = volume_for(doc, target)
@@ -576,12 +601,12 @@ def cmd_build(args):
     if int(getattr(args, "variants", 1) or 1) > 1:
         return _build_variants(args, analysis, doc, target, started,
                                _model_line(outcome, record_path), painter, picture_note, judge,
-                               outage, picker)
+                               outage, picker, frames_later=tuning.frames_later)
 
     sha = analysis.design_system.source.sha256
-    plan = plan_deck(doc, analysis.patterns, sha, target=target)
+    plan = plan_deck(doc, analysis.patterns, sha, target=target, tuning=tuning)
     plan = _painted(plan, painter, doc, analysis.patterns,
-                    lambda d: plan_deck(d, analysis.patterns, sha, target=target))
+                    lambda d: plan_deck(d, analysis.patterns, sha, target=target, tuning=tuning))
     plan = judge.mark(plan, analysis.patterns)
     plan = picker.mark(plan, analysis.patterns)
     plan, fix_note = _shrunk(plan, analysis.patterns, args.fix_picks, None)
@@ -682,7 +707,8 @@ def cmd_build(args):
 
 
 def _build_variants(args, analysis, doc, target, started, model_summary="",
-                    painter=None, picture_note=None, judge=None, outage=None, picker=None):
+                    painter=None, picture_note=None, judge=None, outage=None, picker=None,
+                    frames_later=True):
     """Три (или сколько попросили) варианта вёрстки одного контента.
 
     Требование ТЗ, раздел 2, п. 5, и пункт критерия 3, который проверяют
@@ -693,7 +719,8 @@ def _build_variants(args, analysis, doc, target, started, model_summary="",
 
     policies, min_distance, source = load_policies()
     variants = generate(
-        doc, analysis.patterns, analysis.design_system.source.sha256, policies, target
+        doc, analysis.patterns, analysis.design_system.source.sha256, policies, target,
+        frames_later=frames_later,
     )
     chosen, reason = select(variants, int(args.variants), min_distance)
 
@@ -724,7 +751,7 @@ def _build_variants(args, analysis, doc, target, started, model_summary="",
         if painter is not None:
             # Картинка — в пропорции места, которое ей дал именно этот вариант;
             # одинаковые размеры варианты берут из кэша художника (`Z-28`).
-            tuning = variant.policy.tuning
+            tuning = replace(variant.policy.tuning, frames_later=frames_later)
             plan = _painted(plan, painter, doc, analysis.patterns,
                             lambda d, t=tuning: plan_deck(d, analysis.patterns, sha, target, tuning=t))
         if judge is not None:

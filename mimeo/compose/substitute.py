@@ -204,7 +204,7 @@ def replace_picture(
     if content_type is None:
         return f"неизвестный тип картинки {extension}, оставлена картинка донора"
     if frame:
-        blip = _fill_with_picture(shape.find(qn("p:spPr")))
+        blip = _fill_with_picture(shape.find(qn("p:spPr")), image_path)
 
     part = f"/ppt/media/mimeo{index}{extension}"
     with open(image_path, "rb") as fh:
@@ -223,14 +223,16 @@ def replace_picture(
 _FILLS = ("a:noFill", "a:solidFill", "a:gradFill", "a:blipFill", "a:pattFill", "a:grpFill")
 
 
-def _fill_with_picture(sp_pr: ET.Element) -> ET.Element:
+def _fill_with_picture(sp_pr: ET.Element, image_path: str | None = None) -> ET.Element:
     """Рамка под фото (`Z-55`): картинка встаёт заливкой самой фигуры.
 
     Так остаются геометрия, скругление, обводка и тень, какими их задал
     дизайнер, — это та же фигура донора, только залитая картинкой. Картинку
-    генератор рисует в пропорции рамки (`plan/images.py`), поэтому растяжение
-    `a:stretch` её не искажает. Возвращает `a:blip`, которому осталось
-    назначить связь."""
+    генератор рисует в пропорции рамки (`plan/images.py`); картинку автора
+    (с 28 сентября) сборка обрезает по центру под пропорцию рамки — `a:srcRect`,
+    — и растяжение `a:stretch` её не искажает. Сколько срезать можно, решил
+    план (`config/images.json`, `frame_crop_max`). Возвращает `a:blip`, которому
+    осталось назначить связь."""
     old = [c for c in sp_pr if c.tag in {qn(t) for t in _FILLS}]
     at = list(sp_pr).index(old[0]) if old else None
     for child in old:
@@ -241,6 +243,36 @@ def _fill_with_picture(sp_pr: ET.Element) -> ET.Element:
         at = after[-1] + 1 if after else 0
     fill = ET.Element(qn("a:blipFill"), {"rotWithShape": "1"})
     blip = ET.SubElement(fill, qn("a:blip"))
+    crop = _center_crop(sp_pr, image_path)
+    if crop is not None:
+        ET.SubElement(fill, qn("a:srcRect"), crop)      # CT_BlipFillProperties: blip, srcRect, stretch
     ET.SubElement(ET.SubElement(fill, qn("a:stretch")), qn("a:fillRect"))
     sp_pr.insert(at, fill)
     return blip
+
+
+def _center_crop(sp_pr: ET.Element, image_path: str | None) -> dict[str, str] | None:
+    """Обрезка картинки по центру под пропорцию рамки: атрибуты `a:srcRect` в
+    тысячных долях процента (ECMA-376, ST_Percentage: 100000 — вся сторона).
+    `None` — обрезать нечего или размеры не прочитались: тогда как раньше,
+    растяжением во всю рамку."""
+    from ..plan.imagesize import image_size
+
+    ext = sp_pr.find(f"{qn('a:xfrm')}/{qn('a:ext')}")
+    size = image_size(image_path) if image_path else None
+    if ext is None or size is None or not size[0] or not size[1]:
+        return None
+    try:
+        cx, cy = int(ext.get("cx")), int(ext.get("cy"))
+    except (TypeError, ValueError):
+        return None
+    if cx <= 0 or cy <= 0:
+        return None
+    have, want = size[0] / size[1], cx / cy
+    if abs(have - want) / want < 0.005:
+        return None
+    if have > want:                                     # картинка шире рамки — срезать бока
+        side = round((1 - want / have) / 2 * 100000)
+        return {"l": str(side), "r": str(side)}
+    side = round((1 - have / want) / 2 * 100000)        # выше рамки — срезать верх и низ
+    return {"t": str(side), "b": str(side)}

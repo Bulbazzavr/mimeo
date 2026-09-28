@@ -44,7 +44,7 @@ from __future__ import annotations
 import itertools
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from ..model import DeckPlan, PatternLibrary
 from .content import ContentDoc
@@ -182,15 +182,19 @@ def generate(
     design_system_sha256: str,
     policies: tuple[Policy, ...],
     target: tuple[int, int] | None = None,
+    frames_later: bool = True,
 ) -> tuple[Variant, ...]:
     """Колода на каждую политику. Разбор шаблона снаружи и один на всех.
 
     Детерминированность — условие, а не пожелание (`ADR-0020`, риск 2): порядок
-    политик задан списком, случайности нет нигде.
+    политик задан списком, случайности нет нигде. `frames_later` — зальёт ли
+    генератор пустые рамки под фото после плана (`Tuning.frames_later`): это
+    обстоятельство сборки, одно на все политики.
     """
     out = []
     for policy in policies:
-        plan = plan_deck(doc, library, design_system_sha256, target, policy.tuning)
+        tuning = replace(policy.tuning, frames_later=frames_later)
+        plan = plan_deck(doc, library, design_system_sha256, target, tuning)
         out.append(Variant(policy=policy, plan=plan, score=score_deck(plan, library)))
     return tuple(out)
 
