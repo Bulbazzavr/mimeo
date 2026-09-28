@@ -53,7 +53,7 @@ python tools/audit_doc.py --write
 | [`tests/test_exclusive_donors.py`](tests/test_exclusive_donors.py) | 9 | Доноры, которые нельзя клонировать дважды. `Z-44`, `DOM-PKG §9`, `PLAN-6.1`. |
 | [`tests/test_export_html.py`](tests/test_export_html.py) | 13 | Выгрузка колоды в HTML (`mimeo/export/html.py`). |
 | [`tests/test_fitting.py`](tests/test_fitting.py) | 8 | Оценка вместимости. DOM-TEXT §6, §10, ADR-0008. |
-| [`tests/test_generated_images.py`](tests/test_generated_images.py) | 11 | Картинки по идеям модели (`Z-28`, `mimeo/plan/images.py`). |
+| [`tests/test_generated_images.py`](tests/test_generated_images.py) | 12 | Картинки по идеям модели (`Z-28`, `mimeo/plan/images.py`). |
 | [`tests/test_icons.py`](tests/test_icons.py) | 7 | Пиктограммы на месте значков шаблона (`Z-32`, `ADR-0028`). |
 | [`tests/test_image_ideas.py`](tests/test_image_ideas.py) | 11 | Идеи картинок модели в плане колоды (`PLAN-9.0`, Ш6; `ADR-0023`, п. 1). |
 | [`tests/test_images.py`](tests/test_images.py) | 16 | Встраивание изображений (`Z-28a`, `PLAN-7.10`). |
@@ -90,7 +90,7 @@ python tools/audit_doc.py --write
 | [`tests/test_web_boundary.py`](tests/test_web_boundary.py) | 5 | Граница веб-слоя (`Z-29`, `PLAN-8.0`, `SPEC-WEB` раздел 2). |
 | [`tests/test_web_content.py`](tests/test_web_content.py) | 3 | Контент-пакет в вебе: текст файлом и картинки к нему (`Z-73`). |
 | [`tests/test_web_design.py`](tests/test_web_design.py) | 13 | Экран «что вынули из вашего шаблона» (`Z-29`, `PLAN-8.1`, часть A). |
-| **всего** | **741** | в 52 файлах |
+| **всего** | **742** | в 52 файлах |
 
 <!-- /порождается -->
 

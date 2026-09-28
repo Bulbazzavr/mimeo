@@ -89,7 +89,8 @@ _SHIPPED = images.load_config()
 
 
 def _gen(tmp_path, base_url="http://127.0.0.1:9", **kw) -> images.GeneratorConfig:
-    kw = {"scene_system": _SHIPPED.scene_system, "prompt_suffix": _SHIPPED.prompt_suffix, **kw}
+    kw = {"scene_system": _SHIPPED.scene_system, "prompt_suffix": _SHIPPED.prompt_suffix,
+          "check_system": _SHIPPED.check_system, "check_question": _SHIPPED.check_question, **kw}
     return images.GeneratorConfig(base_url=base_url, cache_root=str(tmp_path / "img-cache"),
                                   llm_sleep_wait_sec=0, **kw)
 
@@ -212,6 +213,28 @@ def test_scene_request_carries_the_whole_deck(tmp_path):
     assert [p["heading"] for p in sent["presentation"]] == [s.heading for s in doc.sections]
     assert sent["presentation"][1]["theses"] == ["Тезис слайда 2"]
     assert sent["pictures"] == [{"slide": 2, "idea": "Сюжет 2"}, {"slide": 3, "idea": "Сюжет 3"}]
+
+
+def test_picture_with_letters_is_redrawn_and_then_dropped(tmp_path):
+    """Зрение нашло буквы — картинка перерисовывается с другим зерном; брак
+    на всех попытках — картинки нет, и сказано почему. Зрение не ответило —
+    не брак."""
+    with FakeSD() as sd:
+        verdicts = iter(["буквы или надписи", None])
+        painter = images.Painter(_gen(tmp_path, sd.base_url), {}, check=lambda png: next(verdicts))
+        assert painter.picture("Сцена", 64, 64, str(tmp_path / "a.png"))
+        assert [r["seed"] for r in sd.requests] == [42, 1042], "вторая попытка — другое зерно"
+        assert painter.redrawn == 1 and os.path.isfile(tmp_path / "a.png")
+
+        painter = images.Painter(_gen(tmp_path, sd.base_url), {}, check=lambda png: "буквы или надписи")
+        assert not painter.picture("Другая сцена", 64, 64, str(tmp_path / "b.png"))
+        assert not os.path.exists(tmp_path / "b.png")
+        assert "Снято после 3 попыток — 1" in painter.note()
+
+    config = client.ClientConfig(access=client.Access.ON, extra_body={},
+                                 cache_root=str(tmp_path / "llm"), tz_cache_root=str(tmp_path / "tz"),
+                                 endpoint=client.Endpoint(base_url="http://127.0.0.1:9"))
+    assert images.picture_check(_gen(tmp_path), config)(_png(8, 8)) is None, "не ответило — не брак"
 
 
 def test_deck_without_model_gets_no_pictures(tmp_path):

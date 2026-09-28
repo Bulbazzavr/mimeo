@@ -123,7 +123,9 @@ def _pictures(args, doc, analysis, outage=None):
     doc, placeholders, note = images.add_placeholders(doc, args.out, gen, slide_size=size)
     painter = images.Painter(gen, placeholders, llm_base_url=model.endpoint.base_url, slide_size=size,
                              rewrite=rewrite, folder=os.path.join(args.out, images.FOLDER),
-                             translations=translations)
+                             translations=translations,
+                             check=images.picture_check(gen, model, inputs=(args.content,), outage=outage)
+                             if placeholders or gen.access == "on" else None)
     return doc, painter, note
 
 

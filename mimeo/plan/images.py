@@ -83,6 +83,9 @@ class GeneratorConfig:
     scene_system: str = ""
     scene_batch: int = 10
     scene_max_tokens: int = 6000
+    check_system: str = ""
+    check_question: str = ""
+    check_retries: int = 2
     timeout_sec: float = 180.0
     llm_sleep_wait_sec: float = 30.0
     cache_root: str = "cache/images"
@@ -161,6 +164,54 @@ SCENE_SCHEMA = {
                    "scenes": {"type": "array", "items": {"type": "string"}}},
     "required": ["style", "plan", "ru", "scenes"],
 }
+
+
+#: Схема ответа зрения о нарисованной картинке — контракт, в коде (`ADR-0022`).
+#: `what` — первым: модель сперва описывает, что видит, потом отвечает.
+CHECK_SCHEMA = {
+    "type": "object",
+    "properties": {"what": {"type": "string"},
+                   "text_on_picture": {"type": "boolean"},
+                   "broken_bodies": {"type": "boolean"}},
+    "required": ["what", "text_on_picture", "broken_bodies"],
+}
+
+
+def picture_check(gen: GeneratorConfig, model_config, inputs=(), outage=None):
+    """Зрение модели о картинке генератора (решение пользователя 28 сентября):
+    функция PNG → причина брака или `None`. Зрение не ответило или ответ не
+    разобрался — не брак: «проверить не смог» картинку не снимает, а отказ
+    сервера помнит вся сборка (`client.Outage`). Промпт — только в конфиге."""
+    from ..config import missing
+    from .client import ModelClient
+
+    if not (gen.check_system.strip() and gen.check_question.strip()):
+        raise missing(CONFIG_NAME, "нет промпта проверки картинок (check_system, check_question)")
+    client = ModelClient(model_config, inputs=inputs, outage=outage)
+
+    def check(png: bytes) -> str | None:
+        from .prompt import Mode, Request
+        from .validate import extract_json
+
+        sha = hashlib.sha256(png).hexdigest()
+        url = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
+        request = Request(mode=Mode.JSON_SCHEMA, system=gen.check_system, user=gen.check_question,
+                          schema=CHECK_SCHEMA, section_id=f"картинка генератора {sha[:12]}",
+                          candidates=(), name="drawn_picture", tool="check_picture",
+                          purpose="Найти буквы и искажённые тела на нарисованной картинке.",
+                          images=(url,))
+        answer = client.complete(request)
+        parsed = extract_json(answer.text) if answer else None
+        if not isinstance(parsed, dict):
+            return None
+        why = []
+        if parsed.get("text_on_picture") is True:
+            why.append("буквы или надписи")
+        if parsed.get("broken_bodies") is True:
+            why.append("лишние или искажённые руки, лица")
+        return " и ".join(why) or None
+
+    return check
 
 
 def deck_outline(doc) -> list[dict]:
@@ -384,6 +435,10 @@ class Painter:
     cached: int = 0
     seconds: float = 0.0
     failures: list[str] = field(default_factory=list)
+    #: Зрение о нарисованной картинке (`picture_check`): PNG → причина брака или `None`.
+    check: object = None
+    redrawn: int = 0
+    rejected: list[str] = field(default_factory=list)
     too_small: set[str] = field(default_factory=set)
     #: Рамки под фото (`Z-55`): заполнено по вариантам и почему не заполнялись.
     framed: int = 0
@@ -461,29 +516,52 @@ class Painter:
         return png
 
     def picture(self, idea: str, width: int, height: int, target: str, seed: int | None = None) -> bool:
-        """Файл `target` с картинкой по идее: из кэша или от генератора."""
+        """Файл `target` с картинкой по идее: из кэша или от генератора.
+
+        Со зрением (`check`) картинку смотрит модель: буквы и надписи вместо
+        читаемого текста или лишние руки — перерисовать с другим зерном, до
+        `check_retries` раз (решение пользователя 28 сентября: генератор рисует
+        буквы каракулями, а руки — с ошибками). Не вышло — картинки нет, и
+        сказано почему."""
         # Сцена модели уже несёт стиль колоды; идея как есть — хвост конфига.
         prompt = idea if idea in self._styled else idea.rstrip(" .") + self.gen.prompt_suffix
+        base = self.gen.seed if seed is None else seed
+        attempts = 1 + (max(0, self.gen.check_retries) if self.check else 0)
+        reason = None
+        for attempt in range(attempts):
+            png = self._png(prompt, width, height, seed if attempt == 0 else base + 1000 * attempt, idea)
+            if png is None:
+                return False
+            reason = self.check(png) if self.check else None
+            if reason is None:
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                with open(target, "wb") as fh:
+                    fh.write(png)
+                self.redrawn += 1 if attempt else 0
+                self._remember(target, idea, prompt)
+                return True
+        short = idea if len(idea) <= 80 else idea[:77].rstrip() + "…"
+        self.rejected.append(f"«{short}»: {reason}")
+        return False
+
+    def _png(self, prompt: str, width: int, height: int, seed: int | None, idea: str) -> bytes | None:
+        """Картинка из кэша или от генератора; отказ генератора — в `failures`."""
         cached = self._cache_path(self._key(prompt, width, height, seed))
-        os.makedirs(os.path.dirname(target), exist_ok=True)
         if os.path.isfile(cached):
-            shutil.copyfile(cached, target)
             self.cached += 1
-            self._remember(target, idea, prompt)
-            return True
+            with open(cached, "rb") as fh:
+                return fh.read()
         try:
             png = self._draw(prompt, width, height, seed)
         except (urllib.error.URLError, OSError, ValueError, KeyError, IndexError) as exc:
             reason = getattr(exc, "reason", exc)
             self.failures.append(f"«{idea}» {width}x{height}: {reason}")
-            return False
+            return None
         os.makedirs(os.path.dirname(cached), exist_ok=True)
         with open(cached, "wb") as fh:
             fh.write(png)
-        shutil.copyfile(cached, target)
         self.drawn += 1
-        self._remember(target, idea, prompt)
-        return True
+        return png
 
     def _remember(self, target: str, idea: str, prompt: str) -> None:
         """Что просили у генератора для файла `target` — и перевод сцены."""
@@ -671,7 +749,8 @@ class Painter:
 
     def note(self) -> str | None:
         """Строка для предупреждений плана: сколько нарисовано и чем."""
-        if not (self.drawn or self.cached or self.failures or self.too_small or self.frames_small):
+        if not (self.drawn or self.cached or self.failures or self.too_small or self.frames_small
+                or self.rejected):
             return " ".join(x for x in (self.frames_note, self.scenes_note) if x) or None
         parts = []
         if self.drawn:
@@ -697,6 +776,11 @@ class Painter:
                      f"{self.frames_small}.")
         if self.frames_note:
             line += " " + self.frames_note
+        if self.redrawn or self.rejected:
+            line += f" Зрение модели забраковало и перерисовало с другим зерном: {self.redrawn}."
+        if self.rejected:
+            line += (f" Снято после {1 + self.gen.check_retries} попыток — {len(self.rejected)}: "
+                     f"{'; '.join(self.rejected)} — эти слайды собраны без картинки.")
         if self.scenes_note:
             line += " " + self.scenes_note
         return line
