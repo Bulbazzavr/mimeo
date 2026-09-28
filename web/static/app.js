@@ -345,9 +345,10 @@ function designHtml(d) {
 let polling = false;
 let pollTimer = null;
 
+/* Время — мм:сс (просьба пользователя 28 сентября): «01:56», а не «116.3 с». */
 function clock(seconds) {
-  const s = Math.floor(seconds || 0);
-  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+  const s = Math.round(seconds || 0);
+  return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
 }
 
 function renderStages(p, finished) {
@@ -454,7 +455,7 @@ $('go').addEventListener('click', async () => {
     if (!data.ok) throw new Error(data.error || 'сборка не удалась');
     await finishProgress(true);
     render(data);
-    setStatus('Готово за ' + data.seconds + ' с.');
+    setStatus('Готово за ' + clock(data.seconds) + '.');
   } catch (error) {
     await finishProgress(false);
     setStatus('Не вышло: ' + error.message, 'error');
@@ -654,7 +655,7 @@ function bindFix() {
       if (!data.ok) throw new Error(data.error || 'исправление не удалось');
       await finishProgress(true);
       render(data);
-      setStatus('Исправлено и проверено заново за ' + data.seconds + ' с.');
+      setStatus('Исправлено и проверено заново за ' + clock(data.seconds) + '.');
     } catch (error) {
       await finishProgress(false);
       setStatus('Не вышло: ' + error.message, 'error');
