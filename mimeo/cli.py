@@ -115,13 +115,12 @@ def _pictures(args, doc, analysis, outage=None):
     deck = doc                              # вся колода — контекст каждой сцены
 
     def rewrite(ideas, sections=()):
-        # Уже написанные сцены колоды — ключи переводов: рамки не повторят идеи.
+        # Уже написанные сцены колоды — ключи переводов: новые их не повторят.
         return images.scenes(ideas, gen, model, inputs=(args.content,), outage=outage,
                              translations=translations, deck=deck, sections=sections,
                              taken=tuple(translations))
 
-    doc, placeholders, note = images.add_placeholders(doc, args.out, gen, slide_size=size,
-                                                      rewrite=rewrite)
+    doc, placeholders, note = images.add_placeholders(doc, args.out, gen, slide_size=size)
     painter = images.Painter(gen, placeholders, llm_base_url=model.endpoint.base_url, slide_size=size,
                              rewrite=rewrite, folder=os.path.join(args.out, images.FOLDER),
                              translations=translations)
@@ -132,10 +131,13 @@ def _painted(plan, painter, doc, library, replan):
     """План, у которого заготовки стали готовыми файлами в пропорции своего
     места. Картинка не нарисовалась — план перестраивается без неё: иначе в
     месте под иллюстрацию осталась бы картинка донора (`Z-62`). Пустые рамки
-    под фото шаблона после этого заливает генератор (`Z-55`)."""
+    под фото шаблона после этого заливает генератор (`Z-55`). Сцены всех
+    картинок — и заготовок, и рамок — модель пишет до рисования одним
+    запросом по всей колоде (`Painter.prepare`)."""
     from .plan import images
 
     dropped: set[str] = set()
+    painter.prepare([plan], library, doc)
     plan, failed = painter.paint(plan, library)
     while failed:                       # каждый круг снимает хотя бы одну заготовку
         dropped |= failed
@@ -708,8 +710,9 @@ def _build_variants(args, analysis, doc, target, started, model_summary="",
     sha = analysis.design_system.source.sha256
     audits: dict[int, tuple] = {}
     if painter is not None:
-        # Сцены для рамок под фото всех вариантов — одним вызовом модели (`Z-55`).
-        painter.prepare_frames([v.plan for v in chosen], analysis.patterns, doc)
+        # Сцены всех картинок всех вариантов — заготовок и рамок — одним
+        # вызовом модели по всей колоде (`Painter.prepare`).
+        painter.prepare([v.plan for v in chosen], analysis.patterns, doc)
     for n, variant in enumerate(chosen, 1):
         path = f"{stem}-{n}{ext}"
         plan = variant.plan

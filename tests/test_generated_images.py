@@ -154,12 +154,6 @@ def test_ideas_are_rewritten_into_scenes_without_text(tmp_path):
             config, endpoint=client.Endpoint(base_url=fake.base_url)))
         assert got is None and "не по форме" in how
 
-    with FakeSD() as sd:
-        doc, wanted, note = images.add_placeholders(
-            _doc(ideas=3), str(tmp_path), _gen(tmp_path, sd.base_url),
-            rewrite=lambda xs, _sections=(): ([f"Сцена {i}" for i, _ in enumerate(xs)], "от модели"))
-    assert list(wanted.values()) == ["Сцена 0", "Сцена 1", "Сцена 2"]
-    assert note.startswith("Сюжеты картинок переписаны моделью без текста (от модели)")
 
 
 def test_scene_translation_reaches_the_picture(tmp_path):

@@ -81,7 +81,8 @@ class GeneratorConfig:
     min_place_side: float = 0.3
     prompt_suffix: str = ""
     scene_system: str = ""
-    scene_batch: int = 5
+    scene_batch: int = 10
+    scene_max_tokens: int = 6000
     timeout_sec: float = 180.0
     llm_sleep_wait_sec: float = 30.0
     cache_root: str = "cache/images"
@@ -144,14 +145,17 @@ def reachable(gen: GeneratorConfig) -> str | None:
 
 
 #: Схема ответа на запрос сцен — контракт, в коде (`ADR-0022`); промпт — в конфиге.
-#: `ru` — сцена по-русски, `scenes` — её перевод на английский для генератора.
-#: Порядок полей — порядок, в котором модель их пишет: сначала по-русски, на
-#: нём Gemma пишет лучше, потом перевод. Без годного русского сцены всё равно берутся.
+#: `plan` — место и занятие каждой картинки одной строкой: модель сперва
+#: распределяет набор целиком, чтобы картинки колоды вышли разными; `ru` —
+#: сцена по-русски, на нём Gemma пишет лучше; `scenes` — её перевод на
+#: английский для генератора. Порядок полей — порядок, в котором модель их
+#: пишет. Без годного плана и русского сцены всё равно берутся.
 SCENE_SCHEMA = {
     "type": "object",
-    "properties": {"ru": {"type": "array", "items": {"type": "string"}},
+    "properties": {"plan": {"type": "array", "items": {"type": "string"}},
+                   "ru": {"type": "array", "items": {"type": "string"}},
                    "scenes": {"type": "array", "items": {"type": "string"}}},
-    "required": ["ru", "scenes"],
+    "required": ["plan", "ru", "scenes"],
 }
 
 
@@ -230,6 +234,11 @@ def scenes(ideas: list[str], gen: GeneratorConfig, model_config, inputs=(),
     request = Request(mode=model_config.mode, system=gen.scene_system, user=user, schema=SCENE_SCHEMA,
                       section_id="сцены картинок", candidates=(), name="scenes", tool="rewrite_scenes",
                       purpose="Переписать сюжеты рисунков без текста.")
+    # Свой потолок ответа: план, сцена и перевод на десяток картинок длиннее
+    # общего max_tokens модели (`config/generator.json`, `scene_max_tokens`).
+    if gen.scene_max_tokens > 0:
+        model_config = replace(model_config, endpoint=replace(
+            model_config.endpoint, max_tokens=gen.scene_max_tokens))
     answer = ModelClient(model_config, inputs=inputs, outage=outage).complete(request)
     if not answer:
         return None, answer.note or "ответа нет"
@@ -247,17 +256,18 @@ def scenes(ideas: list[str], gen: GeneratorConfig, model_config, inputs=(),
 
 
 def add_placeholders(doc, out_dir: str, gen: GeneratorConfig, rules=None,
-                     slide_size: tuple[int, int] | None = None, rewrite=None):
+                     slide_size: tuple[int, int] | None = None):
     """Разделам с идеями — блок картинки, файла которой ещё нет.
 
     Правила отбора те же, что у `_pick_ideas` (`config/outline.json`,
     `image_ideas`): тип слайда из списка, у раздела нет картинки автора, не
     больше одной идеи на `slides_per_idea` разделов, по порядку колоды.
     `slide_size` задаёт заготовке наименьшее место (`min_place_side`): ранг
-    ищет раскладку, где картинка встанет крупно, а не миниатюрой. `rewrite` —
-    `scenes` с настройками модели: идеи → сцены без текста.
+    ищет раскладку, где картинка встанет крупно, а не миниатюрой. Сцены по
+    идеям пишет художник после вёрстки, одним запросом на все картинки колоды
+    (`Painter.prepare`): до вёрстки неизвестно, где будут рамки под фото.
 
-    Возвращает (документ, {путь заготовки: сюжет}, заметка или `None`)."""
+    Возвращает (документ, {путь заготовки: идея}, заметка или `None`)."""
     from .outline import idea_rules
 
     if doc.planner != "mixed":
@@ -283,26 +293,16 @@ def add_placeholders(doc, out_dir: str, gen: GeneratorConfig, rules=None,
     # Файл прошлой сборки с именем заготовки дал бы плану пропорцию чужой картинки.
     shutil.rmtree(folder, ignore_errors=True)
     min_side = int(gen.min_place_side * min(slide_size)) if slide_size else None
-    picked = [s for s in doc.sections if s.id in chosen]
-    ideas = [s.image_idea.strip() for s in picked]
-    rewritten, how = rewrite(ideas, picked) if rewrite else (None, "")
-    subjects = iter(rewritten or ideas)
     wanted: dict[str, str] = {}
     sections = []
     for s in doc.sections:
         if s.id in chosen:
             ref = os.path.join(folder, f"{s.id}.png")
-            wanted[ref] = next(subjects)
+            wanted[ref] = s.image_idea.strip()
             s = replace(s, blocks=tuple(s.blocks) + (ContentBlock(
                 id=f"{GENERATED_PREFIX}{s.id}", kind="image", ref=ref, min_side=min_side),))
         sections.append(s)
-    note = None
-    if rewritten:
-        pairs = "; ".join(f"«{a}» → «{b}»" for a, b in zip(ideas, rewritten))
-        note = f"Сюжеты картинок переписаны моделью без текста ({how}): {pairs} (Z-28)."
-    elif rewrite:
-        note = f"Сюжеты картинок не переписаны ({how}) — рисуется идея модели как есть (Z-28)."
-    return replace(doc, sections=sections), wanted, note
+    return replace(doc, sections=sections), wanted, None
 
 
 def without(doc, refs) -> object:
@@ -372,7 +372,8 @@ class Painter:
     framed: int = 0
     frames_small: int = 0
     frames_note: str | None = None
-    frames_scenes: str = ""
+    #: Какие сцены написала модель и почему нет — строкой для предупреждений.
+    scenes_note: str | None = None
     #: Готовый файл → промпт, с которым его нарисовал генератор: человеку видно,
     #: что просили у генератора для каждой картинки (`placed`, отчёт сборки).
     prompts: dict[str, str] = field(default_factory=dict)
@@ -485,7 +486,9 @@ class Painter:
             pattern = patterns.get(slide.pattern_id)
             fills = []
             for fill in slide.fills:
-                idea = self.wanted.get(fill.ref) if fill.kind == "image" else None
+                raw = self.wanted.get(fill.ref) if fill.kind == "image" else None
+                # Сцена, написанная по всей колоде (`prepare`); нет её — идея как есть.
+                idea = self._scenes.get(raw, raw) if raw is not None else None
                 slot = next((s for s in pattern.slots if s.id == fill.slot_id), None) if pattern else None
                 if idea is None or slot is None or not slot.rect.cy:
                     fills.append(fill)
@@ -567,33 +570,53 @@ class Painter:
         floor = self.gen.min_place_side * min(self.slide_size) if self.slide_size else 0
         return min(slot.rect.cx, slot.rect.cy) >= floor
 
-    def prepare_frames(self, plans, library, doc) -> None:
-        """Сцены для пустых рамок всех вариантов — одним вызовом модели: каждый
-        лишний вызов будит её, и генератор ждёт, пока она снова уснёт. Рамки
-        мельче порога сцен не получают — рисовать их не будут."""
+    def prepare(self, plans, library, doc) -> None:
+        """Сцены для всех картинок колоды — заготовок по идеям и пустых рамок
+        всех вариантов — одним вызовом модели (решение пользователя
+        27 сентября): модель видит набор целиком и сама делает картинки
+        разными, каждая — к мысли своего слайда. Прежде идеи и рамки шли двумя
+        вызовами, и пять картинок из пяти вышли «за компьютером». Каждый лишний
+        вызов к тому же будит модель, и генератор ждёт, пока она уснёт. Рамки
+        мельче порога сцен не получают — рисовать их не будут; уже написанные
+        сцены второй раз не спрашиваются."""
         subjects: list[str] = []
         owners: list = []                   # раздел каждого сюжета — его слайд в колоде
-        jobs = [j for plan in plans for j in self._frame_jobs(plan, library, doc)
-                if self._big_enough(j[1])]
-        if not self._ready(doc, jobs):
-            return
-        for _n, _slot, section, _part in jobs:
-            subject = self._subject(section)
+        sections = {s.id: s for s in doc.sections}
+
+        def want(subject, section):
             if subject and subject not in self._scenes and subject not in subjects:
                 subjects.append(subject)
                 owners.append(section)
-        if not subjects:
+
+        for plan in plans:
+            for slide in plan.slides:
+                for fill in slide.fills:
+                    if fill.kind == "image" and fill.ref in self.wanted:
+                        # Заготовка — `<раздел>.png` (`add_placeholders`).
+                        stem = os.path.splitext(os.path.basename(fill.ref))[0]
+                        want(self.wanted[fill.ref], sections.get(stem))
+        ideas = len(subjects)
+        jobs = [j for plan in plans for j in self._frame_jobs(plan, library, doc)
+                if self._big_enough(j[1])]
+        if self._ready(doc, jobs):
+            for _n, _slot, section, _part in jobs:
+                want(self._subject(section), section)
+        if not subjects or self.rewrite is None:
             return
-        got, how = self.rewrite(subjects, owners)
+        got, how = self.rewrite(subjects, owners if all(owners) else ())
         if got is None:
-            if not self.frames_note:
+            if ideas:
+                self.scenes_note = f"Сюжеты картинок не переписаны ({how}) — рисуется идея модели как есть (Z-28)."
+            if len(subjects) > ideas and not self.frames_note:
                 self.frames_note = (f"Рамки под фото не заполнены: сцены без текста не написаны "
                                     f"({how}) — заголовок запросом картинки дал бы выдуманные буквы (Z-55).")
             return
         self._scenes.update(zip(subjects, got))
         # Что нарисовано и почему — в отчёт: сцену пишет модель, и видеть её
         # решение должен человек (замер 26 сентября: «колоду» она прочла как карты).
-        self.frames_scenes += "".join(f" «{a}» → «{b}» ({how})." for a, b in zip(subjects, got))
+        pairs = "; ".join(f"«{a}» → «{b}»" for a, b in zip(subjects, got))
+        self.scenes_note = (self.scenes_note + " " if self.scenes_note else "") + (
+            f"Сцены картинок написала модель по всей колоде ({how}): {pairs} (Z-28).")
 
     def frames(self, plan, library, doc):
         """Пустые рамки под фото — картинкой по сцене слайда, в пропорции рамки.
@@ -606,7 +629,7 @@ class Painter:
         jobs = self._frame_jobs(plan, library, doc)
         if not self._ready(doc, jobs):
             return plan
-        self.prepare_frames([plan], library, doc)
+        self.prepare([plan], library, doc)
         added: dict[int, list] = {}
         for n, slot, section, part in jobs:
             if not self._big_enough(slot):
@@ -629,7 +652,7 @@ class Painter:
     def note(self) -> str | None:
         """Строка для предупреждений плана: сколько нарисовано и чем."""
         if not (self.drawn or self.cached or self.failures or self.too_small or self.frames_small):
-            return self.frames_note
+            return " ".join(x for x in (self.frames_note, self.scenes_note) if x) or None
         parts = []
         if self.drawn:
             parts.append(f"нарисовано {self.drawn} за {self.seconds:.1f} с")
@@ -648,11 +671,12 @@ class Painter:
                      "картинки.")
         if self.framed:
             line += (f" В рамки под фото шаблона — {self.framed} из {self.drawn + self.cached} "
-                     "(по всем вариантам): сцену по идее или заголовку слайда написала модель (Z-55). "
-                     "Сцены рамок:" + self.frames_scenes)
+                     "(по всем вариантам): сцену по идее или заголовку слайда написала модель (Z-55).")
         if self.frames_small:
             line += (f" Рамок мельче {self.gen.min_place_side:.0%} стороны слайда осталось пустыми "
                      f"{self.frames_small}.")
         if self.frames_note:
             line += " " + self.frames_note
+        if self.scenes_note:
+            line += " " + self.scenes_note
         return line

@@ -233,6 +233,9 @@ def test_build_fills_frames_after_the_placeholders():
     calls = []
 
     class Stub:
+        def prepare(self, plans, library, doc):
+            calls.append("prepare")
+
         def paint(self, plan, library):
             calls.append("paint")
             return plan, set()
@@ -242,7 +245,36 @@ def test_build_fills_frames_after_the_placeholders():
             return "с рамками"
 
     assert cli._painted("план", Stub(), "док", "библиотека", replan=None) == "с рамками"
-    assert calls == ["paint", "frames"]
+    assert calls == ["prepare", "paint", "frames"]
+
+
+def test_one_scene_request_for_all_pictures_of_the_deck(tmp_path):
+    """Сцены заготовки по идее и пустой рамки — одним запросом к модели, с
+    разделом каждой картинки: модель видит набор целиком и делает его разным.
+    Рамки после рисования модель второй раз не зовут."""
+    asked = []
+
+    def rewrite(subjects, sections=()):
+        asked.append((list(subjects), [s.id for s in sections]))
+        return [f"Сцена {i}" for i, _ in enumerate(subjects)], "от модели"
+
+    ref = str(tmp_path / "images" / "m03.png")
+    plan = _plan(("m02", 1), ("m03", 1))
+    slides = list(plan.slides)
+    slides[1] = replace(slides[1], fills=slides[1].fills + (Fill(slot_id="s02", kind="image", ref=ref),))
+    plan = replace(plan, slides=tuple(slides))
+    with FakeSD() as sd:
+        painter = images.Painter(_gen(tmp_path, sd.base_url), {ref: "Идея третьего слайда"},
+                                 slide_size=(12192000, 6858000), rewrite=rewrite,
+                                 folder=str(tmp_path / "images"))
+        painter.prepare([plan], _library(), _frame_doc())
+        assert asked == [(["Идея третьего слайда", "Движок работает на стандартной библиотеке"],
+                          ["m03", "m02"])]
+        painted, failed = painter.paint(plan, _library())
+        painter.frames(painted, _library(), _frame_doc())
+        assert not failed and len(asked) == 1, "рамки не зовут модель второй раз"
+        assert sorted(r["prompt"].split(".")[0] for r in sd.requests) == ["Сцена 0", "Сцена 1"]
+    assert "Сцены картинок написала модель по всей колоде" in painter.note()
 
 
 # --- COMPOSE ---------------------------------------------------------------------
