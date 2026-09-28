@@ -9,43 +9,59 @@
 <body>
 
 <header>
-  <h1>Цифровой дизайнер презентаций</h1>
+  <div class="top">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 40 40" aria-hidden="true">
+        <rect x="11" y="4" width="25" height="18" rx="3" class="m3"/>
+        <rect x="7.5" y="10" width="25" height="18" rx="3" class="m2"/>
+        <rect x="4" y="16" width="25" height="18" rx="3" class="m1"/>
+      </svg>
+      <h1>Цифровой дизайнер презентаций</h1>
+    </div>
+    <!-- Базовый вид — по умолчанию; включённый переключатель берёт акцент
+         страницы из палитры загруженного шаблона (выбор пользователя 28.09). -->
+    <label class="toggle theme-toggle" title="Акцентный цвет страницы — из палитры загруженного шаблона">
+      <input type="checkbox" id="theme-toggle">
+      <span class="track"></span>
+      <span class="txt">В цветах шаблона <span class="theme-swatch" id="theme-swatch" hidden></span></span>
+    </label>
+  </div>
   <p class="lead">Шаблон и текст прозой на входе — готовая презентация в стиле этого шаблона на выходе.
      Слайды не рисуются с нуля: движок клонирует слайды самого шаблона вместе с их вёрсткой.</p>
 </header>
 
 <main>
   <section class="panel" id="form-panel">
-    <h2>1. Шаблон</h2>
-    <label class="file">
+    <h2><span class="num">1</span>Шаблон</h2>
+    <label class="drop" id="template-drop">
       <input type="file" id="template" accept=".pptx,.potx">
-      <span id="template-name">Файл не выбран — нужен .pptx или .potx</span>
+      <span class="drop-title">Перетащите шаблон сюда или нажмите, чтобы выбрать</span>
+      <span class="drop-note" id="template-name">.pptx или .potx</span>
     </label>
 
-    <h2>2. Текст</h2>
+    <h2><span class="num">2</span>Текст</h2>
     <p class="hint">Сплошная проза, как её пишет заказчик: без разметки, абзацами, с числами.
        Движок сам режет её на темы.</p>
-    <label class="file">
+    <label class="drop small" id="content-drop">
       <input type="file" id="content" accept=".txt,.md,.png,.jpg,.jpeg,.gif,.bmp,.webp" multiple>
-      <span id="content-name">Или загрузите контент: текст файлом (.txt, .md) и картинки к нему</span>
+      <span class="drop-title">Загрузить контент файлом</span>
+      <span class="drop-note" id="content-name">текст (.txt, .md) и картинки к нему — или напишите в поле ниже</span>
     </label>
     <textarea id="text" rows="12" placeholder="Сделай презентацию про наш проект, минут на десять…"></textarea>
     <p class="hint" id="content-images" hidden></p>
     <p class="hint"><button type="button" class="link" id="fill-example">Подставить пример из корпуса</button></p>
 
-    <h2>3. Как собирать</h2>
+    <h2><span class="num">3</span>Как собирать</h2>
     <p class="hint">Колоду по тексту строит языковая модель: сколько слайдов, в каком порядке,
        заголовки и тезисы. Нужен запущенный сервер модели.</p>
-    <div class="row">
-      <label class="check"><input type="radio" name="text-mode" value="improve" checked>
-        Переписать короче и понятнее
-        <span class="hint">числа и факты — только ваши</span></label>
-      <label class="check"><input type="radio" name="text-mode" value="keep">
-        Оставить мои фразы
-        <span class="hint">тезисы — дословно из текста</span></label>
+    <div class="seg" role="radiogroup" aria-label="Что делать с текстом">
+      <label><input type="radio" name="text-mode" value="improve" checked>
+        <span><b>Переписать короче и понятнее</b><small>числа и факты — только ваши</small></span></label>
+      <label><input type="radio" name="text-mode" value="keep">
+        <span><b>Оставить мои фразы</b><small>тезисы — дословно из текста</small></span></label>
     </div>
-    <div class="row">
-      <label>Назначение
+    <div class="fields">
+      <label class="wide">Назначение
         <select id="purpose">
           <option value="">не задано — порядок по тексту</option>
           <option value="feature">питч фичи</option>
@@ -55,8 +71,6 @@
         </select>
         <span class="hint">порядок слайдов, принятый для такой презентации; новых разделов модель не добавит</span>
       </label>
-    </div>
-    <div class="row">
       <label>Объём
         <input type="text" id="slides" placeholder="10-15" size="8">
         <span class="hint">пусто — рамки ТЗ 10–15; без модели — не больше 15</span>
@@ -66,19 +80,24 @@
         <span class="hint">1–27; ТЗ требует 3</span>
       </label>
     </div>
-    <label class="check">
+    <label class="toggle">
       <input type="checkbox" id="images" checked>
-      Рисовать картинки генератором
-      <span class="hint">по идеям модели и в рамки под фото шаблона; ваши картинки встают всегда</span>
+      <span class="track"></span>
+      <span class="txt">Рисовать картинки генератором
+        <span class="hint">по идеям модели и в рамки под фото шаблона; ваши картинки встают всегда</span></span>
     </label>
-    <label class="check">
+    <label class="toggle">
       <input type="checkbox" id="verify">
-      Проверить вёрстку в настоящем PowerPoint и ужать непоместившееся
-      <span class="hint">нужен Windows с Office; занимает десятки секунд вместо долей</span>
+      <span class="track"></span>
+      <span class="txt">Проверить вёрстку в настоящем PowerPoint и ужать непоместившееся
+        <span class="hint">нужен Windows с Office; с проверкой идёт и аудит слайдов</span></span>
     </label>
 
-    <button type="button" id="go" class="primary">Собрать</button>
+    <button type="button" id="go" class="primary big">Собрать</button>
     <p class="status" id="status"></p>
+    <!-- Ход сборки по стадиям: отмечается по файлам, которые движок уже
+         положил в каталог прогона, а не по таймеру (serve.py, /api/progress). -->
+    <ol class="stages" id="stages" hidden></ol>
   </section>
 
   <section class="panel" id="design" hidden>

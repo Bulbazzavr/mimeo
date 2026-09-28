@@ -1,87 +1,177 @@
-/* Локальный интерфейс mimeo. Ни одной внешней загрузки: ни шрифтов, ни
-   иконок, ни CDN. Эксперт может запустить это без сети, и так оно и задумано. */
+/* Локальный интерфейс «Цифровой дизайнер презентаций». Ни одной внешней
+   загрузки: ни шрифтов, ни иконок, ни CDN. Эксперт может запустить это без
+   сети, и так оно и задумано. Только стандартный CSS — ТЗ требует актуальную и
+   предыдущую версии Chrome, Firefox, Safari и Яндекс Браузера (`Z-74`). */
 
 :root {
-  --ink: #16181d;
-  --muted: #5f6672;
-  --line: #dfe3ea;
-  --bg: #f6f7f9;
+  --ink: #141824;
+  --muted: #646b7a;
+  --line: #e2e6ee;
+  --bg: #f3f5f9;
   --card: #ffffff;
-  --accent: #1c64f2;
+  /* Акцент — базовый; «В цветах шаблона» подменяет три переменные ниже из
+     палитры загруженного шаблона (app.js, applyTheme). */
+  --accent: #4f46e5;
+  --accent-soft: rgba(79, 70, 229, 0.09);
+  --accent-glow: rgba(79, 70, 229, 0.26);
   --ok: #157347;
   --warn: #9a6700;
   --bad: #b42318;
+  --radius: 14px;
 }
 
 * { box-sizing: border-box; }
+/* Атрибут hidden старше любого display ниже: иначе скрытый список стадий
+   (display: grid) и квадрат цвета шаблона были бы видны. */
+[hidden] { display: none !important; }
 
 body {
   margin: 0;
   padding: 0 1rem 3rem;
-  background: var(--bg);
   color: var(--ink);
+  background:
+    radial-gradient(1100px 380px at 12% -120px, var(--accent-soft), transparent 70%),
+    var(--bg);
+  background-repeat: no-repeat;
   font: 16px/1.55 -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
 }
 
 header, main, footer { max-width: 60rem; margin: 0 auto; }
 
-header { padding: 2rem 0 1rem; }
-h1 { margin: 0; font-size: 2rem; letter-spacing: -0.02em; }
-.lead { margin: 0.4rem 0 0; color: var(--muted); max-width: 44rem; }
+/* --- шапка ---------------------------------------------------------------- */
 
-h2 { font-size: 0.95rem; margin: 1.6rem 0 0.5rem; text-transform: uppercase;
-     letter-spacing: 0.06em; color: var(--muted); }
-h2:first-of-type { margin-top: 0; }
+header { padding: 2.2rem 0 1.4rem; }
+.top { display: flex; align-items: center; justify-content: space-between;
+       gap: 1rem 2rem; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 0.8rem; }
+.mark { width: 2.6rem; height: 2.6rem; flex: none; }
+.mark .m1 { fill: var(--accent); }
+.mark .m2 { fill: var(--accent); opacity: 0.5; }
+.mark .m3 { fill: var(--accent); opacity: 0.22; }
+h1 { margin: 0; font-size: 1.9rem; line-height: 1.15; letter-spacing: -0.025em; font-weight: 750; }
+.lead { margin: 0.8rem 0 0; color: var(--muted); max-width: 46rem; }
+
+.theme-toggle { margin: 0; align-items: center; font-size: 0.9rem; color: var(--muted); }
+.theme-toggle .track { margin-top: 0; }
+.theme-swatch { display: inline-block; width: 0.9rem; height: 0.9rem; border-radius: 4px;
+                border: 1px solid rgba(0, 0, 0, 0.12); vertical-align: -2px; margin-left: 0.3rem; }
+
+/* --- панели и заголовки ---------------------------------------------------- */
 
 .panel {
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 1.5rem;
+  border-radius: var(--radius);
+  padding: 1.75rem;
   margin-bottom: 1.25rem;
+  box-shadow: 0 1px 2px rgba(20, 24, 36, 0.04), 0 10px 28px rgba(20, 24, 36, 0.06);
 }
 
-.hint { color: var(--muted); font-size: 0.86rem; margin: 0.35rem 0; }
+h2 { display: flex; align-items: center; gap: 0.6rem; font-size: 0.92rem;
+     margin: 2rem 0 0.6rem; text-transform: uppercase; letter-spacing: 0.07em;
+     color: var(--ink); }
+h2:first-of-type { margin-top: 0; }
+h2 .num { display: inline-flex; align-items: center; justify-content: center;
+          width: 1.6rem; height: 1.6rem; border-radius: 50%; font-size: 0.82rem;
+          letter-spacing: 0; background: var(--accent-soft); color: var(--accent); }
 
-textarea {
-  width: 100%;
+.hint { color: var(--muted); font-size: 0.86rem; margin: 0.35rem 0; font-weight: 400; }
+
+/* --- поля ------------------------------------------------------------------ */
+
+textarea, input[type="text"], input[type="number"], select {
   font: inherit;
-  padding: 0.7rem;
+  color: var(--ink);
+  background: #fff;
   border: 1px solid var(--line);
-  border-radius: 6px;
-  resize: vertical;
+  border-radius: 10px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+textarea { width: 100%; padding: 0.8rem 0.9rem; margin-top: 0.7rem; resize: vertical; }
+input[type="text"], input[type="number"], select { width: 100%; padding: 0.55rem 0.7rem; }
+textarea:focus, input:focus, select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-input[type="text"], select {
-  font: inherit;
-  padding: 0.4rem 0.5rem;
-  border: 1px solid var(--line);
-  border-radius: 6px;
+/* Зона файла: настоящий <input type="file"> растянут по ней прозрачным — щелчок
+   открывает выбор, а перетащенный файл браузер кладёт в поле сам. */
+.drop {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 1.5rem 1rem;
+  text-align: center;
+  border: 1.5px dashed #c6cdd9;
+  border-radius: 12px;
+  background: #fafbfd;
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
 }
+.drop.small { padding: 0.9rem 1rem; }
+.drop input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.drop:hover, .drop.over { border-color: var(--accent); background: var(--accent-soft); }
+.drop:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.drop-title { font-weight: 600; font-size: 0.95rem; }
+.drop-note { color: var(--muted); font-size: 0.86rem; }
+.drop.has-file { border-style: solid; border-color: var(--accent); background: var(--accent-soft); }
+.drop.has-file .drop-note { color: var(--ink); }
 
-.file { display: block; }
-.file input { display: block; margin-bottom: 0.3rem; }
-#template-name { color: var(--muted); font-size: 0.86rem; }
+/* Сегментный выбор режима текста — две карточки, выбранная подсвечена. */
+.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem; margin: 0.9rem 0 1.2rem; }
+.seg label { position: relative; cursor: pointer; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg span { display: block; height: 100%; padding: 0.8rem 1rem; border: 1.5px solid var(--line);
+            border-radius: 12px; transition: border-color 0.15s, background-color 0.15s; }
+.seg b { display: block; font-size: 0.95rem; }
+.seg small { display: block; color: var(--muted); font-size: 0.84rem; margin-top: 0.15rem; }
+.seg label:hover span { border-color: #c6cdd9; }
+.seg input:checked + span { border-color: var(--accent); background: var(--accent-soft); }
+.seg input:checked + span b { color: var(--accent); }
+.seg input:focus-visible + span { box-shadow: 0 0 0 3px var(--accent-soft); }
 
-.row { display: flex; gap: 2rem; flex-wrap: wrap; align-items: flex-start; }
-.row label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; }
-.row .hint { margin: 0; }
+.fields { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 1rem 1.25rem; align-items: start; }
+.fields label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.9rem; font-weight: 600; }
+.fields .hint { margin: 0; }
 
-.check { display: block; margin-top: 1rem; font-size: 0.95rem; }
-.check .hint { display: block; margin-left: 1.6rem; }
+/* Тумблер вместо галочки: сам <input> скрыт, нажатие по подписи его меняет. */
+.toggle { position: relative; display: flex; align-items: flex-start; gap: 0.8rem;
+          margin-top: 1.1rem; font-size: 0.95rem; cursor: pointer; }
+.toggle input { position: absolute; opacity: 0; pointer-events: none; }
+.toggle .track { position: relative; flex: none; width: 2.6rem; height: 1.5rem; margin-top: 0.05rem;
+                 border-radius: 999px; background: #cdd3de; transition: background-color 0.15s; }
+.toggle .track::after { content: ""; position: absolute; top: 3px; left: 3px;
+                        width: calc(1.5rem - 6px); height: calc(1.5rem - 6px); border-radius: 50%;
+                        background: #fff; box-shadow: 0 1px 3px rgba(20, 24, 36, 0.25);
+                        transition: transform 0.15s; }
+.toggle input:checked + .track { background: var(--accent); }
+.toggle input:checked + .track::after { transform: translateX(1.1rem); }
+.toggle input:focus-visible + .track { box-shadow: 0 0 0 3px var(--accent-soft); }
+.toggle .txt .hint { display: block; margin: 0.1rem 0 0; }
+
+/* --- кнопки ---------------------------------------------------------------- */
 
 button.primary {
   margin-top: 1.5rem;
   font: inherit;
-  font-weight: 600;
-  padding: 0.6rem 1.4rem;
+  font-weight: 650;
+  padding: 0.65rem 1.5rem;
   color: #fff;
   background: var(--accent);
   border: 0;
-  border-radius: 6px;
+  border-radius: 10px;
   cursor: pointer;
+  box-shadow: 0 6px 18px var(--accent-glow);
+  transition: transform 0.12s, box-shadow 0.12s, filter 0.12s;
 }
-button.primary:disabled { background: #9aa5b5; cursor: default; }
+button.primary:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.06);
+                                      box-shadow: 0 10px 24px var(--accent-glow); }
+button.primary:focus-visible { outline: 3px solid var(--accent-soft); outline-offset: 2px; }
+button.primary:disabled { background: #9aa5b5; box-shadow: none; cursor: default; }
+button.primary.big { margin-top: 1.8rem; font-size: 1.05rem; padding: 0.85rem 2.6rem; }
 
 button.link {
   font: inherit;
@@ -92,29 +182,61 @@ button.link {
   padding: 0;
   cursor: pointer;
   text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
-.status { margin: 0.8rem 0 0; min-height: 1.4em; font-size: 0.9rem; }
+.status { margin: 0.9rem 0 0; min-height: 1.4em; font-size: 0.9rem; }
 .status.error { color: var(--bad); }
 .status.working { color: var(--muted); }
 
+/* --- ход сборки по стадиям -------------------------------------------------- */
+
+.stages { list-style: none; margin: 0.9rem 0 0; padding: 1rem 1.1rem; display: grid; gap: 0.55rem;
+          border: 1px solid var(--line); border-radius: 12px; background: #fafbfd; }
+.stages li { display: flex; align-items: center; gap: 0.7rem; font-size: 0.92rem; color: var(--muted); }
+.stages li::before { content: ""; flex: none; display: inline-flex; align-items: center;
+                     justify-content: center; width: 1.3rem; height: 1.3rem; border-radius: 50%;
+                     border: 2px solid #cdd3de; font-size: 0.72rem; font-weight: 700;
+                     line-height: 1; color: #fff; }
+.stages li.active { color: var(--ink); }
+.stages li.active::before { border-color: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
+.stages li.done { color: var(--ink); }
+.stages li.done::before { content: "✓"; border-color: var(--accent); background: var(--accent); }
+/* Сборка оборвалась — «в работе» больше не пульсирует: видно, где встала. */
+.stages.stopped li.active::before { animation: none; border-color: var(--bad); }
+.stages .count { color: var(--muted); font-size: 0.84rem; font-variant-numeric: tabular-nums; }
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--accent-glow); }
+  50% { box-shadow: 0 0 0 5px var(--accent-soft); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .stages li.active::before { animation: none; }
+  button.primary, .toggle .track, .toggle .track::after { transition: none; }
+}
+
+/* --- результат ------------------------------------------------------------- */
+
 .deck {
   display: flex;
-  align-items: baseline;
-  gap: 1rem;
+  align-items: center;
+  gap: 0.5rem 0.6rem;
   flex-wrap: wrap;
-  padding: 0.7rem 0;
+  padding: 0.8rem 0;
   border-bottom: 1px solid var(--line);
 }
 .deck:last-child { border-bottom: 0; }
-.deck .title { font-weight: 600; }
+.deck .title { font-weight: 650; }
 .deck .meta { color: var(--muted); font-size: 0.88rem; }
-.deck a { margin-left: auto; color: var(--accent); }
+.deck button.show-slides { margin-left: auto; margin-right: 0.4rem; }
+.deck a { color: var(--accent); font-size: 0.85rem; font-weight: 600; text-decoration: none;
+          padding: 0.28rem 0.8rem; border: 1px solid var(--line); border-radius: 999px;
+          transition: border-color 0.15s, background-color 0.15s; }
+.deck a:hover { border-color: var(--accent); background: var(--accent-soft); }
 
 /* Три исхода проверки вёрстки различаются цветом И словами. Одного цвета мало:
    «не проверяли» и «дефектов нет» — разные утверждения, и путать их нельзя. */
-.verdict { margin-top: 1.2rem; padding: 0.8rem 1rem; border-radius: 6px;
-           border-left: 4px solid var(--line); background: #fafbfc; }
+.verdict { margin-top: 1.2rem; padding: 0.9rem 1.1rem; border-radius: 10px;
+           border-left: 4px solid var(--line); background: #f8f9fc; }
 .verdict.ok { border-left-color: var(--ok); }
 .verdict.unknown { border-left-color: var(--warn); }
 .verdict.skipped { border-left-color: var(--line); }
@@ -143,7 +265,7 @@ footer { margin-top: 2rem; color: var(--muted); font-size: 0.82rem; }
            letter-spacing: 0.05em; }
 
 .swatches { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.5rem 0 0.3rem; }
-.sw { width: 2.4rem; height: 2.4rem; border-radius: 5px; border: 1px solid var(--line); }
+.sw { width: 2.4rem; height: 2.4rem; border-radius: 8px; border: 1px solid var(--line); }
 .sw.named { position: relative; }
 
 h3.sub { font-size: 0.82rem; margin: 1.3rem 0 0.2rem; color: var(--muted);
@@ -164,18 +286,17 @@ table.scale .none { color: var(--muted); font-style: italic; }
 
 /* --- лента слайдов (PLAN-8.2, часть B) --------------------------------- */
 
-.strip { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.strip { display: flex; flex-wrap: wrap; gap: 0.6rem; }
 .strip:not(:empty) { padding: 0.7rem 0 0.9rem; }
 .strip a { position: relative; display: block; line-height: 0;
-           border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+           border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+           box-shadow: 0 2px 8px rgba(20, 24, 36, 0.06); }
 .strip img { width: 220px; height: auto; display: block; background: #fff; }
 .strip span { position: absolute; left: 0; bottom: 0;
               background: rgba(22, 24, 29, 0.72); color: #fff;
               font-size: 0.7rem; line-height: 1.4; padding: 0 0.35rem;
               border-top-right-radius: 4px; }
 .strip .verdict { margin-top: 0; }
-.deck button.show-slides { margin-left: auto; }
-.deck a { margin-left: 1rem; }
 
 /* --- главное число (PLAN-8.3, часть C) --------------------------------- */
 
@@ -217,3 +338,16 @@ table.scale .none { color: var(--muted); font-style: italic; }
 .audit-table td:first-child { width: 1.6rem; }
 .audit-table td.num { width: 3rem; }
 .audit .actions { margin-top: 0.8rem; display: flex; gap: 1rem; align-items: center; }
+.audit .actions button.primary { margin-top: 0; }
+
+/* --- узкий экран ------------------------------------------------------------ */
+
+@media (max-width: 720px) {
+  .fields { grid-template-columns: 1fr 1fr; }
+  .fields .wide { grid-column: 1 / -1; }
+}
+@media (max-width: 520px) {
+  .panel { padding: 1.2rem; }
+  .seg, .fields { grid-template-columns: 1fr; }
+  h1 { font-size: 1.5rem; }
+}

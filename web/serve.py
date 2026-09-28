@@ -396,6 +396,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._preview(urllib.parse.parse_qs(url.query))
         if url.path == "/api/preview-image":
             return self._preview_image(urllib.parse.parse_qs(url.query))
+        if url.path == "/api/progress":
+            return self._progress(urllib.parse.parse_qs(url.query))
         if url.path.startswith("/static/"):
             return self._static(url.path[len("/static/"):])
         self._fail(404, "нет такого адреса")
@@ -557,6 +559,7 @@ class Handler(BaseHTTPRequestHandler):
             run["argv"] = list(argv)
             run["verify_requested"] = verify_requested
             run["variants"] = variants
+            run["images"] = bool(request.get("images", True))
         return self._run_engine(run, argv, verify_requested, variants, report_path)
 
     def _run_engine(self, run: dict, argv: list, verify_requested: bool, variants: int,
@@ -573,11 +576,17 @@ class Handler(BaseHTTPRequestHandler):
                 return self._fail(
                     503, "PowerPoint занят другой операцией дольше допустимого")
         started = time.perf_counter()
+        with _LOCK:
+            # Для хода сборки (`/api/progress`): свежими считаются файлы новее этой метки.
+            run["started_at"] = time.time()
+            run["building"] = True
         try:
             proc = _engine(argv)
         except subprocess.TimeoutExpired:
             return self._fail(504, f"движок не уложился в {BUILD_TIMEOUT_SECONDS} с")
         finally:
+            with _LOCK:
+                run["building"] = False
             if holding:
                 _POWERPOINT.release()
         elapsed = time.perf_counter() - started
@@ -639,6 +648,51 @@ class Handler(BaseHTTPRequestHandler):
             "returncode": proc.returncode,
             "seconds": round(elapsed, 2),
             "stderr": (proc.stderr or "")[-4000:],
+        })
+
+    def _progress(self, query: dict) -> None:
+        """Докуда дошла идущая сборка — по файлам, которые движок уже положил в
+        каталог прогона, а не по таймеру: `outline.json` — колода от модели,
+        `images/*.png` — готовые картинки, `deck*.pptx` — собранные варианты,
+        `render-report*.json` и `audit*.json` — проверка вёрстки и аудит.
+        Свежими считаются файлы новее начала сборки: в том же каталоге лежат и
+        файлы прошлой. Движок пишет их по вариантам по очереди — стадии идут
+        внахлёст, и страница показывает счёт у каждой, а не одну «текущую»."""
+        run = _run(str((query.get("token") or [""])[0]))
+        if not run:
+            return self._fail(400, "шаблон не загружен — начните с него")
+        with _LOCK:
+            since = run.get("started_at")
+            building = bool(run.get("building"))
+        if since is None:
+            return self._json({"ok": True, "building": False})
+        folder = run["dir"]
+
+        def fresh(pattern: str) -> int:
+            count = 0
+            for path in glob.glob(os.path.join(folder, pattern)):
+                try:
+                    if os.path.getmtime(path) >= since:
+                        count += 1
+                except OSError:
+                    continue
+            return count
+
+        model = _model_summary(folder) if fresh("outline.json") else None
+        self._json({
+            "ok": True,
+            "building": building,
+            "elapsed": round(time.time() - since, 1),
+            "model": None if model is None else {"by_model": model["by_model"]},
+            # Папка картинок — `images` (`mimeo/plan/images.py`, FOLDER); движок
+            # очищает её в начале сборки, заготовок файлами не пишет.
+            "pictures": fresh(os.path.join("images", "*.png")),
+            "decks": fresh("deck*.pptx"),
+            "verified": fresh("render-report*.json"),
+            "audited": fresh("audit*.json"),
+            "variants": run.get("variants") or 1,
+            "verify": bool(run.get("verify_requested")),
+            "images": bool(run.get("images", True)),
         })
 
     def _fix(self) -> None:

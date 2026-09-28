@@ -44,13 +44,104 @@ function escape(text) {
   return div.innerHTML;
 }
 
+/* --- цвета шаблона (решение пользователя 28 сентября) -------------------- */
+
+/* Базовый вид — по умолчанию. Переключатель «В цветах шаблона» берёт акцент
+   страницы из палитры загруженного шаблона: роль темы accent1…accent6, иначе
+   ядро палитры, — первый цвет, который не серый и не почти белый или чёрный.
+   Слишком светлый затемняется, пока белый текст на нём не станет читаем
+   (контраст 4.5:1 — тот же порог, что в Приложении 1 ТЗ). Выбор запоминается в
+   браузере; хранилища может не быть — тогда просто не запомнится. */
+const THEME_KEY = 'dp-theme';
+let templateAccent = null;
+
+function rgbOf(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function luminance(rgb) {
+  const [r, g, b] = rgb.map((v) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function colourful(rgb) {
+  const max = Math.max(...rgb) / 255;
+  const min = Math.min(...rgb) / 255;
+  const light = (max + min) / 2;
+  const sat = max === min ? 0 : (max - min) / (1 - Math.abs(2 * light - 1));
+  return sat >= 0.25 && light >= 0.12 && light <= 0.88;
+}
+
+function readable(rgb) {
+  let c = rgb.slice();
+  for (let i = 0; i < 20 && 1.05 / (luminance(c) + 0.05) < 4.5; i += 1) {
+    c = c.map((v) => Math.round(v * 0.92));
+  }
+  return c;
+}
+
+function pickAccent(palette) {
+  const theme = (palette && palette.theme) || [];
+  const roles = ['accent1', 'accent2', 'accent3', 'accent4', 'accent5', 'accent6'];
+  const ordered = roles.map((r) => (theme.find((t) => (t.role || '').toLowerCase() === r) || {}).hex)
+    .concat((palette && palette.core) || []);
+  for (const hex of ordered) {
+    const rgb = rgbOf(hex);
+    if (rgb && colourful(rgb)) return readable(rgb);
+  }
+  return null;
+}
+
+function applyTheme() {
+  const style = document.documentElement.style;
+  const rgb = $('theme-toggle').checked ? templateAccent : null;
+  if (rgb) {
+    const [r, g, b] = rgb;
+    style.setProperty('--accent', 'rgb(' + r + ', ' + g + ', ' + b + ')');
+    style.setProperty('--accent-soft', 'rgba(' + r + ', ' + g + ', ' + b + ', 0.09)');
+    style.setProperty('--accent-glow', 'rgba(' + r + ', ' + g + ', ' + b + ', 0.26)');
+  } else {
+    ['--accent', '--accent-soft', '--accent-glow'].forEach((v) => style.removeProperty(v));
+  }
+  const sw = $('theme-swatch');
+  sw.hidden = !templateAccent;
+  if (templateAccent) sw.style.background = 'rgb(' + templateAccent.join(', ') + ')';
+}
+
+try { $('theme-toggle').checked = localStorage.getItem(THEME_KEY) === 'template'; } catch (e) { /* нет хранилища */ }
+$('theme-toggle').addEventListener('change', () => {
+  try { localStorage.setItem(THEME_KEY, $('theme-toggle').checked ? 'template' : 'base'); } catch (e) { /* нет хранилища */ }
+  applyTheme();
+});
+
 /* --- загрузка шаблона -------------------------------------------------- */
+
+/* Зона файла подсвечивается, пока над ней держат перетаскиваемый файл: в
+   Firefox и Safari :hover во время перетаскивания не срабатывает. Сам файл
+   принимает прозрачный <input>, растянутый по зоне. */
+document.querySelectorAll('.drop').forEach((zone) => {
+  const on = () => zone.classList.add('over');
+  const off = () => zone.classList.remove('over');
+  zone.addEventListener('dragenter', on);
+  zone.addEventListener('dragover', on);
+  zone.addEventListener('dragleave', off);
+  zone.addEventListener('drop', off);
+});
 
 $('template').addEventListener('change', async (event) => {
   const file = event.target.files[0];
   token = null;
+  templateAccent = null;
+  applyTheme();
+  $('template-drop').classList.remove('has-file');
   if (!file) {
-    $('template-name').textContent = 'Файл не выбран — нужен .pptx или .potx';
+    $('template-name').textContent = '.pptx или .potx';
     return;
   }
   $('template-name').textContent = 'Загружается…';
@@ -64,6 +155,7 @@ $('template').addEventListener('change', async (event) => {
     token = data.token;
     const mb = (data.bytes / 1048576).toFixed(1);
     $('template-name').textContent = data.name + ' — ' + mb + ' МБ, загружен';
+    $('template-drop').classList.add('has-file');
     setStatus('');
     loadDesign();
   } catch (error) {
@@ -133,6 +225,7 @@ $('content').addEventListener('change', async (event) => {
     + (pictures.length ? '; картинок добавлено: ' + pictures.length : '')
     + (texts.length > 1 ? '; взят первый текст из ' + texts.length : '')
     + (skipped ? '; пропущено файлов другого вида: ' + skipped : '');
+  $('content-drop').classList.toggle('has-file', Boolean(texts.length || images.length));
   event.target.value = '';            /* тот же файл можно выбрать ещё раз */
 });
 
@@ -160,6 +253,8 @@ async function loadDesign() {
     const data = await response.json();
     if (!data.ok) throw new Error(data.error || 'не разобрался');
     body.innerHTML = designHtml(data);
+    templateAccent = pickAccent(data.palette);
+    applyTheme();
   } catch (error) {
     /* Пустая панель читалась бы как «в шаблоне ничего нет». Это разные вещи. */
     body.innerHTML = '<p class="hint">Разобрать шаблон не вышло: '
@@ -240,6 +335,85 @@ function designHtml(d) {
   return html;
 }
 
+/* --- ход сборки по стадиям ----------------------------------------------- */
+
+/* Стадии отмечает сервер по файлам, которые движок уже записал (serve.py,
+   /api/progress), — не таймер и не догадка. Движок идёт по вариантам: картинки,
+   вёрстка, проверка и аудит первого, потом второго, — поэтому у каждой стадии
+   свой счёт, и в работе бывают две сразу. Часы в строке статуса — чтобы видеть
+   время против потолка ТЗ, пять минут на колоду. */
+let polling = false;
+let pollTimer = null;
+
+function clock(seconds) {
+  const s = Math.floor(seconds || 0);
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+
+function renderStages(p, finished) {
+  const n = p.variants || 1;
+  const modelDone = Boolean(p.model) || p.decks > 0;
+  const state = (done, started) => (done ? 'done' : (finished ? '' : (started ? 'active' : '')));
+  const stages = [['Разбор шаблона и колода от модели',
+    p.model ? (p.model.by_model ? 'построила модель' : 'собрана без модели') : '',
+    state(modelDone, true)]];
+  if (p.images) {
+    stages.push(['Сцены и картинки генератора',
+      p.pictures ? 'готово: ' + p.pictures : (finished ? 'ни одной' : ''),
+      state(p.decks >= n || (finished && p.decks > 0), modelDone)]);
+  }
+  stages.push(['Вёрстка вариантов', p.decks + ' из ' + n, state(p.decks >= n, modelDone)]);
+  if (p.verify) {
+    stages.push(['Проверка вёрстки в PowerPoint', p.verified + ' из ' + n,
+      state(p.verified >= n, p.decks > 0)]);
+    stages.push(['Аудит слайдов', p.audited + ' из ' + n, state(p.audited >= n, p.verified > 0)]);
+  }
+  const list = $('stages');
+  list.innerHTML = stages.map((s) => '<li class="' + s[2] + '">' + escape(s[0])
+    + (s[1] ? ' <span class="count">' + escape(s[1]) + '</span>' : '') + '</li>').join('');
+  list.hidden = false;
+}
+
+async function fetchProgress() {
+  const response = await fetch('/api/progress?token=' + encodeURIComponent(token));
+  return response.json();
+}
+
+async function pollProgress() {
+  try {
+    const p = await fetchProgress();
+    /* Ответ, пришедший после конца сборки, и данные прошлой сборки (сервер
+       ещё не отметил начало новой) не показываем. */
+    if (!polling || !p.ok || !p.building) return;
+    renderStages(p, false);
+    setStatus('Идёт сборка — ' + clock(p.elapsed), 'working');
+  } catch (error) { /* ход сборки — подсказка; сама сборка ответит своим */ }
+}
+
+function startProgress(first) {
+  stopProgress();
+  $('stages').classList.remove('stopped');
+  if (first) renderStages(first, false);
+  polling = true;
+  pollTimer = setInterval(pollProgress, 1000);
+}
+
+function stopProgress() {
+  polling = false;
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = null;
+}
+
+async function finishProgress(ok) {
+  stopProgress();
+  try {
+    const p = await fetchProgress();
+    /* Оборвалась — стадии «в работе» остаются, но красным и без пульса. */
+    if (p.ok && p.elapsed !== undefined) renderStages(p, ok);
+  } catch (error) { /* показываем, что успели */ }
+  if (!ok) $('stages').classList.add('stopped');
+}
+
 /* --- сборка ------------------------------------------------------------ */
 
 $('go').addEventListener('click', async () => {
@@ -255,6 +429,10 @@ $('go').addEventListener('click', async () => {
   setStatus(verify
     ? 'Модель строит колоду, потом проверяем вёрстку в PowerPoint — это минута-две…'
     : 'Модель строит колоду — до минуты…', 'working');
+  startProgress({
+    ok: true, variants: parseInt($('variants').value, 10) || 1, images: $('images').checked,
+    verify: verify, model: null, pictures: 0, decks: 0, verified: 0, audited: 0
+  });
 
   try {
     await uploadImages();
@@ -274,9 +452,11 @@ $('go').addEventListener('click', async () => {
     });
     const data = await response.json();
     if (!data.ok) throw new Error(data.error || 'сборка не удалась');
+    await finishProgress(true);
     render(data);
     setStatus('Готово за ' + data.seconds + ' с.');
   } catch (error) {
+    await finishProgress(false);
     setStatus('Не вышло: ' + error.message, 'error');
   } finally {
     $('go').disabled = false;
@@ -463,6 +643,7 @@ function bindFix() {
     if (!ids.length) return setStatus('Отметьте хотя бы одну находку.', 'error');
     go.disabled = true;
     setStatus('Исправляем отмеченное и проверяем заново — это минута-две…', 'working');
+    startProgress(null);
     try {
       const response = await fetch('/api/fix', {
         method: 'POST',
@@ -471,9 +652,11 @@ function bindFix() {
       });
       const data = await response.json();
       if (!data.ok) throw new Error(data.error || 'исправление не удалось');
+      await finishProgress(true);
       render(data);
       setStatus('Исправлено и проверено заново за ' + data.seconds + ' с.');
     } catch (error) {
+      await finishProgress(false);
       setStatus('Не вышло: ' + error.message, 'error');
       go.disabled = false;
     }
