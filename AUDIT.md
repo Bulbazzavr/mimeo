@@ -42,7 +42,7 @@ python tools/audit_doc.py --write
 | [`tests/test_audit.py`](tests/test_audit.py) | 17 | Аудит готовых слайдов (`Z-34`, `PLAN-11.0`): проверки кодом, разбор ответа |
 | [`tests/test_broken_words.py`](tests/test_broken_words.py) | 6 | Слово, разорванное посередине строки (`Z-56`). |
 | [`tests/test_build_report.py`](tests/test_build_report.py) | 7 | Машинночитаемый итог сборки (`Z-46`, `PLAN-8.0`). |
-| [`tests/test_cards.py`](tests/test_cards.py) | 2 | Пустые карточки уходят со слайда, оставшиеся раздвигаются (просьба пользователя 29.09). |
+| [`tests/test_cards.py`](tests/test_cards.py) | 4 | Пустые карточки уходят со слайда, оставшиеся раздвигаются (просьба пользователя 29.09). |
 | [`tests/test_color.py`](tests/test_color.py) | 11 | Разрешение цвета. DOM-COLOR. |
 | [`tests/test_compose.py`](tests/test_compose.py) | 19 | Сборка колоды. ADR-0011, ADR-0012. |
 | [`tests/test_config_version.py`](tests/test_config_version.py) | 8 | Замок версий конфигов: он обязан уметь падать. |
@@ -91,7 +91,7 @@ python tools/audit_doc.py --write
 | [`tests/test_web_boundary.py`](tests/test_web_boundary.py) | 5 | Граница веб-слоя (`Z-29`, `PLAN-8.0`, `SPEC-WEB` раздел 2). |
 | [`tests/test_web_content.py`](tests/test_web_content.py) | 3 | Контент-пакет в вебе: текст файлом и картинки к нему (`Z-73`). |
 | [`tests/test_web_design.py`](tests/test_web_design.py) | 14 | Экран «что вынули из вашего шаблона» (`Z-29`, `PLAN-8.1`, часть A). |
-| **всего** | **754** | в 53 файлах |
+| **всего** | **756** | в 53 файлах |
 
 <!-- /порождается -->
 

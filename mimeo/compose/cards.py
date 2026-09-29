@@ -16,6 +16,14 @@
 лежит внутри подложки, — её содержимое. Пустая — ни в одной её фигуре нет
 текста и ни одно её место не заполнено сборкой.
 
+Одиночная пустая плашка — без сестёр, не больше пятой части слайда — тоже
+уходит: рамка без подписи ничего не говорит (WorkSpace, слайд 13, 29 сентября).
+
+**Маркер пункта** — рамка, значок, пиктограмма слева от текстового места, в
+повторе одного размера. Пункт пуст — маркер уходит, если в том же списке есть
+такой же маркер у заполненного пункта: «нет текста — значок не нужен»
+(пользователь 29 сентября, WorkSpace, слайд 14).
+
 Чего проход не трогает: подложки из макета (их на слайде нет — слайд 4
 шаблона VK Tech рисует карточки макетом), повёрнутые фигуры и карточки без
 своей подложки.
@@ -33,6 +41,11 @@ _TOP = (qn("p:sp"), qn("p:pic"), qn("p:grpSp"), qn("p:graphicFrame"), qn("p:cxnS
 _SAME = 0.04
 #: Доля площади фигуры внутри подложки, чтобы считаться её содержимым.
 _INSIDE = 0.8
+#: Одиночная пустая плашка уходит, если она не больше этой доли слайда:
+#: крупная — уже фон раздела, а не рамка под подпись.
+_LONE_SHARE = 0.2
+#: Допуск на стык маркера и текста, EMU (0.02 дюйма).
+_TOUCH = 18288
 
 
 @dataclass
@@ -127,14 +140,31 @@ class _Card:
     empty: bool
 
 
-def drop_empty_cards(tree: ET.Element, text_slots: set[str], filled: set[str]) -> int:
-    """Убирает пустые карточки слайда и раздвигает оставшиеся в их рядах.
+def drop_empty_cards(tree: ET.Element, text_slots: set[str], filled: set[str],
+                     slide_area: int = 0) -> int:
+    """Убирает пустые карточки слайда и раздвигает оставшиеся в их рядах, затем
+    одиночные пустые плашки и маркеры пустых пунктов.
 
     `text_slots` — id фигур текстовых мест раскладки, `filled` — id фигур,
-    которые сборка заполнила. Возвращает, сколько карточек убрано."""
+    которые сборка заполнила, `slide_area` — площадь слайда, EMU² (0 —
+    одиночные плашки не трогаются). Возвращает, сколько убрано."""
     sp_tree = tree.find(f"{qn('p:cSld')}/{qn('p:spTree')}")
     if sp_tree is None:
         return 0
+    return (_drop_cards(sp_tree, text_slots, filled, slide_area)
+            + _drop_markers(sp_tree, text_slots, filled))
+
+
+def _remove(sp_tree: ET.Element, shapes: list[_Shape]) -> None:
+    alive = {id(el) for el in sp_tree}
+    for s in shapes:
+        if id(s.el) in alive:
+            sp_tree.remove(s.el)
+            alive.discard(id(s.el))
+
+
+def _drop_cards(sp_tree: ET.Element, text_slots: set[str], filled: set[str],
+                slide_area: int) -> int:
     shapes = [s for el in sp_tree if el.tag in _TOP and (s := _shape(el)) is not None]
     boxes = [s for s in shapes if _visible(s.el)]
     cards: list[_Card] = []
@@ -149,16 +179,21 @@ def drop_empty_cards(tree: ET.Element, text_slots: set[str], filled: set[str]) -
         spoken = any(_text(m.el) for m in [box, *members]
                      if _ids(m.el) & text_slots or m.el.tag == qn("p:graphicFrame"))
         cards.append(_Card(box, members, not (ids & filled) and not spoken))
-    # Карточка — только в повторе: у неё есть сестра того же размера.
-    cards = [c for c in cards if any(o is not c and _same(o.box, c.box) for o in cards)]
     # Карточка внутри другой карточки — её содержимое, а не отдельная.
     inner = {id(c) for c in cards for o in cards if o is not c and _inside(c.box, o.box)
              and c.box.area < o.box.area}
     cards = [c for c in cards if id(c) not in inner]
+    # Карточка — в повторе: у неё есть сестра того же размера. Одиночная —
+    # только пустая и небольшая, и уходит без раздвижки.
+    lone = [c for c in cards if c.empty and slide_area
+            and not any(o is not c and _same(o.box, c.box) for o in cards)
+            and c.box.area <= _LONE_SHARE * slide_area]
+    _remove(sp_tree, [s for c in lone for s in (c.box, *c.members)])
+    dropped = len(lone)
+    cards = [c for c in cards if any(o is not c and _same(o.box, c.box) for o in cards)]
     if not any(c.empty for c in cards):
-        return 0
+        return dropped
 
-    dropped = 0
     families: list[list[_Card]] = []
     for card in cards:
         for family in families:
@@ -185,9 +220,7 @@ def drop_empty_cards(tree: ET.Element, text_slots: set[str], filled: set[str]) -
             keep = [c for c in row if not c.empty]
             for card in row:
                 if card.empty:
-                    for s in [card.box, *card.members]:
-                        if s.el in list(sp_tree):
-                            sp_tree.remove(s.el)
+                    _remove(sp_tree, [card.box, *card.members])
                     dropped += 1
             if keep:
                 _spread(row, keep)
@@ -259,3 +292,39 @@ def _place_member(s: _Shape, box: _Shape, new_x: float, scale: float) -> None:
         x = new_x + center * scale - s.cx / 2
     _move(s, x, s.y)
     s.x = int(x)
+
+
+def _drop_markers(sp_tree: ET.Element, text_slots: set[str], filled: set[str]) -> int:
+    """Маркер пустого пункта уходит, если такой же маркер есть у заполненного."""
+    shapes = [s for el in sp_tree if el.tag in _TOP and (s := _shape(el)) is not None]
+    texts = [s for s in shapes if s.el.tag == qn("p:sp") and _ids(s.el) & text_slots]
+    marks: dict[int, tuple[_Shape, list[_Shape]]] = {}
+    for t in texts:
+        for m in shapes:
+            if m is t or _ids(m.el) & text_slots:
+                continue
+            if not (_visible(m.el) or m.el.tag in (qn("p:grpSp"), qn("p:pic"))):
+                continue
+            gap = t.x - (m.x + m.cx)
+            if (m.cx > t.cx / 2 or gap < -_TOUCH or gap > 1.5 * max(m.cx, m.cy)
+                    or m.y >= t.y + t.cy or m.y + m.cy <= t.y):
+                continue
+            marks.setdefault(id(m), (m, []))[1].append(t)
+
+    def said(t: _Shape) -> bool:
+        return bool(_ids(t.el) & filled) or bool(_text(t.el))
+
+    gone: list[_Shape] = []
+    count = 0
+    for m, ts in marks.values():
+        if any(said(t) for t in ts):
+            continue
+        # Список: такой же маркер стоит у заполненного пункта.
+        if not any(o is not m and _same(o, m) and any(said(t) for t in ots)
+                   for o, ots in marks.values()):
+            continue
+        count += 1
+        gone.append(m)
+        gone.extend(s for s in shapes if s is not m and s.area < m.area and _inside(s, m))
+    _remove(sp_tree, gone)
+    return count

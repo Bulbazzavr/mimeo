@@ -84,6 +84,10 @@ GROWS_UP = (ANCHOR_BOTTOM, 5)
 #: Допуск на округление координат в пунктах. Зонд округляет до сотых.
 SLACK = 0.5
 
+#: С какой непрозрачности своя заливка фигуры — видимая граница текста
+#: (`available_height`): полупрозрачная плашка ещё видна глазом.
+FILLED = 0.3
+
 
 def _box_of(metric: ShapeMetric) -> Box:
     return Box(
@@ -200,6 +204,16 @@ def available_height(metric: ShapeMetric, measurement: Measurement) -> float:
     """
     if not measurement.boxes or measurement.page is None:
         return metric.usable_height
+
+    # Своя заливка — видимая граница: текст, вышедший за плашку, виден, даже
+    # если вокруг пусто. Плашки «Перестройка занимает 6–12 месяцев» и белый
+    # круг WorkSpace 29 сентября: текст на полторы высоты фигуры, а мерка
+    # молчала — вокруг было место (пользователь, растр слайдов 13 и 15).
+    own = next((b for b in measurement.boxes
+                if b.slide == metric.slide and b.shape_id == metric.shape_id), None)
+    if own is not None and own.visible and own.opacity >= FILLED:
+        beside = text_room(metric, measurement)
+        return metric.usable_height if beside is None else min(metric.usable_height, beside)
 
     box = _box_of(metric)
     blockers = _blockers(box, measurement.boxes)

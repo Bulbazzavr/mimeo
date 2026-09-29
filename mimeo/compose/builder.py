@@ -132,6 +132,8 @@ def build(
     #: Сквозной номер своей диаграммы — имя её части и книги (`Z-32`).
     charts = 0
     slide_cy = slide_height(writer)
+    size = writer.xml("/ppt/presentation.xml").find(qn("p:sldSz"))
+    slide_area = int(size.get("cx")) * int(size.get("cy")) if size is not None else 0
     slide_parts: list[str] = []
     written: list[int] = []
 
@@ -271,11 +273,11 @@ def build(
         # просьба пользователя 29 сентября): иначе на слайде подложка без подписи.
         text_slots = {s.shape_id for s in pattern.slots if s.shape_id and s.role != "title"
                       and s.content_type in ("text", "list", "number")}
-        gone = drop_empty_cards(tree, text_slots, touched)
+        gone = drop_empty_cards(tree, text_slots, touched, slide_area)
         if gone:
             dropped_cards += gone
-            warnings.append(f"слайд {planned.index}: пустых карточек убрано {gone}, "
-                            "оставшиеся раздвинуты на их место")
+            warnings.append(f"слайд {planned.index}: пустых карточек, плашек и маркеров "
+                            f"пунктов убрано {gone}, оставшиеся карточки раздвинуты")
 
         inherited += sum(1 for s in iter_shapes(tree) if s is not None) - len(touched)
         writer.put_xml(part, tree, CT_SLIDE)

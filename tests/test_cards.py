@@ -58,3 +58,27 @@ def test_full_row_and_lone_plate_stay() -> None:
     lone = _slide([None])
     assert drop_empty_cards(lone, {"102"}, set()) == 0
     assert len(list(lone.iter(qn("p:sp")))) == 3
+
+
+def test_lone_empty_plate_goes_when_small() -> None:
+    lone = _slide([None])
+    assert drop_empty_cards(lone, {"102"}, set(), slide_area=1000 * 1000) == 1
+    assert not list(lone.iter(qn("p:sp")))
+    big = _slide([None])
+    assert drop_empty_cards(big, {"102"}, set(), slide_area=400 * 400) == 0
+
+
+def test_marker_of_an_empty_item_goes() -> None:
+    """WorkSpace, слайд 14: рамка со значком слева от пункта; пункт пуст —
+    рамка уходит, у заполненного остаётся."""
+    rows = []
+    for n, text in enumerate(["первый", None]):
+        y = n * 300
+        rows.append(_sp(200 + n * 10, 0, y, 60, 60, fill=True))
+        rows.append(_sp(201 + n * 10, 15, y + 15, 30, 30, fill=True))
+        rows.append(_sp(202 + n * 10, 80, y, 500, 100, text=text or ""))
+    tree = ET.fromstring(f'<p:sld xmlns:a="{_A}" xmlns:p="{_P}"><p:cSld><p:spTree>'
+                         + "".join(rows) + "</p:spTree></p:cSld></p:sld>")
+    assert drop_empty_cards(tree, {"202", "212"}, {"202"}) >= 1
+    left = {sp.find(qn("p:nvSpPr")).find(qn("p:cNvPr")).get("id") for sp in tree.iter(qn("p:sp"))}
+    assert left == {"200", "201", "202", "212"}
