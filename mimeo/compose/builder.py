@@ -20,6 +20,7 @@ from .clone import (
     remove_shape,
     slide_from_layout,
 )
+from .cards import drop_empty_cards
 from .icon import replace_with_icon
 from .package import CT_SLIDE, RT_SLIDE, PackageWriter
 from .substitute import allow_wrap, replace_picture, set_font_scale, set_items, set_text
@@ -123,6 +124,7 @@ def build(
     inherited = 0
     cleared = 0
     scaled = 0
+    dropped_cards = 0
     #: Сквозной номер картинки по всей колоде. Именно сквозной: имя части
     #: раньше бралось от номера слайда, и две картинки одного слайда делили
     #: одну часть (`Z-28a`, `PLAN-7.10`, шаг 4).
@@ -265,6 +267,15 @@ def build(
                 continue
             if clear_text(shape):
                 cleared += 1
+        # Пустая карточка уходит целиком, её ряд раздвигается (`compose/cards.py`,
+        # просьба пользователя 29 сентября): иначе на слайде подложка без подписи.
+        text_slots = {s.shape_id for s in pattern.slots if s.shape_id and s.role != "title"
+                      and s.content_type in ("text", "list", "number")}
+        gone = drop_empty_cards(tree, text_slots, touched)
+        if gone:
+            dropped_cards += gone
+            warnings.append(f"слайд {planned.index}: пустых карточек убрано {gone}, "
+                            "оставшиеся раздвинуты на их место")
 
         inherited += sum(1 for s in iter_shapes(tree) if s is not None) - len(touched)
         writer.put_xml(part, tree, CT_SLIDE)
