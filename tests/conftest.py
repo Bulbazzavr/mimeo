@@ -15,6 +15,11 @@ os.environ["MIMEO_LLM_ACCESS"] = "off"
 # То же для генератора картинок (`mimeo.plan.images.ACCESS_ENV`): тест с
 # принятым ответом поддельной модели иначе пошёл бы в поднятый sd-server.
 os.environ["MIMEO_IMAGES_ACCESS"] = "off"
+# Подключение из окна «Модели» (29.09) тестам не нужно: заданное на машине
+# подменило бы адрес и имя модели в ключах кэша и в сверках конфига.
+for _name in ("MIMEO_LLM_BASE_URL", "MIMEO_LLM_MODEL", "MIMEO_LLM_CONTRACT",
+              "MIMEO_LLM_EXTRA_BODY", "MIMEO_IMAGES_BASE_URL"):
+    os.environ.pop(_name, None)
 
 
 @pytest.fixture(scope="session")

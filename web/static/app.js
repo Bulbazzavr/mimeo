@@ -415,6 +415,28 @@ async function finishProgress(ok) {
   if (!ok) $('stages').classList.add('stopped');
 }
 
+/* --- модель: включена или нет (просьба пользователя 29.09) ---------------- */
+
+/* Выключенная — сборка без модели и без видеокарты (--llm off). Тогда режим
+   текста не действует (фразы автора идут дословно), а генератору нечего
+   рисовать: сцены пишет модель. Галочка картинок своё значение помнит и
+   вернётся, когда модель включат. */
+const LLM_HINT_ON = $('llm-hint').textContent;
+const LLM_HINT_OFF = 'выключено — без модели и видеокарты: код сам режет текст на темы, фразы '
+  + 'автора идут дословно; нет картинок генератора, пиктограмм по смыслу и аудита по картинке';
+
+function applyModelToggle() {
+  const on = $('llm').checked;
+  $('text-modes').classList.toggle('off', !on);
+  document.querySelectorAll('input[name="text-mode"]').forEach((r) => { r.disabled = !on; });
+  $('images').disabled = !on;
+  $('images').closest('.toggle').classList.toggle('off', !on);
+  $('llm-hint').textContent = on ? LLM_HINT_ON : LLM_HINT_OFF;
+}
+
+$('llm').addEventListener('change', applyModelToggle);
+applyModelToggle();
+
 /* --- сборка ------------------------------------------------------------ */
 
 $('go').addEventListener('click', async () => {
@@ -423,15 +445,18 @@ $('go').addEventListener('click', async () => {
   if (!text) return setStatus('Вставьте текст — движку нечего раскладывать.', 'error');
 
   const verify = $('verify').checked;
+  const llm = $('llm').checked;
+  const pictures = llm && $('images').checked;
   const mode = document.querySelector('input[name="text-mode"]:checked');
   $('go').disabled = true;
   /* Модель строит колоду за полминуты, при повторе — за минуту (замер Ш9:
      33–34 с на вызов); проверка вёрстки добавляет десятки секунд. */
+  const who = llm ? 'Модель строит колоду' : 'Собираем без модели';
   setStatus(verify
-    ? 'Модель строит колоду, потом проверяем вёрстку в PowerPoint — это минута-две…'
-    : 'Модель строит колоду — до минуты…', 'working');
+    ? who + ', потом проверяем вёрстку в PowerPoint — это минута-две…'
+    : who + (llm ? ' — до минуты…' : '…'), 'working');
   startProgress({
-    ok: true, variants: parseInt($('variants').value, 10) || 1, images: $('images').checked,
+    ok: true, variants: parseInt($('variants').value, 10) || 1, images: pictures,
     verify: verify, model: null, pictures: 0, decks: 0, verified: 0, audited: 0
   });
 
@@ -446,8 +471,11 @@ $('go').addEventListener('click', async () => {
         slides: $('slides').value.trim(),
         variants: parseInt($('variants').value, 10) || 1,
         verify: verify,
-        images: $('images').checked,
-        text_mode: mode ? mode.value : 'improve',
+        llm: llm,
+        images: pictures,
+        /* Без модели режим текста не действует — не шлём, чтобы движок не
+           оговаривал «--text не применяется». */
+        text_mode: llm ? (mode ? mode.value : 'improve') : '',
         purpose: $('purpose').value
       })
     });
@@ -488,14 +516,15 @@ function modelBlock(model) {
       + (model.retried ? ' и со второй попытки' : '') + '.',
     unparsed: 'Ответ модели не разобрался.',
     too_long: 'Текст длиннее, чем модель принимает за раз.',
-    off: 'Модель выключена.',
+    off: 'Модель выключена — колоду разложил код: темы по тексту, фразы автора дословно.',
     markup: 'Текст размечен заголовками — структуру задал автор, модель не нужна.'
   }[model.status] || 'Модель колоду не построила.';
   const lost = (model.failed || []).length
     ? '<p>Что не прошло проверку:</p><ul>' + model.failed.map((f) =>
         '<li>' + escape(f) + '</li>').join('') + '</ul>'
     : '';
-  const tone = model.status === 'markup' ? 'skipped' : 'unknown';
+  /* Выключили сами или структуру задал автор — выбор, а не отказ. */
+  const tone = model.status === 'markup' || model.status === 'off' ? 'skipped' : 'unknown';
   return '<div class="verdict ' + tone + '"><h3>Колода собрана без модели</h3>'
     + '<p>' + escape(why) + '</p>' + lost
     + '<p class="hint">' + escape(model.line) + '</p></div>';
@@ -846,3 +875,152 @@ function verdict(deck, report, total) {
     + row('в фигурах шаблона', rest[2])
     + '</div></div>';
 }
+
+/* --- окно «Модели» (просьба пользователя 29.09) -------------------------- */
+
+/* Другой сервер или API — без правки кода и config/. Сервер хранит адреса в
+   runtime/settings.json и передаёт движку переменными окружения; ключ API —
+   только в памяти веба. «Проверить связь» спрашивает тем, что в полях, ещё
+   до сохранения. */
+let forgetKey = false;
+
+function setSettingsStatus(text, kind) {
+  const el = $('set-status');
+  el.textContent = text || '';
+  el.className = 'status' + (kind ? ' ' + kind : '');
+}
+
+function fillSettings(d) {
+  const cur = d.current || {};
+  const def = d.defaults || {};
+  $('set-llm-url').value = cur.llm_url || '';
+  $('set-llm-url').placeholder = def.llm_url || '';
+  $('set-llm-model').value = cur.llm_model || '';
+  $('set-llm-model').placeholder = def.llm_model || '';
+  $('set-llm-contract').value = cur.llm_contract || 'json_schema';
+  $('set-llm-extra').checked = cur.llm_extra !== false;
+  $('set-gen-url').value = cur.gen_url || '';
+  $('set-gen-url').placeholder = def.gen_url || '';
+  $('set-llm-key').value = '';
+  forgetKey = false;
+  const note = $('set-key-note');
+  if (d.key_set) {
+    note.innerHTML = 'ключ задан — пустое поле его не меняет. '
+      + '<button type="button" class="link" id="set-forget">забыть ключ</button>';
+    $('set-forget').addEventListener('click', () => {
+      forgetKey = true;
+      note.textContent = 'ключ забудется при сохранении';
+    });
+  } else {
+    note.textContent = d.key_env
+      ? 'не задан здесь; движок возьмёт ключ из переменной MIMEO_LLM_API_KEY'
+      : 'только в памяти веба до его перезапуска — на диск не пишется';
+  }
+}
+
+function settingsForm() {
+  return {
+    llm_url: $('set-llm-url').value.trim(),
+    llm_model: $('set-llm-model').value.trim(),
+    llm_key: $('set-llm-key').value.trim(),
+    llm_contract: $('set-llm-contract').value,
+    llm_extra: $('set-llm-extra').checked,
+    gen_url: $('set-gen-url').value.trim(),
+    forget_key: forgetKey
+  };
+}
+
+async function postSettings(url, body) {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  const data = await response.json();
+  if (!data.ok) throw new Error(data.error || 'сервер отказал');
+  return data;
+}
+
+$('settings-open').addEventListener('click', async () => {
+  $('set-result').hidden = true;
+  setSettingsStatus('');
+  try {
+    const response = await fetch('/api/settings');
+    const data = await response.json();
+    if (!data.ok) throw new Error(data.error || 'не прочитались');
+    fillSettings(data);
+  } catch (error) {
+    setSettingsStatus('Настройки не прочитались: ' + error.message, 'error');
+  }
+  $('settings').showModal();
+});
+
+$('set-close').addEventListener('click', () => $('settings').close());
+
+$('settings-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  try {
+    const data = await postSettings('/api/settings', settingsForm());
+    fillSettings(data);
+    setSettingsStatus('Сохранено: следующая сборка пойдёт на ' + data.current.llm_url
+      + ' — модель ' + data.current.llm_model + '.');
+  } catch (error) {
+    setSettingsStatus('Не сохранилось: ' + error.message, 'error');
+  }
+});
+
+$('set-reset').addEventListener('click', async () => {
+  try {
+    const data = await postSettings('/api/settings', { reset: true });
+    fillSettings(data);
+    $('set-result').hidden = true;
+    setSettingsStatus('Вернули как в config/: свой llama-server и sd-server, ключ забыт.');
+  } catch (error) {
+    setSettingsStatus('Не вышло: ' + error.message, 'error');
+  }
+});
+
+$('set-check').addEventListener('click', async () => {
+  const box = $('set-result');
+  const button = $('set-check');
+  button.disabled = true;
+  box.hidden = true;
+  setSettingsStatus('Спрашиваем серверы…', 'working');
+  try {
+    const form = settingsForm();
+    const d = await postSettings('/api/settings/check', form);
+    const line = (ok, text) => '<div class="' + (ok ? 'ok' : 'bad') + '">'
+      + (ok ? '✓ ' : '✗ ') + escape(text) + '</div>';
+    let html = '';
+    if (d.models_error) {
+      html += line(false, 'Список моделей: ' + d.models_error);
+    } else {
+      const listed = d.models || [];
+      html += line(true, 'Сервер отвечает; моделей в списке: ' + listed.length
+        + (listed.length ? ' — ' + listed.slice(0, 5).join(', ') : ''));
+      if (listed.length && listed.indexOf(form.llm_model) === -1) {
+        html += '<div class="hint">Имени «' + escape(form.llm_model) + '» в списке нет. '
+          + 'llama-server имя не проверяет, чужой сервер может отказать.</div>';
+      }
+    }
+    if (d.answer_error) {
+      html += line(false, 'Вопрос модели: ' + d.answer_error);
+    } else if (d.answer) {
+      html += line(true, 'Модель ответила: «' + d.answer + '»');
+    } else {
+      html += line(false, 'Модель вернула пустой ответ — похоже, она «думает»: '
+        + 'включите служебные поля llama-server или отключите рассуждение на сервере');
+    }
+    html += d.generator
+      ? line(true, 'Генератор картинок отвечает')
+      : line(false, 'Генератор картинок: ' + (d.generator_error || 'не ответил')
+        + ' — нужен, только если рисовать картинки');
+    box.innerHTML = html;
+    box.hidden = false;
+    setSettingsStatus('');
+  } catch (error) {
+    setSettingsStatus('Проверить не вышло: ' + error.message, 'error');
+  } finally {
+    button.disabled = false;
+  }
+});

@@ -36,7 +36,9 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
 import urllib.parse
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -163,6 +165,10 @@ def _engine(args: list[str]) -> subprocess.CompletedProcess:
 
     `sys.executable`, а не `python`: в `PATH` может стоять другой интерпретатор,
     и тогда движок запустится не тем, чем его тестировали.
+
+    Окружение — с настройками окна «Модели» (`_engine_env`): движок читает их
+    из переменных, как и ключ API, — так они не попадают ни в `config/`, ни в
+    командную строку, которую видно в списке процессов.
     """
     return subprocess.run(
         [sys.executable, "-m", "mimeo", *args],
@@ -172,7 +178,120 @@ def _engine(args: list[str]) -> subprocess.CompletedProcess:
         encoding="utf-8",
         errors="replace",
         timeout=BUILD_TIMEOUT_SECONDS,
+        env=_engine_env(),
     )
+
+
+# --- подключение моделей (окно «Модели», просьба пользователя 29.09) --------
+
+#: Настройки этой машины — не в `config/` (там умолчания продукта с версией и
+#: замком, `ADR-0022`), а рядом с установленными серверами: `runtime/` вне git.
+SETTINGS_PATH = os.path.join(ROOT, "runtime", "settings.json")
+#: Как просить у модели JSON — режимы транспорта движка (`ADR-0010`,
+#: `mimeo.plan.prompt.Mode`); совпадение стережёт тест.
+CONTRACTS = ("json_schema", "tool_call", "free_text")
+#: Переменные, которые движок читает поверх `config/model.json` и
+#: `config/generator.json` (`mimeo/plan/client.py`, `mimeo/plan/images.py`).
+_SETTINGS_ENV = {
+    "llm_url": "MIMEO_LLM_BASE_URL",
+    "llm_model": "MIMEO_LLM_MODEL",
+    "llm_contract": "MIMEO_LLM_CONTRACT",
+    "gen_url": "MIMEO_IMAGES_BASE_URL",
+}
+#: Ключ API — только в памяти этого процесса, на диск не пишется: правило
+#: движка (`mimeo/CLAUDE.md`, «Ключ API чужого инференса»).
+_API_KEY: dict[str, str] = {"value": ""}
+_URL = re.compile(r"^https?://[^\s/]+(/\S*)?$")
+
+
+def _defaults() -> dict:
+    """Умолчания — из тех же конфигов, что читает движок; файла нет — его
+    встроенные значения. Веб заглядывает в настройку, а не в код."""
+    model = _read_json(os.path.join(ROOT, "config", "model.json")) or {}
+    gen = _read_json(os.path.join(ROOT, "config", "generator.json")) or {}
+    endpoint = model.get("endpoint") or {}
+    return {
+        "llm_url": endpoint.get("base_url") or "http://127.0.0.1:8080/v1",
+        "llm_model": endpoint.get("model") or "gemma-4-12b-it-qat-q4_0",
+        "llm_contract": model.get("contract") or "json_schema",
+        "llm_extra": True,
+        "gen_url": gen.get("base_url") or "http://127.0.0.1:8081",
+    }
+
+
+def _saved() -> dict:
+    """Сохранённое окном — поверх умолчаний; файла нет — `{}`."""
+    raw = _read_json(SETTINGS_PATH)
+    return raw if isinstance(raw, dict) else {}
+
+
+def _checked_settings(raw: dict) -> tuple[dict | None, str]:
+    """Значения окна после проверки. Неверное — отказ словами, не молчаливая
+    замена: адрес с опечаткой иначе выглядел бы как «модель не отвечает»."""
+    out = {}
+    for key in ("llm_url", "gen_url"):
+        value = str(raw.get(key) or "").strip()
+        if not _URL.match(value):
+            return None, f"адрес «{value[:80]}» — нужен вида http://хост:порт/…"
+        out[key] = value.rstrip("/")
+    model = str(raw.get("llm_model") or "").strip()
+    if not model or len(model) > 200:
+        return None, "имя модели пустое или длиннее 200 знаков"
+    out["llm_model"] = model
+    contract = str(raw.get("llm_contract") or "")
+    if contract not in CONTRACTS:
+        return None, "режим ответа — json_schema, tool_call или free_text"
+    out["llm_contract"] = contract
+    out["llm_extra"] = bool(raw.get("llm_extra"))
+    return out, ""
+
+
+def _engine_env() -> dict:
+    """Окружение движка: сохранённые в окне значения — переменными. Не
+    сохраняли — окружение как есть, и движок берёт `config/`."""
+    env = dict(os.environ)
+    saved = _saved()
+    for key, var in _SETTINGS_ENV.items():
+        if saved.get(key):
+            env[var] = str(saved[key])
+    if saved and not saved.get("llm_extra", True):
+        env["MIMEO_LLM_EXTRA_BODY"] = "off"
+    if _API_KEY["value"]:
+        env["MIMEO_LLM_API_KEY"] = _API_KEY["value"]
+    return env
+
+
+def _get(url: str, key: str, timeout: float = 5.0, body: dict | None = None) -> dict:
+    """Один запрос проверки связи. Свой сервер на этой машине — мимо прокси
+    (как в движке: `plan/client.py`, `_opener`)."""
+    headers = {"Content-Type": "application/json"}
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    request = urllib.request.Request(url, data=data, headers=headers,
+                                     method="POST" if body is not None else "GET")
+    host = (urllib.parse.urlsplit(url).hostname or "").lower()
+    opener = (urllib.request.build_opener(urllib.request.ProxyHandler({}))
+              if host in ("127.0.0.1", "localhost", "::1") else urllib.request.build_opener())
+    with opener.open(request, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8") or "{}")
+
+
+def _why(error: Exception, key: str) -> str:
+    """Отказ словами; ключ, если сервер повторил его в тексте, вымаран."""
+    if isinstance(error, urllib.error.HTTPError):
+        try:
+            detail = error.read().decode("utf-8", "replace")[:240]
+        except Exception:                                   # noqa: BLE001
+            detail = ""
+        text = f"HTTP {error.code} {detail}".strip()
+    elif isinstance(error, urllib.error.URLError):
+        text = f"не отвечает ({error.reason})"
+    else:
+        text = f"{type(error).__name__}: {error}"
+    if key:
+        text = text.replace(key, "***")
+    return text
 
 
 def _load_max_variants() -> int:
@@ -398,6 +517,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._preview_image(urllib.parse.parse_qs(url.query))
         if url.path == "/api/progress":
             return self._progress(urllib.parse.parse_qs(url.query))
+        if url.path == "/api/settings":
+            return self._settings_get()
         if url.path.startswith("/static/"):
             return self._static(url.path[len("/static/"):])
         self._fail(404, "нет такого адреса")
@@ -412,7 +533,104 @@ class Handler(BaseHTTPRequestHandler):
             return self._build()
         if url.path == "/api/fix":
             return self._fix()
+        if url.path == "/api/settings":
+            return self._settings_save()
+        if url.path == "/api/settings/check":
+            return self._settings_check()
         self._fail(404, "нет такого адреса")
+
+    # --- подключение моделей ---------------------------------------------
+
+    def _settings_get(self) -> None:
+        """Что стоит сейчас и что в `config/`. Ключ не отдаётся — только
+        признак, что он задан."""
+        defaults = _defaults()
+        saved = _saved()
+        current = {k: saved.get(k, v) for k, v in defaults.items()}
+        self._json({"ok": True, "defaults": defaults, "current": current,
+                    "saved": bool(saved), "key_set": bool(_API_KEY["value"]),
+                    "key_env": bool(os.environ.get("MIMEO_LLM_API_KEY"))})
+
+    def _settings_body(self) -> dict | None:
+        payload = self._body(64 * 1024)
+        if payload is None:
+            return None
+        try:
+            raw = json.loads(payload.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            return None
+        return raw if isinstance(raw, dict) else None
+
+    def _settings_save(self) -> None:
+        """Сохранить окно. `reset` — вернуть `config/` и забыть ключ; пустое
+        поле ключа — оставить прежний, `forget_key` — забыть."""
+        raw = self._settings_body()
+        if raw is None:
+            return self._fail(400, "тело не разобралось как JSON")
+        if raw.get("reset"):
+            try:
+                os.remove(SETTINGS_PATH)
+            except OSError:
+                pass
+            _API_KEY["value"] = ""
+            return self._settings_get()
+        values, error = _checked_settings(raw)
+        if values is None:
+            return self._fail(400, error)
+        os.makedirs(os.path.dirname(SETTINGS_PATH), exist_ok=True)
+        with open(SETTINGS_PATH, "w", encoding="utf-8") as fh:
+            json.dump(values, fh, ensure_ascii=False, indent=2)
+        key = str(raw.get("llm_key") or "").strip()
+        if key:
+            _API_KEY["value"] = key
+        elif raw.get("forget_key"):
+            _API_KEY["value"] = ""
+        return self._settings_get()
+
+    def _settings_check(self) -> None:
+        """Проверка связи значениями окна, ещё не сохранёнными. «Сервер
+        отвечает» и «модель готова» — разные факты (`mimeo/CLAUDE.md`):
+        поэтому кроме списка моделей — короткий вопрос тем же телом, что
+        шлёт движок (с полями llama-server или без), и отказ на незнакомое
+        поле виден здесь, а не посреди сборки. Во время сборки не проверяем:
+        вопрос разбудил бы модель рядом с генератором."""
+        raw = self._settings_body()
+        if raw is None:
+            return self._fail(400, "тело не разобралось как JSON")
+        with _LOCK:
+            busy = any(r.get("building") for r in _RUNS.values())
+        if busy:
+            return self._fail(409, "идёт сборка — проверим, когда она кончится")
+        values, error = _checked_settings(raw)
+        if values is None:
+            return self._fail(400, error)
+        key = str(raw.get("llm_key") or "").strip() or _API_KEY["value"] \
+            or os.environ.get("MIMEO_LLM_API_KEY", "")
+        result = {"ok": True}
+        try:
+            listed = _get(values["llm_url"] + "/models", key)
+            ids = [m.get("id") for m in (listed.get("data") or []) if isinstance(m, dict)]
+            result["models"] = [i for i in ids if i][:20]
+        except Exception as exc:                            # noqa: BLE001
+            result["models_error"] = _why(exc, key)
+        body = {"model": values["llm_model"], "max_tokens": 8, "temperature": 0,
+                "messages": [{"role": "user", "content": "Ответь одним словом: да."}]}
+        if values["llm_extra"]:
+            model_cfg = _read_json(os.path.join(ROOT, "config", "model.json")) or {}
+            extra = model_cfg.get("extra_body") or {}
+            body.update({k: v for k, v in extra.items() if not str(k).startswith("_")})
+        try:
+            answer = _get(values["llm_url"] + "/chat/completions", key, timeout=60, body=body)
+            message = ((answer.get("choices") or [{}])[0].get("message") or {})
+            result["answer"] = str(message.get("content") or "").strip()[:80]
+        except Exception as exc:                            # noqa: BLE001
+            result["answer_error"] = _why(exc, key)
+        try:
+            _get(values["gen_url"] + "/sdapi/v1/options", "")
+            result["generator"] = True
+        except Exception as exc:                            # noqa: BLE001
+            result["generator_error"] = _why(exc, "")
+        self._json(result)
 
     # --- отдача страницы -----------------------------------------------
 
@@ -546,6 +764,11 @@ class Handler(BaseHTTPRequestHandler):
             argv += ["--purpose", purpose]
         if variants > 1:
             argv += ["--variants", str(variants)]
+        # Строить ли колоду моделью (переключатель, просьба пользователя 29.09):
+        # выключен — путь без модели и без видеокарты, `--llm off`. Страница шлёт
+        # выбор всегда; нет поля — умолчание движка.
+        if "llm" in request:
+            argv += ["--llm", "on" if request.get("llm") else "off"]
         # Рисовать ли картинки генератором (`Z-28`): страница шлёт выбор
         # всегда; нет поля — умолчание движка. Картинки автора встают в обоих случаях.
         if "images" in request:

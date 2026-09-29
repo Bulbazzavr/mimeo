@@ -106,6 +106,9 @@ class ClientConfig:
     tz_cache_root: str = "tz/cache/llm"
     loaded: bool = False
     source: str = "встроенные значения"
+    #: Какие переменные окружения подменили подключение (`_env_endpoint`),
+    #: словами для сводки; пусто — подключение из конфига.
+    override: str = ""
 
 
 @dataclass(frozen=True)
@@ -162,6 +165,42 @@ def _env_access(config: ClientConfig) -> ClientConfig:
     return replace(config, access=access, access_source=f"переменная {ACCESS_ENV}")
 
 
+#: Подключение поверх конфига: другой сервер или API без правки `config/` —
+#: окно «Модели» веба (просьба пользователя 29 сентября) передаёт его этими
+#: переменными, из консоли их задают так же. Ключ — отдельно, `API_KEY_ENV`.
+BASE_URL_ENV = "MIMEO_LLM_BASE_URL"
+MODEL_ENV = "MIMEO_LLM_MODEL"
+CONTRACT_ENV = "MIMEO_LLM_CONTRACT"
+#: `off` — не слать `extra_body`: поля llama-server (`chat_template_kwargs`,
+#: `cache_prompt`) чужой API может отвергнуть как незнакомые.
+EXTRA_BODY_ENV = "MIMEO_LLM_EXTRA_BODY"
+
+
+def _env_endpoint(config: ClientConfig) -> ClientConfig:
+    """Переменные подключения, если заданы, — поверх конфига. Неверный режим
+    ответа пропускается: остаётся режим конфига."""
+    used = []
+    endpoint = config.endpoint
+    url = os.environ.get(BASE_URL_ENV, "").strip()
+    if url:
+        endpoint = replace(endpoint, base_url=url)
+        used.append(BASE_URL_ENV)
+    model = os.environ.get(MODEL_ENV, "").strip()
+    if model:
+        endpoint = replace(endpoint, model=model)
+        used.append(MODEL_ENV)
+    config = replace(config, endpoint=endpoint)
+    try:
+        config = replace(config, mode=Mode(os.environ.get(CONTRACT_ENV, "").strip()))
+        used.append(CONTRACT_ENV)
+    except ValueError:
+        pass
+    if os.environ.get(EXTRA_BODY_ENV, "").strip().lower() == "off":
+        config = replace(config, extra_body={})
+        used.append(EXTRA_BODY_ENV)
+    return replace(config, override=", ".join(used)) if used else config
+
+
 def load_config(path: str | None = None) -> ClientConfig:
     """Читает `config/model.json`. Отсутствие файла — не ошибка."""
     path = path or config_path()
@@ -169,9 +208,9 @@ def load_config(path: str | None = None) -> ClientConfig:
         with open(path, encoding="utf-8") as fh:
             raw = json.load(fh)
     except (OSError, ValueError):
-        return _env_access(ClientConfig())
+        return _env_access(_env_endpoint(ClientConfig()))
     if not isinstance(raw, dict):
-        return _env_access(ClientConfig())
+        return _env_access(_env_endpoint(ClientConfig()))
 
     default = ClientConfig()
     ep = _strip_comments(raw.get("endpoint") or {})
@@ -185,7 +224,7 @@ def load_config(path: str | None = None) -> ClientConfig:
         chars_per_token=float(ep.get("chars_per_token") or default.endpoint.chars_per_token),
     )
     store = _strip_comments(raw.get("cache") or {})
-    return _env_access(ClientConfig(
+    return _env_access(_env_endpoint(ClientConfig(
         access=_enum(Access, raw.get("access"), default.access),
         endpoint=endpoint,
         mode=_enum(Mode, raw.get("contract"), default.mode),
@@ -195,7 +234,7 @@ def load_config(path: str | None = None) -> ClientConfig:
         tz_cache_root=str(store.get("tz_root") or default.tz_cache_root),
         loaded=True,
         source=path,
-    ))
+    )))
 
 
 def _enum(cls, value, fallback):

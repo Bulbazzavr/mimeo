@@ -860,7 +860,12 @@ def run(path: str, fallback, *, access: str | None = None, text_mode: str | None
     with open(path, encoding="utf-8") as fh:
         text = fh.read()
     record["text"].update(chars=len(text), content=text)
-    head = (f"{access_value} ({access_src}), текст {mode} ({mode_src}), "
+    head = (f"{access_value} ({access_src}), "
+            # Подключение подменено окном «Модели» или переменными — назвать,
+            # какую модель и где звали: иначе колоду не отличить от своей.
+            + (f"{config.endpoint.model} на {config.endpoint.base_url} ({config.override}), "
+               if config.override else "")
+            + f"текст {mode} ({mode_src}), "
             f"рамки {frames[0]}–{frames[1]} ({frames_src})"
             + (f", назначение {purpose}" if purpose else "") + ": ")
 

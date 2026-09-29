@@ -198,7 +198,10 @@ sd-server.exe --diffusion-model z_image_turbo-Q8_0.gguf --vae ae.safetensors --l
 
 **Ключ API чужого инференса** — переменная окружения `MIMEO_LLM_API_KEY`; уходит
 только в заголовок `Authorization: Bearer`, в конфиг и в кэш не попадает. Своему
-`llama-server` ключ не нужен.
+`llama-server` ключ не нужен. **Адрес, имя и режим чужой модели** — переменные
+`MIMEO_LLM_BASE_URL`, `MIMEO_LLM_MODEL`, `MIMEO_LLM_CONTRACT`,
+`MIMEO_LLM_EXTRA_BODY=off` и `MIMEO_IMAGES_BASE_URL` для генератора (`README`,
+«Переменные окружения»); в вебе — окно «Модели…» с проверкой связи.
 
 ```
 python tools/llm_probe.py            готова ли модель отвечать строгим JSON (схема прежнего контракта ADR-0010)

@@ -49,6 +49,8 @@ CONFIG_NAME = "generator.json"
 
 #: Доступ поверх конфига: `on` или `off`. Ею тесты держат `off` (`tests/conftest.py`).
 ACCESS_ENV = "MIMEO_IMAGES_ACCESS"
+#: Адрес генератора поверх конфига (как `MIMEO_LLM_BASE_URL` у модели).
+BASE_URL_ENV = "MIMEO_IMAGES_BASE_URL"
 
 #: Блоки картинок, которые нарисует генератор, помечены по `id`: `_pick_ideas`
 #: отличает их от картинок автора — у раздела с картинкой автора идея не нужна,
@@ -126,6 +128,10 @@ def load_config(path: str | None = None) -> GeneratorConfig:
     env = os.environ.get(ACCESS_ENV, "").strip()
     if env in ("on", "off"):
         config = replace(config, access=env, access_source=f"переменная {ACCESS_ENV}")
+    # Другой генератор без правки `config/` — окно «Модели» веба (29.09).
+    url = os.environ.get(BASE_URL_ENV, "").strip()
+    if url:
+        config = replace(config, base_url=url)
     return config
 
 

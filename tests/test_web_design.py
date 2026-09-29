@@ -199,6 +199,34 @@ def test_text_modes_are_the_engine_ones() -> None:
     assert serve.TEXT_MODES == MODES
 
 
+def test_settings_window_speaks_the_engine_variables(monkeypatch, tmp_path) -> None:
+    """Окно «Модели» (29.09): режимы ответа — те же, что у движка, а
+    сохранённое уходит движку теми переменными, которые он читает; ключ — из
+    памяти, на диск не пишется."""
+    from mimeo.plan import client, images
+    from mimeo.plan.prompt import Mode
+
+    assert serve.CONTRACTS == tuple(m.value for m in Mode)
+    assert set(serve._SETTINGS_ENV.values()) == {
+        client.BASE_URL_ENV, client.MODEL_ENV, client.CONTRACT_ENV, images.BASE_URL_ENV}
+    path = tmp_path / "settings.json"
+    monkeypatch.setattr(serve, "SETTINGS_PATH", str(path))
+    values, error = serve._checked_settings({
+        "llm_url": "https://api.example.com/v1/", "llm_model": "m", "llm_contract": "tool_call",
+        "llm_extra": False, "gen_url": "http://127.0.0.1:8081"})
+    assert error == "" and values["llm_url"] == "https://api.example.com/v1"
+    path.write_text(json.dumps(values), encoding="utf-8")
+    monkeypatch.setitem(serve._API_KEY, "value", "секрет")
+    env = serve._engine_env()
+    assert env[client.BASE_URL_ENV] == "https://api.example.com/v1"
+    assert env[client.CONTRACT_ENV] == "tool_call"
+    assert env[client.EXTRA_BODY_ENV] == "off"
+    assert env[client.API_KEY_ENV] == "секрет"
+    assert "секрет" not in path.read_text(encoding="utf-8")
+    assert serve._checked_settings({"llm_url": "api.example.com", "llm_model": "m",
+                                    "llm_contract": "json_schema", "gen_url": "http://x"})[0] is None
+
+
 def _record(tmp_path, **fields) -> str:
     record = {"status": "accepted", "line": "on …", "text_mode": "improve",
               "checks": [{"name": "числа", "ok": True, "detail": ""}], "retry": None}

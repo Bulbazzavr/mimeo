@@ -231,6 +231,27 @@ def test_access_variable_overrides_the_config(value, access, monkeypatch):
     assert (config.access_source == "переменная MIMEO_LLM_ACCESS") is by_env
 
 
+def test_connection_variables_override_the_config(monkeypatch):
+    """Окно «Модели» веба (29.09) передаёт другой сервер переменными: адрес,
+    имя, режим ответа и отказ от полей llama-server — поверх конфига, и
+    сводка знает, что подключение подменено. Неверный режим — режим конфига."""
+    monkeypatch.setenv("MIMEO_LLM_BASE_URL", "https://api.example.com/v1")
+    monkeypatch.setenv("MIMEO_LLM_MODEL", "other-model")
+    monkeypatch.setenv("MIMEO_LLM_CONTRACT", "tool_call")
+    monkeypatch.setenv("MIMEO_LLM_EXTRA_BODY", "off")
+    config = load_config()
+    assert config.endpoint.base_url == "https://api.example.com/v1"
+    assert config.endpoint.model == "other-model"
+    assert config.mode is Mode.TOOL_CALL
+    assert config.extra_body == {}
+    assert "MIMEO_LLM_BASE_URL" in config.override
+    monkeypatch.setenv("MIMEO_LLM_CONTRACT", "мусор")
+    monkeypatch.delenv("MIMEO_LLM_EXTRA_BODY")
+    config = load_config()
+    assert config.mode is Mode.JSON_SCHEMA
+    assert config.extra_body["cache_prompt"] is False
+
+
 # --- что приходит назад ------------------------------------------------
 
 

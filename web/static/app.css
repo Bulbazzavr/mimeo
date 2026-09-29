@@ -51,6 +51,7 @@ header { padding: 2.2rem 0 1.4rem; }
 h1 { margin: 0; font-size: 1.9rem; line-height: 1.15; letter-spacing: -0.025em; font-weight: 750; }
 .lead { margin: 0.8rem 0 0; color: var(--muted); max-width: 46rem; }
 
+.top-actions { display: flex; align-items: center; gap: 1rem 1.4rem; flex-wrap: wrap; }
 .theme-toggle { margin: 0; align-items: center; font-size: 0.9rem; color: var(--muted); }
 .theme-toggle .track { margin-top: 0; }
 .theme-swatch { display: inline-block; width: 0.9rem; height: 0.9rem; border-radius: 4px;
@@ -151,6 +152,37 @@ textarea:focus, input:focus, select:focus {
 .toggle input:checked + .track::after { transform: translateX(1.1rem); }
 .toggle input:focus-visible + .track { box-shadow: 0 0 0 3px var(--accent-soft); }
 .toggle .txt .hint { display: block; margin: 0.1rem 0 0; }
+.model-toggle { margin-top: 0.3rem; }
+/* Без модели режим текста не действует: фразы автора идут дословно. */
+.seg.off { opacity: 0.45; pointer-events: none; }
+.toggle.off { opacity: 0.45; cursor: default; }
+
+/* --- окно «Модели» ----------------------------------------------------------- */
+
+dialog#settings { width: min(40rem, calc(100vw - 2rem)); max-height: calc(100vh - 2rem);
+                  padding: 1.6rem 1.75rem; border: 1px solid var(--line); border-radius: var(--radius);
+                  color: var(--ink); background: var(--card);
+                  box-shadow: 0 24px 60px rgba(20, 24, 36, 0.22); }
+dialog#settings::backdrop { background: rgba(20, 24, 36, 0.38); }
+.settings-form h2 { margin-top: 0; }
+.settings-form fieldset { margin: 1rem 0 0; padding: 0.9rem 1rem 1rem; border: 1px solid var(--line);
+                          border-radius: 12px; display: grid; gap: 0.8rem; }
+.settings-form legend { padding: 0 0.4rem; font-size: 0.85rem; font-weight: 650; color: var(--muted); }
+.settings-form label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; font-weight: 600; }
+.settings-form label .hint { margin: 0; }
+.settings-form label.check { flex-direction: row; align-items: flex-start; gap: 0.6rem; font-weight: 400; }
+.settings-form label.check input { margin-top: 0.3rem; }
+.settings-form label.check .hint { display: block; }
+.settings-form code { font-size: 0.85em; }
+.settings-form input[type="password"] { font: inherit; color: var(--ink); background: #fff; width: 100%;
+                                        padding: 0.55rem 0.7rem; border: 1px solid var(--line); border-radius: 10px; }
+.settings-form .actions { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; margin-top: 1rem; }
+.settings-form .actions .spacer { flex: 1; }
+.settings-form .actions button.primary { margin-top: 0; }
+.check-result { margin-top: 1rem; padding: 0.7rem 0.9rem; border-radius: 10px; background: #f8f9fc;
+                font-size: 0.88rem; display: grid; gap: 0.3rem; }
+.check-result .ok { color: var(--ok); }
+.check-result .bad { color: var(--bad); }
 
 /* --- кнопки ---------------------------------------------------------------- */
 
@@ -184,6 +216,22 @@ button.link {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+
+button.ghost {
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 0.45rem 1rem;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+button.ghost:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); }
+button.ghost:focus-visible { outline: 3px solid var(--accent-soft); outline-offset: 2px; }
+button.ghost:disabled { color: var(--muted); cursor: default; }
 
 .status { margin: 0.9rem 0 0; min-height: 1.4em; font-size: 0.9rem; }
 .status.error { color: var(--bad); }

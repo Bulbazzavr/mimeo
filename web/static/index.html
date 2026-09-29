@@ -20,11 +20,16 @@
     </div>
     <!-- Базовый вид — по умолчанию; включённый переключатель берёт акцент
          страницы из палитры загруженного шаблона (выбор пользователя 28.09). -->
-    <label class="toggle theme-toggle" title="Акцентный цвет страницы — из палитры загруженного шаблона">
-      <input type="checkbox" id="theme-toggle">
-      <span class="track"></span>
-      <span class="txt">В цветах шаблона <span class="theme-swatch" id="theme-swatch" hidden></span></span>
-    </label>
+    <div class="top-actions">
+      <label class="toggle theme-toggle" title="Акцентный цвет страницы — из палитры загруженного шаблона">
+        <input type="checkbox" id="theme-toggle">
+        <span class="track"></span>
+        <span class="txt">В цветах шаблона <span class="theme-swatch" id="theme-swatch" hidden></span></span>
+      </label>
+      <!-- Окно подключения моделей (просьба пользователя 29.09): другой сервер
+           или API — без правки кода и config/. -->
+      <button type="button" class="ghost" id="settings-open" title="Адрес, имя и ключ языковой модели и генератора картинок">Модели…</button>
+    </div>
   </div>
   <p class="lead">Шаблон и текст прозой на входе — готовая презентация в стиле этого шаблона на выходе.
      Слайды не рисуются с нуля: движок клонирует слайды самого шаблона вместе с их вёрсткой.</p>
@@ -52,9 +57,14 @@
     <p class="hint"><button type="button" class="link" id="fill-example">Подставить пример из корпуса</button></p>
 
     <h2><span class="num">3</span>Как собирать</h2>
-    <p class="hint">Колоду по тексту строит языковая модель: сколько слайдов, в каком порядке,
-       заголовки и тезисы. Нужен запущенный сервер модели.</p>
-    <div class="seg" role="radiogroup" aria-label="Что делать с текстом">
+    <label class="toggle model-toggle">
+      <input type="checkbox" id="llm" checked>
+      <span class="track"></span>
+      <span class="txt"><b>Строить колоду языковой моделью</b>
+        <span class="hint" id="llm-hint">модель решает, сколько слайдов, в каком порядке, заголовки и тезисы;
+          нужен запущенный сервер модели (кнопка «Модели…» вверху — какой)</span></span>
+    </label>
+    <div class="seg" id="text-modes" role="radiogroup" aria-label="Что делать с текстом">
       <label><input type="radio" name="text-mode" value="improve" checked>
         <span><b>Переписать короче и понятнее</b><small>числа и факты — только ваши</small></span></label>
       <label><input type="radio" name="text-mode" value="keep">
@@ -117,6 +127,60 @@
     </details>
   </section>
 </main>
+
+<dialog id="settings" aria-labelledby="settings-title">
+  <form class="settings-form" id="settings-form" autocomplete="off">
+    <h2 id="settings-title">Подключение моделей</h2>
+    <p class="hint">Какой сервер зовёт движок. Сохранённое не трогает <code>config/</code> — ложится
+       в <code>runtime/settings.json</code> этой машины и действует на сборки из этой страницы.</p>
+
+    <fieldset>
+      <legend>Языковая модель — колода, пиктограммы, зрение</legend>
+      <label>Адрес API
+        <input type="text" id="set-llm-url" spellcheck="false">
+        <span class="hint">OpenAI-совместимый, до <code>/v1</code>: llama-server, vLLM, облачный инференс</span>
+      </label>
+      <label>Модель
+        <input type="text" id="set-llm-model" spellcheck="false">
+        <span class="hint">имя, которое ждёт сервер; llama-server его не проверяет</span>
+      </label>
+      <label>Ключ API
+        <input type="password" id="set-llm-key" spellcheck="false" autocomplete="new-password">
+        <span class="hint" id="set-key-note">только в памяти веба до его перезапуска — на диск не пишется</span>
+      </label>
+      <label>Как просить JSON
+        <select id="set-llm-contract">
+          <option value="json_schema">json_schema — схема ответа (llama-server, OpenAI)</option>
+          <option value="tool_call">tool_call — вызов функции</option>
+          <option value="free_text">free_text — схема в тексте запроса</option>
+        </select>
+      </label>
+      <label class="check">
+        <input type="checkbox" id="set-llm-extra">
+        <span>Слать служебные поля llama-server — отключение «думания» и кэша промпта
+          <span class="hint">снимите для чужого API, если он отвечает ошибкой 400 на незнакомые поля</span></span>
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Генератор картинок</legend>
+      <label>Адрес
+        <input type="text" id="set-gen-url" spellcheck="false">
+        <span class="hint">API вида <code>/sdapi/v1/txt2img</code> — sd-server, AUTOMATIC1111</span>
+      </label>
+    </fieldset>
+
+    <div class="check-result" id="set-result" hidden></div>
+    <p class="status" id="set-status"></p>
+    <div class="actions">
+      <button type="button" class="ghost" id="set-check">Проверить связь</button>
+      <button type="button" class="link" id="set-reset">вернуть как в config/</button>
+      <span class="spacer"></span>
+      <button type="button" class="ghost" id="set-close">Закрыть</button>
+      <button type="submit" class="primary" id="set-save">Сохранить</button>
+    </div>
+  </form>
+</dialog>
 
 <footer>
   <p>Локальный интерфейс, слушает только 127.0.0.1. Зависимостей ноль —
