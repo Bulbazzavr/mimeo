@@ -70,7 +70,9 @@ class Endpoint:
     #: Ответ-колода с промптом 1.1 — до 1646 токенов (тот же замер); 1200 его
     #: обрезали бы.
     max_tokens: int = 4000
-    context_tokens: int = 8192
+    #: Как у сервера из `config/runtime.json` (`-c 16384`); с 8192 текст длиннее
+    #: 5.7 тыс. знаков модели не отдавался (29 сентября).
+    context_tokens: int = 16384
     #: Знаков на токен — нижняя оценка для порога длины текста (`PLAN-9.0`,
     #: Ш3): токенизатор есть только у сервера, а порог нужен и без сети. Замер
     #: 25 сентября: проза 3.4–3.7, текст с числами 2.39 — цифры дробятся мельче
@@ -174,6 +176,9 @@ CONTRACT_ENV = "MIMEO_LLM_CONTRACT"
 #: `off` — не слать `extra_body`: поля llama-server (`chat_template_kwargs`,
 #: `cache_prompt`) чужой API может отвергнуть как незнакомые.
 EXTRA_BODY_ENV = "MIMEO_LLM_EXTRA_BODY"
+#: Контекстное окно модели, токенов, — поверх `endpoint.context_tokens`: окно
+#: «Модели» поднимает свой llama-server с этим `-c` и сообщает его движку.
+CONTEXT_ENV = "MIMEO_LLM_CONTEXT"
 
 
 def _env_endpoint(config: ClientConfig) -> ClientConfig:
@@ -189,6 +194,10 @@ def _env_endpoint(config: ClientConfig) -> ClientConfig:
     if model:
         endpoint = replace(endpoint, model=model)
         used.append(MODEL_ENV)
+    context = os.environ.get(CONTEXT_ENV, "").strip()
+    if context.isdigit() and int(context) > endpoint.max_tokens:
+        endpoint = replace(endpoint, context_tokens=int(context))
+        used.append(CONTEXT_ENV)
     config = replace(config, endpoint=endpoint)
     try:
         config = replace(config, mode=Mode(os.environ.get(CONTRACT_ENV, "").strip()))

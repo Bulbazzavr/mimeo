@@ -568,6 +568,22 @@ def accepted(checks: tuple[Check, ...]) -> bool:
     return all(c.ok for c in checks)
 
 
+def lost_numbers_only(checks: tuple[Check, ...]) -> str | None:
+    """Единственное нарушение — потерянные числа, выдуманных нет: строка о них,
+    иначе `None`.
+
+    Длинный текст в 10–15 слайдов целиком не входит: черновик пользователя
+    29 сентября — 22.8 тыс. знаков и около 60 чисел; повтор потерял 8 и не
+    выдумал ни одного, а колода ушла путём без модели — 17 слайдов вместо 10,
+    переполнения, фото не встало. Выбросить колоду модели из-за сокращения хуже,
+    чем назвать потерянное. Выдуманное число — по-прежнему отказ (`ADR-0023`).
+    Мягко — только после повтора, где модель уже просили числа вернуть."""
+    bad = [c for c in checks if not c.ok]
+    if len(bad) == 1 and bad[0].name == "числа" and bad[0].detail.endswith("выдуманы []"):
+        return bad[0].detail.replace(", выдуманы []", "")
+    return None
+
+
 # --- Колода из ответа модели в сборке (`PLAN-9.0`, Ш3) -------------------
 #
 # Один запрос на колоду: сплошной текст файла целиком, промпт режима и рамки.
@@ -911,6 +927,7 @@ def run(path: str, fallback, *, access: str | None = None, text_mode: str | None
     verdict = ("не разобрался как JSON" if status == "unparsed"
                else f"отвергнут проверками {failed(checks)}")
     said = f"{got} {verdict}"
+    lost2 = None
 
     if status != "accepted":
         # Повтор — один: прошлый ответ и перечень нарушений (`retry_history`).
@@ -926,6 +943,10 @@ def run(path: str, fallback, *, access: str | None = None, text_mode: str | None
             return done(status, head + f"{said}; повтор не удался: {answer2.note} — "
                         "собрано путём без модели")
         record["retry"].update(attempt(answer2, parsed2, checks2))
+        lost2 = lost_numbers_only(checks2) if status2 == "rejected" else None
+        if lost2:
+            status2 = "accepted"
+            got2 += f" ({lost2} — текст длиннее, чем вмещают слайды; выдуманных нет)"
         if status2 != "accepted":
             said2 = ("не разобрался как JSON" if status2 == "unparsed"
                      else f"отвергнут проверками {failed(checks2)}")
@@ -957,6 +978,8 @@ def run(path: str, fallback, *, access: str | None = None, text_mode: str | None
             where += f"; правка по аудиту не удалась: {answer3.note} — колода прежняя"
         else:
             record["revise"].update(attempt(answer3, parsed3, checks3))
+            if status3 == "rejected" and lost_numbers_only(checks3):
+                status3 = "accepted"
             if status3 == "accepted":
                 record["revise"]["accepted"] = True
                 answer, parsed = answer3, parsed3
@@ -969,7 +992,8 @@ def run(path: str, fallback, *, access: str | None = None, text_mode: str | None
     doc, _notes, deck = to_doc(parsed, text, path, fallback.name, prose_cfg)
     record["deck"] = deck
     kept = "записан в кэш, " if answer.source == "model" else ""
-    return done("accepted", head + f"колоду построила модель — {where}, {kept}проверки пройдены; "
+    passed = "остальные проверки пройдены" if lost2 else "проверки пройдены"
+    return done("accepted", head + f"колоду построила модель — {where}, {kept}{passed}; "
                 f"слайдов в ответе {len(parsed['slides'])}", doc)
 
 

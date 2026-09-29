@@ -503,11 +503,23 @@ def test_chars_per_token_comes_from_config(tmp_path):
 def test_threshold_is_the_context_minus_the_answer():
     """8192 − 4000 токенов при 2.3 знака на токен: промпт 1767 знаков оставляет
     тексту 7874 — порог ровно на границе (`config/model.json`)."""
-    ep = client.Endpoint()
+    ep = client.Endpoint(context_tokens=8192)
     system = "с" * 1767
     assert outline.too_long(system, "т" * 7874, ep) is None
     reason = outline.too_long(system, "т" * 7875, ep)
     assert reason and "7875 знаков длиннее порога 7874" in reason
+
+
+def test_context_env_widens_the_threshold(monkeypatch):
+    """Окно «Модели» задаёт контекст переменной: 22.8 тыс. знаков черновика
+    пользователя при 8192 шли путём без модели, при 16384 — модели."""
+    monkeypatch.setenv(client.CONTEXT_ENV, "32768")
+    assert client.load_config().endpoint.context_tokens == 32768
+    monkeypatch.setenv(client.CONTEXT_ENV, "мусор")
+    assert client.load_config().endpoint.context_tokens == client.Endpoint().context_tokens
+    system = "с" * 4000
+    assert outline.too_long(system, "т" * 22783, client.Endpoint(context_tokens=8192))
+    assert outline.too_long(system, "т" * 22783, client.Endpoint(context_tokens=16384)) is None
 
 
 def test_tz_frames_are_the_cli_ones():
@@ -531,3 +543,16 @@ def test_closing_goes_last():
     kept = {"slides": answer["slides"][:3], "missing_roles": []}
     _, notes2, deck2 = outline.to_doc(kept, "", "t.md", "t")
     assert [d["heading"] for d in deck2][-1] == "Спасибо" and not any("Финал" in n for n in notes2)
+
+
+def test_lost_numbers_alone_do_not_throw_the_deck_away():
+    """Черновик пользователя 29 сентября: повтор потерял 8 чисел из ~60 и не
+    выдумал ни одного — колоду принимаем и называем потерянное. Выдуманное
+    число и любое другое нарушение — по-прежнему отказ."""
+    lost = outline.Check("числа", False, "потеряны ['140', '18'], выдуманы []")
+    ok = outline.Check("форма", True)
+    assert outline.lost_numbers_only((ok, lost)) == "потеряны ['140', '18']"
+    invented = outline.Check("числа", False, "потеряны [], выдуманы ['7']")
+    assert outline.lost_numbers_only((ok, invented)) is None
+    volume = outline.Check("объём", False, "слайдов 11 при потолке 10")
+    assert outline.lost_numbers_only((lost, volume)) is None
