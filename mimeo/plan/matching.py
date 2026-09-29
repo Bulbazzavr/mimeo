@@ -278,6 +278,11 @@ class Match:
     #: Отказаться значило бы не выполнить «встраивание изображений» на трети
     #: сдачи; промолчать — выдать сплющенную схему за задуманную.
     squeezed_images: tuple[tuple[str, float], ...] = ()
+    #: Рамок под фото, которые останутся пустыми и которые после плана некому
+    #: залить (`Tuning.frames_later` ложно). `rank` такие раскладки не берёт,
+    #: если разделу годится другая (`ADR-0030`, решение пользователя 28 сентября
+    #: «пустые рамки обходить»).
+    dead_frames: int = 0
 
     @property
     def fits(self) -> bool:
@@ -523,6 +528,25 @@ def _clear_of_taken(slots: list[Slot], pattern: Pattern, used: set[str]) -> list
     ]
 
 
+def _topmost(slots: list[Slot]) -> list[Slot]:
+    """Из мест, накрывающих друг друга, — только верхнее по слоям донора.
+
+    Проверка фото 29 сентября, VK Tech: на `p20` карточка — два слоя, `s03`
+    (непрозрачная подложка) и над ней `s04` (объёмная фигура с прозрачностью);
+    фото команды легло в нижний по пропорции, и фигура донора осталась поверх
+    него. На `p38` фото легло в подложку `s02`, заходящую на заголовок, а верхний
+    слой `s04` лежит ниже заголовка. Картинка в верхнем месте закрывает нижнее и
+    ничем не закрыта сама. Мера перекрытия та же, что у `_clear_of_taken`, в обе
+    стороны; порядок слоёв не известен — место остаётся (`Slot.z`, `ADR-0031`)."""
+    limit = load_picture_config().backdrop_overlap
+
+    def under(a: Slot, b: Slot) -> bool:
+        return (a.z is not None and b.z is not None and b.z > a.z
+                and (_rect_overlap(a.rect, b.rect) > limit or _rect_overlap(b.rect, a.rect) > limit))
+
+    return [s for s in slots if not any(under(s, o) for o in slots if o is not s)]
+
+
 #: Где встаёт своя таблица или диаграмма, по старшинству (`Z-32`, `ADR-0026`):
 #: место таблицы или диаграммы донора — оно и задумано под данные, а его числа
 #: чужие (`Z-12`); место под иллюстрацию — крупное и свободное от текста;
@@ -737,7 +761,7 @@ def match(
                 limit = load_picture_config().frame_crop_max
                 slots = [s for s in slots if s.picture_kind != FRAME
                          or (_crop(s, block.ref) is not None and _crop(s, block.ref) <= limit)]
-            slots = _clear_of_taken(slots, pattern, used)
+            slots = _topmost(_clear_of_taken(slots, pattern, used))
             slots = _by_aspect(slots, block.ref)
             if not block.generated:
                 # Рамки — первыми, с меньшей обрезкой впереди: их дизайнер задумал
@@ -916,6 +940,7 @@ def match(
         squeezed_images=tuple(squeezed_images),
         foreign=tuple(foreign),
         disorder=round(disorder, 4),
+        dead_frames=dead_frames,
     )
 
 
@@ -969,10 +994,19 @@ def rank(
     patterns: tuple[Pattern, ...],
     tuning: Tuning = DEFAULT_TUNING,
 ) -> list[Match]:
-    """Пригодные паттерны, от лучшего к худшему. Порядок детерминирован."""
+    """Пригодные паттерны, от лучшего к худшему. Порядок детерминирован.
+
+    Раскладка с пустой рамкой под фото, которую некому залить, — только если
+    разделу не годится ни одна другая. Штрафа `_PENALTY_EMPTY_FRAME` оказалось
+    мало: проверка 29 сентября, VK Tech, раздел из двух тезисов — раскладка с
+    рамкой 0.79 против 0.70 у соседней, и на слайде белая карточка. Запрет, а
+    не новый штраф: решение пользователя 28 сентября — пустые рамки обходить;
+    раздел при этом не пропадает (`ADR-0031`, п. 1)."""
     found = []
     for pattern in patterns:
         m = match(section, pattern, tuning)
         if m is not None and m.fits:
             found.append(m)
+    if not tuning.frames_later:
+        found = [m for m in found if not m.dead_frames] or found
     return sorted(found, key=lambda m: (-m.score, m.pattern_id))

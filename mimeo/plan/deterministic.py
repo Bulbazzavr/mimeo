@@ -18,6 +18,7 @@ from dataclasses import replace
 
 from .. import config as cfg
 from ..analyze.picture import FRAME
+from ..analyze.picture import load_config as load_picture_config
 from ..model import DeckPlan, Pattern, PatternLibrary, PlannedSlide, PlanSource
 from .content import ContentBlock, ContentDoc, ContentSection
 from .matching import _REPEAT_CAP as MATCHING_REPEAT_CAP
@@ -651,11 +652,16 @@ def plan_deck(
             f"слайд {n} ({pid}): на {off:.0%}"
             for n, pid, off in squeezed_images
         )
+        # С 29 сентября сборка картинку не растягивает (`compose/substitute.py`,
+        # `_fit_picture`): срезает края или вписывает с полями.
         warnings.append(
-            f"Картинок растянуто: {len(squeezed_images)} — {where}. Пропорция "
-            f"слота расходится с пропорцией файла, а габариты фигуры донора мы "
-            f"не меняем: вёрстка шаблона его. Слот выбран самый близкий по "
-            f"пропорции из тех, что раскладка предлагает (Z-28a)."
+            f"Картинок не в пропорции места: {len(squeezed_images)} — {where}. "
+            f"Габариты фигуры донора мы не меняем — вёрстка шаблона его, — и "
+            f"картинку не растягиваем: края срезаны по центру, а где срезать "
+            f"пришлось бы больше {load_picture_config().frame_crop_max:.0%} стороны, "
+            f"картинка вписана целиком, с полями. "
+            f"Место выбрано самое близкое по пропорции из тех, что раскладка "
+            f"предлагает (Z-28a)."
         )
 
     # Слот без содержимого COMPOSE очищает от текста донора (`PLAN-3.1`), и

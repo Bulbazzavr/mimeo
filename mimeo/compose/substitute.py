@@ -205,6 +205,8 @@ def replace_picture(
         return f"неизвестный тип картинки {extension}, оставлена картинка донора"
     if frame:
         blip = _fill_with_picture(shape.find(qn("p:spPr")), image_path)
+    else:
+        _fit_picture(shape, image_path)
 
     part = f"/ppt/media/mimeo{index}{extension}"
     with open(image_path, "rb") as fh:
@@ -249,6 +251,49 @@ def _fill_with_picture(sp_pr: ET.Element, image_path: str | None = None) -> ET.E
     ET.SubElement(ET.SubElement(fill, qn("a:stretch")), qn("a:fillRect"))
     sp_pr.insert(at, fill)
     return blip
+
+
+def _fit_picture(pic: ET.Element, image_path: str) -> None:
+    """Картинка в `p:pic` донора — без растяжения (проверка фото 29 сентября:
+    фото команды 4:3 в месте 2.6:1 VK Tech растянулось на 93 %).
+
+    Своя `a:srcRect` вместо донорской: обрезка донора относится к его картинке,
+    а не к нашей. Пропорции сходятся — обрезки нет. Срезать нужно не больше
+    `frame_crop_max` стороны (`config/images.json`, тот же предел, что у рамки
+    под фото, `ADR-0030`) — края срезаются по центру. Больше — картинка
+    вписывается целиком, с полями: отрицательная `a:srcRect` (ECMA-376,
+    `CT_RelativeRect` — прямоугольник источника шире картинки), так PowerPoint
+    делает «вписать». Габариты фигуры донора те же — вёрстка шаблона его
+    (`ADR-0031`, п. 3)."""
+    from ..analyze.picture import load_config as load_picture_config
+    from ..plan.imagesize import image_size
+
+    fill = pic.find(qn("p:blipFill"))
+    ext = pic.find(f"{qn('p:spPr')}/{qn('a:xfrm')}/{qn('a:ext')}")
+    if fill is None or ext is None:
+        return
+    for old in fill.findall(qn("a:srcRect")):
+        fill.remove(old)
+    size = image_size(image_path)
+    try:
+        cx, cy = int(ext.get("cx")), int(ext.get("cy"))
+    except (TypeError, ValueError):
+        return
+    if size is None or not size[0] or not size[1] or cx <= 0 or cy <= 0:
+        return
+    have, want = size[0] / size[1], cx / cy
+    if abs(have - want) / want < 0.005:
+        return
+    cut = 1 - min(have, want) / max(have, want)       # доля стороны, которую пришлось бы срезать
+    if cut <= load_picture_config().frame_crop_max:
+        side = round(cut / 2 * 100000)
+        rect = {"l": str(side), "r": str(side)} if have > want else {"t": str(side), "b": str(side)}
+    else:
+        pad = -round((max(have, want) / min(have, want) - 1) / 2 * 100000)
+        rect = {"t": str(pad), "b": str(pad)} if have > want else {"l": str(pad), "r": str(pad)}
+    blip = fill.find(qn("a:blip"))
+    at = list(fill).index(blip) + 1 if blip is not None else 0
+    fill.insert(at, ET.Element(qn("a:srcRect"), rect))   # CT_BlipFillProperties: blip, srcRect, stretch
 
 
 def _center_crop(sp_pr: ET.Element, image_path: str | None) -> dict[str, str] | None:

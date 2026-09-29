@@ -385,3 +385,95 @@ def test_picture_fill_goes_after_the_geometry_when_the_shape_had_none():
     blip = _fill_with_picture(sp_pr)
     assert [c.tag for c in sp_pr] == [qn("a:xfrm"), qn("a:prstGeom"), qn("a:blipFill"), qn("a:ln")]
     assert blip.tag == qn("a:blip")
+
+
+# --- проверка фото 29 сентября: слои, пустые рамки, без растяжения ------------------
+
+
+def test_author_picture_goes_to_the_upper_of_two_layered_places():
+    """VK Tech `p20`: карточка — подложка и над ней объёмная фигура. Картинка в
+    нижнем месте осталась бы под картинкой донора — идёт в верхнее, хотя нижнее
+    ближе по пропорции. Порядок слоёв не известен — выбор по пропорции, как был."""
+    cap = _pattern().slots[0].capacity
+    body = ContentBlock(id="b1", kind="paragraph", text="Команда небольшая: семь человек")
+    photo = ContentBlock(id="b2", kind="image", ref=IMG2)              # 1.52
+    section = ContentSection(id="sec", heading="Команда", blocks=(body, photo))
+
+    def pattern(lower_z, upper_z):
+        return Pattern(
+            id="p01", kind="image_text", donor_part="/ppt/slides/slide1.xml", donor_index=1,
+            slots=(
+                Slot(id="s01", role="title", content_type="text", rect=_Rect(0, 0, 6000000, 800000),
+                     type_role=None, capacity=cap, required=True),
+                Slot(id="s02", role="image", content_type="image",
+                     rect=_Rect(0, 900000, 4000000, 2630000), type_role=None, capacity=None,
+                     required=False, picture_kind="illustration", z=lower_z),        # 1.52
+                Slot(id="s03", role="image", content_type="image",
+                     rect=_Rect(40000, 940000, 3920000, 2200000), type_role=None, capacity=None,
+                     required=False, picture_kind="illustration", z=upper_z),        # 1.78
+                Slot(id="s04", role="body", content_type="text", rect=_Rect(4500000, 900000, 4000000, 2400000),
+                     type_role=None, capacity=cap, required=True),
+            ),
+            members=(1,), cohesion=None, donor_reason="тест", source="test")
+
+    def where(p):
+        return next(f.slot_id for f in matching.match(section, p).fills if f.kind == "image")
+
+    assert where(pattern(1, 2)) == "s03"
+    assert where(pattern(None, None)) == "s02"
+
+
+def test_layout_with_a_dead_frame_is_taken_only_when_nothing_else_fits():
+    """Генератор выключен — раскладку с пустой рамкой ранг не берёт, если разделу
+    годится другая, хоть и с меньшим баллом; не годится никакая — берёт её."""
+    body = ContentBlock(id="b1", kind="paragraph", text="Генераторы делают слайды по своим правилам")
+    section = ContentSection(id="sec", heading="Заголовок", blocks=(body,))
+    framed = _pattern()
+    cap = framed.slots[0].capacity
+    # Без рамки, но с четырьмя пустыми местами под текст: по баллу хуже, чем
+    # пустая рамка со штрафом, — одного штрафа мало, нужен запрет.
+    spare = tuple(Slot(id=f"s1{i}", role="body", content_type="text",
+                       rect=_Rect(4500000, 3400000 + i * 300000, 4000000, 250000),
+                       type_role=None, capacity=cap, required=True) for i in range(4))
+    plain = replace(framed, id="p02", slots=tuple(s for s in framed.slots if s.id != "s02") + spare)
+    dead = replace(matching.DEFAULT_TUNING, frames_later=False)
+    assert matching.match(section, framed, dead).score > matching.match(section, plain, dead).score
+    assert [m.pattern_id for m in matching.rank(section, (framed, plain), dead)] == ["p02"]
+    assert [m.pattern_id for m in matching.rank(section, (framed, plain))][0] == "p01"
+    assert [m.pattern_id for m in matching.rank(section, (framed,), dead)] == ["p01"]
+
+
+def test_author_picture_in_a_donor_picture_is_cropped_or_fitted_never_stretched():
+    """Своя `a:srcRect` вместо донорской: срезать до `frame_crop_max` — края по
+    центру; больше — вписать целиком с полями (отрицательные поля); пропорции
+    совпали — обрезки нет вовсе, донорская тоже снята."""
+    from mimeo.compose.substitute import _fit_picture
+
+    def pic(cx, cy):
+        return ET.fromstring(
+            '<p:pic xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" '
+            'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+            '<p:blipFill><a:blip/><a:srcRect l="12000" r="3000"/><a:stretch><a:fillRect/></a:stretch>'
+            f'</p:blipFill><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm>'
+            '</p:spPr></p:pic>')
+
+    w, h = image_size(IMG2)                                  # 640×420, 1.52
+    near = pic(2000000, 1000000)                             # 2.0: срезать 24 % высоты
+    _fit_picture(near, IMG2)
+    src = near.find(f"{qn('p:blipFill')}/{qn('a:srcRect')}")
+    assert src.get("l") is None and src.get("t") == src.get("b") and int(src.get("t")) > 0
+    kept = (1 - 2 * int(src.get("t")) / 100000) * h
+    assert abs(w / kept - 2.0) < 0.01
+
+    far = pic(3000000, 1000000)                              # 3.0: срезать пришлось бы 49 %
+    _fit_picture(far, IMG2)
+    src = far.find(f"{qn('p:blipFill')}/{qn('a:srcRect')}")
+    assert src.get("t") is None and src.get("l") == src.get("r") and int(src.get("l")) < 0
+    shown = (1 - 2 * int(src.get("l")) / 100000) * w
+    assert abs(shown / h - 3.0) < 0.01
+    children = [c.tag for c in far.find(qn("p:blipFill"))]
+    assert children == [qn("a:blip"), qn("a:srcRect"), qn("a:stretch")]
+
+    same = pic(w * 10000, h * 10000)
+    _fit_picture(same, IMG2)
+    assert same.find(f"{qn('p:blipFill')}/{qn('a:srcRect')}") is None

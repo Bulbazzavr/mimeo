@@ -496,6 +496,7 @@ def _slots(
                 required=frame or content_type in ("text", "list", "number"),
                 picture_kind=FRAME if frame else None,
                 visible=visible,
+                z=order.get(id(shape)),
             )
         )
     return tuple(out)
