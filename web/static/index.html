@@ -136,6 +136,17 @@
 
     <fieldset>
       <legend>Языковая модель — колода, пиктограммы, зрение</legend>
+      <label>Локальная модель
+        <select id="set-local-model"></select>
+        <span class="hint" id="set-local-note">файл .gguf из <code>runtime/models</code> — положите туда свой, и он появится в списке; при сохранении свой llama-server перезапустится с ним</span>
+      </label>
+      <label>…или путь к своему файлу .gguf
+        <input type="text" id="set-local-path" spellcheck="false" placeholder="C:\models\моя-модель.gguf">
+      </label>
+      <label>Контекстное окно, токенов
+        <input type="number" id="set-llm-ctx" min="8192" max="262144" step="1024">
+        <span class="hint">сколько текста модель видит за раз: 16384 — около 24 тыс. знаков текста, 32768 — около 60 тыс.; больше окно — больше памяти видеокарты</span>
+      </label>
       <label>Адрес API
         <input type="text" id="set-llm-url" spellcheck="false">
         <span class="hint">OpenAI-совместимый, до <code>/v1</code>: llama-server, vLLM, облачный инференс</span>

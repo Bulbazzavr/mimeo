@@ -202,6 +202,43 @@ _SETTINGS_ENV = {
 #: движка (`mimeo/CLAUDE.md`, «Ключ API чужого инференса»).
 _API_KEY: dict[str, str] = {"value": ""}
 _URL = re.compile(r"^https?://[^\s/]+(/\S*)?$")
+#: Свои серверы моделей: где лежат веса и как поднимается llama-server.
+MODELS_DIR = os.path.join(ROOT, "runtime", "models")
+RUNTIME_TOOL = os.path.join(ROOT, "tools", "runtime.py")
+#: Контекстное окно, токенов: меньше — не влезет и короткий текст с ответом
+#: (4000 токенов под ответ, `config/model.json`); больше — не видели ни у одной
+#: открытой модели.
+CTX_MIN, CTX_MAX = 8192, 262144
+
+
+def _llama_manifest() -> tuple[str, int]:
+    """Модель и контекст llama-server из `config/runtime.json` — то, с чем его
+    поднимает `start.bat`, пока окно «Модели…» не задало своё."""
+    manifest = _read_json(os.path.join(ROOT, "config", "runtime.json")) or {}
+    for server in manifest.get("servers") or ():
+        if os.path.basename(str(server.get("exe") or "")).startswith("llama-server"):
+            args = [str(a) for a in server.get("args") or ()]
+            model = os.path.basename(args[args.index("-m") + 1]) if "-m" in args else ""
+            ctx = args[args.index("-c") + 1] if "-c" in args else ""
+            return model, int(ctx) if ctx.isdigit() else 16384
+    return "", 16384
+
+
+def _local_models() -> list[str]:
+    """Файлы `.gguf` в `runtime/models` — языковые модели. Проектор зрения и
+    веса генератора картинок сами текст не пишут — их в списке нет."""
+    try:
+        names = os.listdir(MODELS_DIR)
+    except OSError:
+        return []
+    return sorted(n for n in names if n.lower().endswith(".gguf")
+                  and not n.lower().startswith("mmproj") and "z_image" not in n.lower())
+
+
+def _is_local(url: str) -> bool:
+    """Адрес своего llama-server — его окно умеет перезапустить."""
+    parts = urllib.parse.urlsplit(url)
+    return (parts.hostname or "") in ("127.0.0.1", "localhost") and parts.port == 8080
 
 
 def _defaults() -> dict:
@@ -210,12 +247,15 @@ def _defaults() -> dict:
     model = _read_json(os.path.join(ROOT, "config", "model.json")) or {}
     gen = _read_json(os.path.join(ROOT, "config", "generator.json")) or {}
     endpoint = model.get("endpoint") or {}
+    local_model, ctx = _llama_manifest()
     return {
         "llm_url": endpoint.get("base_url") or "http://127.0.0.1:8080/v1",
         "llm_model": endpoint.get("model") or "gemma-4-12b-it-qat-q4_0",
         "llm_contract": model.get("contract") or "json_schema",
         "llm_extra": True,
         "gen_url": gen.get("base_url") or "http://127.0.0.1:8081",
+        "local_model": local_model,
+        "llm_ctx": ctx,
     }
 
 
@@ -243,7 +283,39 @@ def _checked_settings(raw: dict) -> tuple[dict | None, str]:
         return None, "режим ответа — json_schema, tool_call или free_text"
     out["llm_contract"] = contract
     out["llm_extra"] = bool(raw.get("llm_extra"))
+    ctx = str(raw.get("llm_ctx") or _llama_manifest()[1]).strip()
+    if not ctx.isdigit() or not CTX_MIN <= int(ctx) <= CTX_MAX:
+        return None, f"контекстное окно — целое число токенов от {CTX_MIN} до {CTX_MAX}"
+    out["llm_ctx"] = int(ctx)
+    local = str(raw.get("local_model") or "").strip().strip('"')
+    if local and local not in _local_models():
+        if not (os.path.isabs(local) and local.lower().endswith(".gguf") and os.path.isfile(local)):
+            return None, (f"локальная модель «{local[:120]}» — нужен файл из списка "
+                          "или полный путь к существующему файлу .gguf")
+    out["local_model"] = local or _llama_manifest()[0]
     return out, ""
+
+
+def _fixable(report: dict | None) -> list:
+    """Все исправимые находки аудитов сборки — для исправления сразу."""
+    picked = []
+    for deck in (report or {}).get("decks") or ():
+        audit = _read_json(os.path.join(ROOT, deck["audit"])) if deck.get("audit") else None
+        picked += [f for f in (audit or {}).get("findings") or () if f.get("fix")]
+    return picked
+
+
+def _restart_llm() -> tuple[bool, str]:
+    """Поднять свой llama-server заново — с моделью и контекстом окна
+    (`tools/runtime.py restart-llm`). Первый подъём читает веса с диска."""
+    try:
+        proc = subprocess.run([sys.executable, RUNTIME_TOOL, "restart-llm"], cwd=ROOT,
+                              capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", timeout=300)
+    except subprocess.TimeoutExpired:
+        return False, "llama-server не поднялся за 300 с"
+    text = " ".join(line.strip() for line in (proc.stdout or "").splitlines() if line.strip())
+    return proc.returncode == 0, text[-600:]
 
 
 def _engine_env() -> dict:
@@ -256,6 +328,8 @@ def _engine_env() -> dict:
             env[var] = str(saved[key])
     if saved and not saved.get("llm_extra", True):
         env["MIMEO_LLM_EXTRA_BODY"] = "off"
+    if str(saved.get("llm_ctx") or "").isdigit():
+        env["MIMEO_LLM_CONTEXT"] = str(saved["llm_ctx"])
     if _API_KEY["value"]:
         env["MIMEO_LLM_API_KEY"] = _API_KEY["value"]
     return env
@@ -541,15 +615,19 @@ class Handler(BaseHTTPRequestHandler):
 
     # --- подключение моделей ---------------------------------------------
 
-    def _settings_get(self) -> None:
+    def _settings_get(self, restarted: tuple[bool, str] | None = None) -> None:
         """Что стоит сейчас и что в `config/`. Ключ не отдаётся — только
         признак, что он задан."""
         defaults = _defaults()
         saved = _saved()
         current = {k: saved.get(k, v) for k, v in defaults.items()}
-        self._json({"ok": True, "defaults": defaults, "current": current,
-                    "saved": bool(saved), "key_set": bool(_API_KEY["value"]),
-                    "key_env": bool(os.environ.get("MIMEO_LLM_API_KEY"))})
+        body = {"ok": True, "defaults": defaults, "current": current,
+                "saved": bool(saved), "key_set": bool(_API_KEY["value"]),
+                "key_env": bool(os.environ.get("MIMEO_LLM_API_KEY")),
+                "local_models": _local_models(), "models_dir": MODELS_DIR}
+        if restarted is not None:
+            body["restarted"] = {"ok": restarted[0], "log": restarted[1]}
+        self._json(body)
 
     def _settings_body(self) -> dict | None:
         payload = self._body(64 * 1024)
@@ -567,25 +645,40 @@ class Handler(BaseHTTPRequestHandler):
         raw = self._settings_body()
         if raw is None:
             return self._fail(400, "тело не разобралось как JSON")
+        with _LOCK:
+            busy = any(r.get("building") for r in _RUNS.values())
+        defaults = _defaults()
+        before = {k: _saved().get(k, defaults[k]) for k in ("local_model", "llm_ctx")}
+        if raw.get("reset"):
+            values = defaults
+        else:
+            values, error = _checked_settings(raw)
+            if values is None:
+                return self._fail(400, error)
+        after = {k: values.get(k, defaults[k]) for k in ("local_model", "llm_ctx")}
+        # Своя модель или её окно поменялись — llama-server поднимается заново,
+        # иначе движок считал бы одно, а сервер держал другое. Посреди сборки —
+        # нет: она осталась бы без модели.
+        restart = _is_local(values["llm_url"]) and after != before
+        if restart and busy:
+            return self._fail(409, "идёт сборка — смените модель, когда она кончится")
         if raw.get("reset"):
             try:
                 os.remove(SETTINGS_PATH)
             except OSError:
                 pass
             _API_KEY["value"] = ""
-            return self._settings_get()
-        values, error = _checked_settings(raw)
-        if values is None:
-            return self._fail(400, error)
-        os.makedirs(os.path.dirname(SETTINGS_PATH), exist_ok=True)
-        with open(SETTINGS_PATH, "w", encoding="utf-8") as fh:
-            json.dump(values, fh, ensure_ascii=False, indent=2)
-        key = str(raw.get("llm_key") or "").strip()
-        if key:
-            _API_KEY["value"] = key
-        elif raw.get("forget_key"):
-            _API_KEY["value"] = ""
-        return self._settings_get()
+        else:
+            os.makedirs(os.path.dirname(SETTINGS_PATH), exist_ok=True)
+            with open(SETTINGS_PATH, "w", encoding="utf-8") as fh:
+                json.dump(values, fh, ensure_ascii=False, indent=2)
+            key = str(raw.get("llm_key") or "").strip()
+            if key:
+                _API_KEY["value"] = key
+            elif raw.get("forget_key"):
+                _API_KEY["value"] = ""
+        restarted = _restart_llm() if restart else None
+        return self._settings_get(restarted)
 
     def _settings_check(self) -> None:
         """Проверка связи значениями окна, ещё не сохранёнными. «Сервер
@@ -783,11 +876,17 @@ class Handler(BaseHTTPRequestHandler):
             run["verify_requested"] = verify_requested
             run["variants"] = variants
             run["images"] = bool(request.get("images", True))
-        return self._run_engine(run, argv, verify_requested, variants, report_path)
+        autofix = verify_requested and request.get("autofix", True) is not False
+        return self._run_engine(run, argv, verify_requested, variants, report_path, autofix)
 
     def _run_engine(self, run: dict, argv: list, verify_requested: bool, variants: int,
-                    report_path: str) -> None:
-        """Сборка движком и ответ странице — общий у `/api/build` и `/api/fix`."""
+                    report_path: str, autofix: bool = False) -> None:
+        """Сборка движком и ответ странице — общий у `/api/build` и `/api/fix`.
+
+        `autofix` — исправимые находки аудита чинятся сразу, вторым проходом
+        `build --fix`, не дожидаясь галочек (просьба пользователя 29 сентября:
+        «программа должна сразу исправлять ошибки, а не ждать, пока их исправит
+        пользователь»). Галочки остаются для того, что осталось после него."""
         # Проверка вёрстки поднимает PowerPoint, а он одноэкземплярный. Сборка
         # **ждёт** замок, в отличие от превью: её попросили кнопкой, и ответить
         # «занято» на прямое действие хуже, чем подождать. Предел ожидания есть
@@ -803,8 +902,16 @@ class Handler(BaseHTTPRequestHandler):
             # Для хода сборки (`/api/progress`): свежими считаются файлы новее этой метки.
             run["started_at"] = time.time()
             run["building"] = True
+        autofixed = 0
         try:
             proc = _engine(argv)
+            picked = _fixable(_read_json(report_path)) if autofix else []
+            if picked:
+                fix_path = os.path.join(run["dir"], "fix.json")
+                with open(fix_path, "w", encoding="utf-8") as fh:
+                    json.dump({"findings": picked}, fh, ensure_ascii=False, indent=2)
+                proc = _engine(list(argv) + ["--fix", fix_path])
+                autofixed = len(picked)
         except subprocess.TimeoutExpired:
             return self._fail(504, f"движок не уложился в {BUILD_TIMEOUT_SECONDS} с")
         finally:
@@ -868,6 +975,7 @@ class Handler(BaseHTTPRequestHandler):
             # сборки, как подпись «вышло 1 из 3» начинала врать о том, чего не
             # просили. Найдено проверкой глазами 22 сентября.
             "variants_asked": variants,
+            "autofixed": autofixed,
             "returncode": proc.returncode,
             "seconds": round(elapsed, 2),
             "stderr": (proc.stderr or "")[-4000:],

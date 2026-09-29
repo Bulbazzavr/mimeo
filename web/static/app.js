@@ -616,7 +616,15 @@ function auditBlock(data, decks) {
   const audits = data.audit || [];
   if (!audits.some((a) => a)) return '';
   let fixable = 0;
-  let html = '<div class="audit"><h3>Аудит слайдов — отметьте, что исправить</h3>'
+  /* Исправимое движок чинит сразу, вторым проходом (просьба пользователя 29.09):
+     ниже — аудит уже исправленной колоды, галочки — для оставшегося. */
+  const auto = data.autofixed
+    ? '<p class="hint"><strong>Исправлено сразу, без вашего выбора: ' + data.autofixed
+      + ' находок</strong> — смысловые переписала модель, вёрсточные ужаты кеглем. '
+      + 'Ниже — аудит уже исправленной колоды.</p>'
+    : '';
+  let html = '<div class="audit"><h3>Аудит слайдов' + (data.autofixed
+      ? ' после исправления' : ' — отметьте, что исправить') + '</h3>' + auto
     + '<p class="hint">Код считает по плану колоды и замеру PowerPoint: пункты, слова, '
     + 'наезд надписей. Модель смотрит на картинку каждого слайда и отвечает на вопросы '
     + 'Приложения 1 ТЗ: вывод ли заголовок, нет ли служебного текста, один ли язык.</p>';
@@ -901,6 +909,16 @@ function fillSettings(d) {
   $('set-llm-extra').checked = cur.llm_extra !== false;
   $('set-gen-url').value = cur.gen_url || '';
   $('set-gen-url').placeholder = def.gen_url || '';
+  /* Локальная модель: файлы из runtime/models; свой путь — в поле ниже. */
+  const listed = d.local_models || [];
+  const own = cur.local_model && listed.indexOf(cur.local_model) === -1 ? cur.local_model : '';
+  $('set-local-model').innerHTML = listed.map((n) => '<option value="' + escape(n) + '">'
+      + escape(n) + (n === def.local_model ? ' — по умолчанию' : '') + '</option>').join('')
+    + '<option value="">свой файл — путь ниже</option>';
+  $('set-local-model').value = own ? '' : (cur.local_model || def.local_model || '');
+  $('set-local-path').value = own;
+  $('set-llm-ctx').value = cur.llm_ctx || def.llm_ctx || 16384;
+  settingsDefaults = def;
   $('set-llm-key').value = '';
   forgetKey = false;
   const note = $('set-key-note');
@@ -926,9 +944,33 @@ function settingsForm() {
     llm_contract: $('set-llm-contract').value,
     llm_extra: $('set-llm-extra').checked,
     gen_url: $('set-gen-url').value.trim(),
+    local_model: $('set-local-model').value || $('set-local-path').value.trim(),
+    llm_ctx: parseInt($('set-llm-ctx').value, 10) || 0,
     forget_key: forgetKey
   };
 }
+
+/* Имя модели входит в ключ кэша ответов: другой файл — другое имя, иначе
+   сборка взяла бы из кэша ответ прежней модели. Для файла по умолчанию —
+   имя из config/. */
+let settingsDefaults = {};
+function localModelName(file) {
+  if (!file) return '';
+  if (file === settingsDefaults.local_model) return settingsDefaults.llm_model || '';
+  return file.split(/[\\/]/).pop().replace(/\.gguf$/i, '').toLowerCase();
+}
+function onLocalModelChange() {
+  const name = localModelName($('set-local-model').value || $('set-local-path').value.trim());
+  if (name) {
+    $('set-llm-model').value = name;
+    $('set-llm-url').value = 'http://127.0.0.1:8080/v1';
+  }
+}
+$('set-local-model').addEventListener('change', onLocalModelChange);
+$('set-local-path').addEventListener('change', () => {
+  if ($('set-local-path').value.trim()) $('set-local-model').value = '';
+  onLocalModelChange();
+});
 
 async function postSettings(url, body) {
   const response = await fetch(url, {
@@ -959,13 +1001,25 @@ $('set-close').addEventListener('click', () => $('settings').close());
 
 $('settings-form').addEventListener('submit', async (event) => {
   event.preventDefault();
+  $('set-save').disabled = true;
+  setSettingsStatus('Сохраняем; если модель или окно поменялись — перезапускаем '
+    + 'llama-server, это до минуты…', 'working');
   try {
     const data = await postSettings('/api/settings', settingsForm());
     fillSettings(data);
-    setSettingsStatus('Сохранено: следующая сборка пойдёт на ' + data.current.llm_url
-      + ' — модель ' + data.current.llm_model + '.');
+    const r = data.restarted;
+    if (r && !r.ok) {
+      setSettingsStatus('Сохранено, но llama-server не поднялся: ' + r.log
+        + ' — возможно, модели не хватает памяти видеокарты: уменьшите окно.', 'error');
+    } else {
+      setSettingsStatus('Сохранено' + (r ? ', llama-server перезапущен' : '')
+        + ': следующая сборка пойдёт на ' + data.current.llm_url + ' — модель '
+        + data.current.llm_model + ', окно ' + data.current.llm_ctx + ' токенов.');
+    }
   } catch (error) {
     setSettingsStatus('Не сохранилось: ' + error.message, 'error');
+  } finally {
+    $('set-save').disabled = false;
   }
 });
 

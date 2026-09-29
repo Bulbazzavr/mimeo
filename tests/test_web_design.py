@@ -213,7 +213,7 @@ def test_settings_window_speaks_the_engine_variables(monkeypatch, tmp_path) -> N
     monkeypatch.setattr(serve, "SETTINGS_PATH", str(path))
     values, error = serve._checked_settings({
         "llm_url": "https://api.example.com/v1/", "llm_model": "m", "llm_contract": "tool_call",
-        "llm_extra": False, "gen_url": "http://127.0.0.1:8081"})
+        "llm_extra": False, "gen_url": "http://127.0.0.1:8081", "llm_ctx": 32768})
     assert error == "" and values["llm_url"] == "https://api.example.com/v1"
     path.write_text(json.dumps(values), encoding="utf-8")
     monkeypatch.setitem(serve._API_KEY, "value", "секрет")
@@ -222,6 +222,7 @@ def test_settings_window_speaks_the_engine_variables(monkeypatch, tmp_path) -> N
     assert env[client.CONTRACT_ENV] == "tool_call"
     assert env[client.EXTRA_BODY_ENV] == "off"
     assert env[client.API_KEY_ENV] == "секрет"
+    assert env[client.CONTEXT_ENV] == "32768"
     assert "секрет" not in path.read_text(encoding="utf-8")
     assert serve._checked_settings({"llm_url": "api.example.com", "llm_model": "m",
                                     "llm_contract": "json_schema", "gen_url": "http://x"})[0] is None
